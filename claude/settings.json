@@ -17,8 +17,8 @@
       }
     }
   },
-  "enabledPlugins": [
-    "andrej-karpathy-skills@karpathy-skills",
-    "claude-mem@thedotmack"
-  ]
+  "enabledPlugins": {
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "claude-mem@thedotmack": true
+  }
 }
