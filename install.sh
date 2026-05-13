@@ -58,39 +58,25 @@ mkdir -p "$HOME/.claude/skills"
 link "$DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
 link "$DOTFILES_DIR/claude/CLAUDE.md"     "$HOME/.claude/CLAUDE.md"
 
-#--- 5. andrej-karpathy-skills (skill + auto-loaded CLAUDE.md) -------------
-# Copies BOTH:
-#   - skills/karpathy-guidelines/  -> ~/.claude/skills/  (Skill-tool callable)
-#   - CLAUDE.md                    -> ~/.claude/karpathy-CLAUDE.md
-#     (imported by ~/.claude/CLAUDE.md via `@` reference, so it auto-loads
-#      in every session).
-KARPATHY_DIR="$HOME/.claude/skills/karpathy-guidelines"
+#--- 5. Karpathy CLAUDE.md (auto-load via @-import) -------------------------
+# The skill itself is installed by Claude Code's plugin system (declared in
+# settings.json's `enabledPlugins`). The repo's root CLAUDE.md is NOT a plugin
+# asset, so we fetch it manually for ~/.claude/CLAUDE.md to @-import.
 KARPATHY_CLAUDE_MD="$HOME/.claude/karpathy-CLAUDE.md"
-if [[ ! -d "$KARPATHY_DIR" || ! -f "$KARPATHY_CLAUDE_MD" ]]; then
-  log "Installing andrej-karpathy-skills"
-  tmp="$(mktemp -d)"
-  git clone --depth 1 https://github.com/forrestchang/andrej-karpathy-skills "$tmp"
-  rm -rf "$KARPATHY_DIR"
-  cp -R "$tmp/skills/karpathy-guidelines" "$KARPATHY_DIR"
-  cp    "$tmp/CLAUDE.md"                  "$KARPATHY_CLAUDE_MD"
-  rm -rf "$tmp"
+if [[ ! -f "$KARPATHY_CLAUDE_MD" ]]; then
+  log "Fetching karpathy CLAUDE.md (for @-import auto-load)"
+  curl -fsSL -o "$KARPATHY_CLAUDE_MD" \
+    https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md
 else
-  log "karpathy-guidelines already installed"
+  log "karpathy CLAUDE.md already present"
 fi
 
-#--- 6. claude-mem (persistent memory for Claude Code) ----------------------
-if have npx; then
-  if [[ ! -d "$HOME/.claude-mem" ]]; then
-    log "Installing claude-mem"
-    npx -y claude-mem install
-  else
-    log "claude-mem already installed (~/.claude-mem exists)"
-  fi
-else
-  warn "Skipping claude-mem: Node/npm not found. Install Node and re-run."
-fi
+# NOTE: andrej-karpathy-skills (skill) and claude-mem (memory hooks) are
+# installed declaratively by Claude Code on next launch, via
+# `extraKnownMarketplaces` + `enabledPlugins` in claude/settings.json.
+# No shell-side install required.
 
-#--- 7. rtk init (registers Claude Code hook + writes ~/.claude/RTK.md) -----
+#--- 6. rtk init (registers Claude Code hook + writes ~/.claude/RTK.md) -----
 if have rtk; then
   log "Running rtk init -g"
   rtk init -g || warn "rtk init -g failed; continue manually"

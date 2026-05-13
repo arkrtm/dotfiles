@@ -35,26 +35,15 @@ if have rtk; then
   fi
 fi
 
-#--- 3. claude-mem ----------------------------------------------------------
-if have npx; then
-  log "Updating claude-mem"
-  npx -y claude-mem@latest install || warn "claude-mem update failed"
-fi
+#--- 3. Karpathy CLAUDE.md (refresh auto-loaded content) --------------------
+# The plugin itself (skill, claude-mem hooks, …) is managed by Claude Code's
+# plugin system — update with `/plugin update` inside Claude Code.
+log "Refreshing karpathy CLAUDE.md"
+curl -fsSL -o "$HOME/.claude/karpathy-CLAUDE.md" \
+  https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md \
+  || warn "karpathy CLAUDE.md refresh failed"
 
-#--- 4. andrej-karpathy-skills (re-pull skill + CLAUDE.md) ------------------
-KARPATHY_DIR="$HOME/.claude/skills/karpathy-guidelines"
-KARPATHY_CLAUDE_MD="$HOME/.claude/karpathy-CLAUDE.md"
-if [[ -d "$KARPATHY_DIR" ]]; then
-  log "Refreshing andrej-karpathy-skills"
-  tmp="$(mktemp -d)"
-  git clone --depth 1 https://github.com/forrestchang/andrej-karpathy-skills "$tmp"
-  rm -rf "$KARPATHY_DIR"
-  cp -R "$tmp/skills/karpathy-guidelines" "$KARPATHY_DIR"
-  cp    "$tmp/CLAUDE.md"                  "$KARPATHY_CLAUDE_MD"
-  rm -rf "$tmp"
-fi
-
-#--- 5. Re-run install.sh to pick up any new tools added to the script ------
+#--- 4. Re-run install.sh to pick up any new tools added to the script ------
 log "Re-running install.sh (idempotent)"
 "$DOTFILES_DIR/install.sh"
 

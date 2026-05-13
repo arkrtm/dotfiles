@@ -25,12 +25,15 @@ Re-runnable any time; each step is idempotent.
 | Step | Tool | Source |
 | --- | --- | --- |
 | 1 | [`uv`](https://github.com/astral-sh/uv) — Python package/project manager | `astral.sh/uv/install.sh` |
-| 2 | [`rtk`](https://github.com/rtk-ai/rtk) — Claude Code context compressor (shell tool output filter) | `brew install rtk` (macOS) or upstream `install.sh` |
-| 3 | Ensure `~/.claude/` and `~/.claude/skills/` exist | — |
-| 4 | Symlink `claude/settings.json` → `~/.claude/settings.json` and `claude/CLAUDE.md` → `~/.claude/CLAUDE.md` (global user instructions) | this repo |
-| 5 | [`andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills) — install the `karpathy-guidelines` skill into `~/.claude/skills/`, plus copy the repo's `CLAUDE.md` to `~/.claude/karpathy-CLAUDE.md` (auto-imported by our `CLAUDE.md` via `@`-reference) | git clone |
-| 6 | [`claude-mem`](https://github.com/thedotmack/claude-mem) — persistent memory for Claude Code | `npx -y claude-mem install` (requires Node) |
-| 7 | `rtk init -g` — register the Claude Code bash hook + write `~/.claude/RTK.md` | rtk |
+| 2 | [`rtk`](https://github.com/rtk-ai/rtk) — Claude Code context compressor | `brew install rtk` (macOS) or upstream `install.sh` |
+| 3 | Symlink `claude/settings.json` → `~/.claude/settings.json` and `claude/CLAUDE.md` → `~/.claude/CLAUDE.md` | this repo |
+| 4 | Fetch [`andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills) root `CLAUDE.md` → `~/.claude/karpathy-CLAUDE.md` (auto-imported via `@`-reference) | curl |
+| 5 | `rtk init -g` — register the Claude Code bash hook + write `~/.claude/RTK.md` | rtk |
+
+Plus, on next Claude Code launch, two plugins auto-install from
+`enabledPlugins` declared in `settings.json`:
+- `andrej-karpathy-skills@karpathy-skills` (skill)
+- `claude-mem@thedotmack` (memory hooks + MCP)
 
 ## Layout
 
