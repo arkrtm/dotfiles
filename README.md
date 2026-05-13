@@ -5,7 +5,7 @@ Personal dotfiles. Bootstraps a fresh macOS or Linux machine with my Claude Code
 ## Quick start
 
 ```sh
-git clone https://github.com/arkrithm/dotfiles ~/dotfiles
+git clone https://github.com/arkrtm/dotfiles ~/dotfiles
 cd ~/dotfiles
 ./install.sh
 ```
