@@ -1,5 +1,8 @@
 # Global instructions
 
+@~/.claude/karpathy-CLAUDE.md
+
+
 ## 実装タスクの進め方
 
 実装を伴うタスクでは Agent Teams パターンを使う。1人で全部やらず、フェーズごとに別エージェントに委譲する:

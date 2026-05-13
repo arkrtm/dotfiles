@@ -28,7 +28,7 @@ Re-runnable any time; each step is idempotent.
 | 2 | [`rtk`](https://github.com/rtk-ai/rtk) — Claude Code context compressor (shell tool output filter) | `brew install rtk` (macOS) or upstream `install.sh` |
 | 3 | Ensure `~/.claude/` and `~/.claude/skills/` exist | — |
 | 4 | Symlink `claude/settings.json` → `~/.claude/settings.json` and `claude/CLAUDE.md` → `~/.claude/CLAUDE.md` (global user instructions) | this repo |
-| 5 | [`andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills) — clone the `karpathy-guidelines` skill into `~/.claude/skills/` | git clone |
+| 5 | [`andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills) — install the `karpathy-guidelines` skill into `~/.claude/skills/`, plus copy the repo's `CLAUDE.md` to `~/.claude/karpathy-CLAUDE.md` (auto-imported by our `CLAUDE.md` via `@`-reference) | git clone |
 | 6 | [`claude-mem`](https://github.com/thedotmack/claude-mem) — persistent memory for Claude Code | `npx -y claude-mem install` (requires Node) |
 | 7 | `rtk init -g` — register the Claude Code bash hook + write `~/.claude/RTK.md` | rtk |
 

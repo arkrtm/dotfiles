@@ -58,16 +58,24 @@ mkdir -p "$HOME/.claude/skills"
 link "$DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
 link "$DOTFILES_DIR/claude/CLAUDE.md"     "$HOME/.claude/CLAUDE.md"
 
-#--- 5. andrej-karpathy-skills (clone karpathy-guidelines skill) -----------
+#--- 5. andrej-karpathy-skills (skill + auto-loaded CLAUDE.md) -------------
+# Copies BOTH:
+#   - skills/karpathy-guidelines/  -> ~/.claude/skills/  (Skill-tool callable)
+#   - CLAUDE.md                    -> ~/.claude/karpathy-CLAUDE.md
+#     (imported by ~/.claude/CLAUDE.md via `@` reference, so it auto-loads
+#      in every session).
 KARPATHY_DIR="$HOME/.claude/skills/karpathy-guidelines"
-if [[ ! -d "$KARPATHY_DIR" ]]; then
+KARPATHY_CLAUDE_MD="$HOME/.claude/karpathy-CLAUDE.md"
+if [[ ! -d "$KARPATHY_DIR" || ! -f "$KARPATHY_CLAUDE_MD" ]]; then
   log "Installing andrej-karpathy-skills"
   tmp="$(mktemp -d)"
   git clone --depth 1 https://github.com/forrestchang/andrej-karpathy-skills "$tmp"
+  rm -rf "$KARPATHY_DIR"
   cp -R "$tmp/skills/karpathy-guidelines" "$KARPATHY_DIR"
+  cp    "$tmp/CLAUDE.md"                  "$KARPATHY_CLAUDE_MD"
   rm -rf "$tmp"
 else
-  log "karpathy-guidelines skill already present"
+  log "karpathy-guidelines already installed"
 fi
 
 #--- 6. claude-mem (persistent memory for Claude Code) ----------------------

@@ -41,14 +41,16 @@ if have npx; then
   npx -y claude-mem@latest install || warn "claude-mem update failed"
 fi
 
-#--- 4. andrej-karpathy-skills (re-pull skill content) ----------------------
+#--- 4. andrej-karpathy-skills (re-pull skill + CLAUDE.md) ------------------
 KARPATHY_DIR="$HOME/.claude/skills/karpathy-guidelines"
+KARPATHY_CLAUDE_MD="$HOME/.claude/karpathy-CLAUDE.md"
 if [[ -d "$KARPATHY_DIR" ]]; then
-  log "Refreshing karpathy-guidelines skill"
+  log "Refreshing andrej-karpathy-skills"
   tmp="$(mktemp -d)"
   git clone --depth 1 https://github.com/forrestchang/andrej-karpathy-skills "$tmp"
   rm -rf "$KARPATHY_DIR"
   cp -R "$tmp/skills/karpathy-guidelines" "$KARPATHY_DIR"
+  cp    "$tmp/CLAUDE.md"                  "$KARPATHY_CLAUDE_MD"
   rm -rf "$tmp"
 fi
 
