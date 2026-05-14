@@ -21,6 +21,23 @@
 - `Co-Authored-By: Claude ...` などのモデル署名は **付けない**
 - HEREDOC ではなく `git commit -m "..."` の単純形でよい
 
+## Git staging — テストデータ / テスト用ファイルの除外
+
+コミット時、**動作確認のために生成・作成した一時ファイル**は stage しない。具体例:
+
+- 検証用に生成したサンプルデータ（CSV / JSON / 画像など）
+- 「とりあえず動かす」ためのスクラッチスクリプト（`scratch.py`, `try.sh` など）
+- 実行で生成された出力物・ログ・キャッシュ
+- `tmp/`, `scratch/`, `debug/` 配下のファイル
+
+例外: プロジェクトの正式なテストスイート（`tests/` 配下、`*_test.py`, `*.spec.ts` など、CIで実行される類）は通常通りコミットする。
+
+実装フロー:
+1. `git status` の Untracked / Modified を確認
+2. 自分が動作確認のために作った一時物が混ざっていないかチェック
+3. 該当ファイルは stage せず、必要なら削除するか `.gitignore` 追加を提案
+4. `git add -A` / `git add .` は避け、**ファイル名を明示**して stage する
+
 ## Python
 
 - Python の実行は **すべて `uv` 経由**で行う (`uv run script.py` / `uv run python -c '...'` / `uv run pytest` など)。素の `python` / `python3` を直接呼ばない。
