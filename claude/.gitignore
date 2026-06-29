@@ -1,0 +1,15 @@
+# Ignore EVERYTHING, re-include known-safe content, hard-deny secrets LAST.
+# Vendored scripts MUST end in .sh/.py or they are blocked by the '*' rule.
+*
+!*/
+!.gitignore
+!settings.json
+!*.md
+!*.py
+!*.sh
+!*.yaml
+!*.yml
+# --- hard-deny (MUST remain last) ---
+**/.credentials.json
+**/.claude.json
+**/*.local.json

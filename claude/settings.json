@@ -1,0 +1,83 @@
+{
+  "theme": "dark",
+  "tui": "fullscreen",
+  "permissions": {
+    "defaultMode": "auto",
+    "disableBypassPermissionsMode": "disable",
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uvx ruff:*)",
+      "Bash(uvx pyright:*)",
+      "Bash(uv run diff-cover:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(uv run cc-memory:*)",
+      "Bash(git add:*)",
+      "Bash(git switch:*)",
+      "Bash(git restore:*)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gh/**)",
+      "Read(**/*.pem)",
+      "Read(**/id_rsa*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)",
+      "Bash(pytest * --no-cov*)",
+      "Bash(uv run pytest * --no-cov*)"
+    ]
+  },
+  "statusLine": { "type": "command", "command": "$HOME/.claude/statusline.sh" },
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume|clear|compact", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/memory_session_start.sh", "timeout": 15 },
+        { "type": "command", "command": "$HOME/.claude/hooks/learn_session_start.sh", "timeout": 15 },
+        { "type": "command", "command": "$HOME/.claude/hooks/workflow_session_start.sh", "timeout": 10 }
+      ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/memory_session_end.sh", "timeout": 20 },
+        { "type": "command", "command": "$HOME/.claude/hooks/learn_session_end.sh", "timeout": 15 }
+      ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|MultiEdit|Write", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/gate-prereq.sh", "timeout": 10 },
+        { "type": "command", "command": "$HOME/.claude/hooks/branch-guard.sh", "timeout": 10 },
+        { "type": "command", "command": "$HOME/.claude/hooks/tdd-guard.sh", "timeout": 15 }
+      ] },
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/state-guard.sh", "timeout": 10 }
+      ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|MultiEdit|Write", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/autofix.sh", "timeout": 30 },
+        { "type": "command", "command": "$HOME/.claude/hooks/check-weak-tests.py", "timeout": 10 }
+      ] },
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/mark-red.sh", "timeout": 30 }
+      ] },
+      { "matcher": "Grep|Glob|Bash", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/context_compactor.py", "timeout": 10 }
+      ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/review-capture.sh", "timeout": 15 }
+      ] }
+    ],
+    "Stop": [
+      { "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/verify-gate.sh", "timeout": 600 }
+      ] }
+    ]
+  }
+}

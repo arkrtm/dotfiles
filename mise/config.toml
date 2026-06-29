@@ -1,0 +1,7 @@
+[tools]
+node = "23.11.1"
+python = "3.12.11"
+uv = "0.11.25"          # mise registry (aqua:astral-sh/uv) — declarative pin, avoids curl|bash
+
+[settings]
+idiomatic_version_file_enable_tools = ["python"]

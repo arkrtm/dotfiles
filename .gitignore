@@ -1,0 +1,19 @@
+*.bak.*
+.DS_Store
+# --- global secret hard-deny (protect claude-memory/ and repo root outside the allowlist) ---
+.env
+.env.*
+**/.env
+**/.env.*
+**/.credentials.json
+**/.claude.json
+**/*.local.json
+*.pem
+**/id_rsa*
+# cc-memory: machine-local (real DB lives at ~/.local/share/cc-memory/)
+claude-memory/.venv/
+claude-memory/data/
+claude-memory/**/__pycache__/
+claude-memory/**/*.pyc
+# mise machine-local override
+mise/config.local.toml

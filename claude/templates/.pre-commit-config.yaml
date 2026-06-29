@@ -1,0 +1,41 @@
+# Per-repo LOCAL quality gate (no CI). Copy into a repo and run once: uvx pre-commit install
+# The `rev:` pins below are placeholders — run `uvx pre-commit autoupdate` after copying to
+# lock the current revisions (never guess versions; let autoupdate resolve them).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.13
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: uv lock --check
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+      - id: pyright
+        name: pyright
+        entry: uvx pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: weak-tests
+        name: check-weak-tests (no tautological/assertion-free tests)
+        entry: bash -c 'python3 "$HOME/.claude/hooks/check-weak-tests.py" files "$@"' --
+        language: system
+        files: ^tests/.*\.py$

@@ -1,0 +1,12 @@
+# Secret-scan gate for THIS dotfiles repo (defense-in-depth — it is pushed to GitHub).
+# SCAN-ONLY: no formatters, so it never rewrites your dotfiles. bootstrap.sh runs `pre-commit install`.
+# Pins are placeholders — run `pre-commit autoupdate` here to lock current revisions.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
