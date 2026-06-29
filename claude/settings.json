@@ -69,6 +69,11 @@
         { "type": "command", "command": "$HOME/.claude/hooks/context_compactor.py", "timeout": 10 }
       ] }
     ],
+    "SubagentStart": [
+      { "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/discipline_subagent.sh", "timeout": 10 }
+      ] }
+    ],
     "SubagentStop": [
       { "hooks": [
         { "type": "command", "command": "$HOME/.claude/hooks/review-capture.sh", "timeout": 15 }
