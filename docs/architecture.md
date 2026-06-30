@@ -136,7 +136,7 @@ SessionEnd ─┬─ memory_session_end (L4: このセッションを1記憶に)
     ├── .gitignore                allowlist 方式（全無視→安全拡張子だけ許可→機密を最後に deny）
     ├── settings.json             【COPY】auto mode・deny/ask・全 hook 登録・statusLine
     ├── CLAUDE.md                 【symlink】北極星の心得（advisory）。詳細は discipline skill へ委譲
-    ├── statusline.sh             【symlink】model / branch / venv / context% を1行表示
+    ├── statusline.sh             【symlink】model / effort / dir / context% / branch / venv を1行表示
     │
     ├── hooks/                    【symlink】L3/L4/L5 の決定論的フック群
     │   ├── lib/
