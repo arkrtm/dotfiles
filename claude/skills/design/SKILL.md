@@ -23,4 +23,4 @@ Tasks a context-free junior could execute. Each is a checkbox:
 ```
 Rules: every `R<n>.<m>` in REQUIREMENTS.md must appear in some task's `Requirements:` line (uncovered requirements block the gate). 2–5 min tasks, exact file paths, no placeholders (TBD/TODO/FIXME/implement later), each task carries a `(test)` and a `(verify)` sub-step.
 
-When complete, ask the user to review and run **`/approve-design`**.
+When complete, ask the user to run **`/design-review`** (a fresh-context adversarial design sweep — optional for trivial designs), then **`/approve-design`**.

@@ -53,7 +53,7 @@ rank は単調増加の閾値として使う（多くの gate が `rank >= N` �
 
 ```text
 /spec  →  (/clarify)  →  /approve-requirements  →  git switch -c feat/<slug>
-       →  /design  →  /approve-design  →  /tdd-implement  →  /verify
+       →  /design  →  (/design-review)  →  /approve-design  →  /tdd-implement  →  /verify
 ```
 
 | # | コマンド | 何が起きるか | 結果 state |
@@ -63,9 +63,10 @@ rank は単調増加の閾値として使う（多くの gate が `rank >= N` �
 | 3 | `/approve-requirements` | **GATE 1（人間）**。EARS構造を検証して合格なら昇格 | `requirements_approved` |
 | 4 | `git switch -c feat/<slug>` | feature branch を作る。次の Edit/Write で `normalize` が自動昇格 | →`branched`（自動） |
 | 5 | `/design` | `DESIGN.md`（アーキ/データフロー/エラー処理/テスト戦略）と `PLAN.md`（junior-proof, TDD-ready, 要件トレーサビリティ）を書く | `branched` |
-| 6 | `/approve-design` | **GATE 2（人間）**。PLAN被覆を検証して合格なら昇格。**本番コード解禁** | `design_approved` |
-| 7 | `/tdd-implement` | `wf.sh implementing`。`next-task.sh` が次の actionable task id を表示。task毎に red→green→refactor | `implementing` |
-| 8 | `/verify` | fresh evidence（pytest/ruff/pyright/diff）→ `/code-review` → `@adversarial-reviewer`。verdict pass で `reviewed`、Stop green-gate で `verified` | `reviewed`→`verified` |
+| 6 | `/design-review`（任意） | `@design-reviewer`（read-only, fresh context）が設計の健全性・過剰設計・設計レベルの失敗モード（並行性/冪等性/rollback/移行）・分解と依存順・TDD適性を洗い出し → ユーザと `DESIGN.md`/`PLAN.md` を修正。**advisory: state を動かさず GATE 2 を inform するだけ**（`/clarify` の設計版） | `branched` |
+| 7 | `/approve-design` | **GATE 2（人間）**。PLAN被覆を検証して合格なら昇格。**本番コード解禁** | `design_approved` |
+| 8 | `/tdd-implement` | `wf.sh implementing`。`next-task.sh` が次の actionable task id を表示。task毎に red→green→refactor | `implementing` |
+| 9 | `/verify` | fresh evidence（pytest/ruff/pyright/diff）→ `/code-review` → `@adversarial-reviewer`。verdict pass で `reviewed`、Stop green-gate で `verified` | `reviewed`→`verified` |
 
 `SessionStart` の `workflow_session_start.sh` が、resume 時に現在 stage・次タスク・今許可される操作を `additionalContext` で注入する（再開時のドリフト防止、advisory）。
 
