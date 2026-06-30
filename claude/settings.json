@@ -13,6 +13,7 @@
       "Bash(uv sync:*)",
       "Bash(uv lock:*)",
       "Bash(uv run cc-memory:*)",
+      "Bash($HOME/.claude/hooks/lib/ccmem.sh:*)",
       "Bash(git add:*)",
       "Bash(git switch:*)",
       "Bash(git restore:*)"

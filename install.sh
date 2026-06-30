@@ -13,7 +13,7 @@ CLAUDE_DST="$HOME/.claude"
 MISE_SRC="$DOTFILES/mise/config.toml"
 MISE_DST="$HOME/.config/mise/config.toml"
 # Top-level items symlinked into ~/.claude/ (settings.json is handled separately = COPY).
-CONTENT_ITEMS=(CLAUDE.md statusline.sh skills agents hooks output-styles)
+CONTENT_ITEMS=(CLAUDE.md statusline.sh skills agents hooks commands output-styles)
 
 c_red=$'\033[31m'; c_yel=$'\033[33m'; c_grn=$'\033[32m'; c_rst=$'\033[0m'
 ok(){   printf '%s✓%s %s\n' "$c_grn" "$c_rst" "$*"; }
