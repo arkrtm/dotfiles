@@ -8,6 +8,7 @@
     }
   },
   "theme": "dark",
+  "cleanupPeriodDays": 365,
   "enabledPlugins": {
     "tinymemory@tinymemory": true
   },
