@@ -37,6 +37,13 @@ vim.api.nvim_create_autocmd("FileType", {
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.uv.fs_stat(lazypath) then
   vim.fn.system({ "git", "clone", "--filter=blob:none", "--branch=stable", "https://github.com/folke/lazy.nvim.git", lazypath })
+  -- lazy.nvim 自身も lazy-lock.json のコミットに揃える（端末ごとにずれて lock に差分が出るのを防ぐ）
+  local ok, lock = pcall(function()
+    return vim.json.decode(table.concat(vim.fn.readfile(vim.fn.stdpath("config") .. "/lazy-lock.json"), "\n"))
+  end)
+  if ok and lock["lazy.nvim"] then
+    vim.fn.system({ "git", "-C", lazypath, "checkout", "-q", lock["lazy.nvim"].commit })
+  end
 end
 vim.opt.rtp:prepend(lazypath)
 
