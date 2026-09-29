@@ -50,6 +50,36 @@ require("lazy").setup({
   },
 
   {
+    "nvim-lualine/lualine.nvim",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    opts = {
+      options = {
+        theme = "onedark",
+        globalstatus = true, -- 分割時もステータスラインは 1 本
+        component_separators = "",
+        section_separators = "",
+      },
+      sections = {
+        lualine_a = { "mode" },
+        lualine_b = {
+          "branch",
+          {
+            "diff",
+            source = function()
+              local g = vim.b.gitsigns_status_dict
+              return g and { added = g.added, modified = g.changed, removed = g.removed }
+            end,
+          },
+        },
+        lualine_c = { { "filename", path = 1 } },
+        lualine_x = { "diagnostics", "filetype" },
+        lualine_y = {},
+        lualine_z = { "location" },
+      },
+    },
+  },
+
+  {
     "nvim-telescope/telescope.nvim",
     dependencies = { "nvim-lua/plenary.nvim" },
     cmd = "Telescope",
