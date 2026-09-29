@@ -77,6 +77,10 @@ if [ ! -x "$MISE" ]; then
 fi
 "$MISE" install --yes
 
+# tinymemory の hook は PATH + ~/.local/bin + ~/.cargo/bin しか探さない（hook 文字列は Codex の
+# 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く
+ln -sfn "$HOME/.local/share/mise/shims/tinymemory" "$HOME/.local/bin/tinymemory"
+
 # Neovim プラグインを lazy-lock.json のバージョンに揃える（端末間の差分を防ぐ）
 NVIM="$("$MISE" which nvim 2>/dev/null || true)"
 if [ -n "$NVIM" ]; then
