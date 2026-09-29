@@ -1,0 +1,8 @@
+#!/bin/sh
+# HOST:PORT に 1 秒以内に TCP 接続できるか（ssh config の Match exec 用）
+#   usage: lan-reachable <host> <port>
+# macOS の nc は -w が接続タイムアウトにならず、届かない時に約 75 秒待つため -G を使う
+case "$(uname -s)" in
+  Darwin) exec nc -z -G 1 "$1" "$2" >/dev/null 2>&1 ;;
+  *) exec timeout 1 sh -c 'nc -z "$1" "$2"' _ "$1" "$2" >/dev/null 2>&1 ;;
+esac

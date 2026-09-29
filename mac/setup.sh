@@ -5,7 +5,7 @@ DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Homebrew（GUI アプリ等）
 if command -v brew >/dev/null 2>&1; then
-  brew bundle --file="$DOTFILES/Brewfile"
+  brew bundle --file="$DOTFILES/Brewfile" || echo "warning: brew bundle に失敗（以降の設定は続行）"
 fi
 
 # スクリーンショット: ~/Screenshots に保存、撮影後のサムネイル（保存が約 5 秒遅れる）を無効化

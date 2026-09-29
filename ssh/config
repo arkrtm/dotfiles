@@ -1,6 +1,14 @@
 # 共通設定（mac / linux 共通で使える内容のみ）
-Host nas
+
+# NAS: 自宅 LAN に居れば直接、外出先では tailnet（Tailscale）経由
+#   LAN 判定 = 192.168.0.49:22 に 1 秒以内につながるか
+#   ホスト鍵はどちらの経路でも "nas" として検証する（別ネットワークの同じ IP に誤接続しない）
+Match host nas exec "~/.local/bin/lan-reachable 192.168.0.49 22"
     HostName 192.168.0.49
+
+Host nas
+    HostName nas.tail9542af.ts.net
+    HostKeyAlias nas
     User arkrithm
     Port 22
     IdentityFile ~/.ssh/id_ed25519

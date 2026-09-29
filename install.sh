@@ -20,6 +20,7 @@ config/claude/settings.json  .claude/settings.json
 config/claude/CLAUDE.md  .claude/CLAUDE.md
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync
+bin/lan-reachable        .local/bin/lan-reachable
 config/nvim              .config/nvim
 config/yazi              .config/yazi
 bin/agent-status         .local/bin/agent-status
