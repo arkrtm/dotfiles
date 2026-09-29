@@ -74,6 +74,12 @@ if [ ! -x "$MISE" ]; then
 fi
 "$MISE" install --yes
 
+# Neovim プラグインを lazy-lock.json のバージョンに揃える（端末間の差分を防ぐ）
+NVIM="$("$MISE" which nvim 2>/dev/null || true)"
+if [ -n "$NVIM" ]; then
+  "$NVIM" --headless "+Lazy! restore" +qa >/dev/null 2>&1 || echo "warning: nvim プラグインの restore に失敗"
+fi
+
 # mac: GUI アプリ等は Homebrew（Brewfile）
 if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
   brew bundle --file="$DOTFILES/Brewfile"
