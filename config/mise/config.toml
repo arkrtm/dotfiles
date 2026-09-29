@@ -12,6 +12,10 @@ gh = "latest"
 uv = "latest"
 "aqua:Schniz/fnm" = "latest"
 
+# AI エージェントの長期記憶（Claude Code / Codex 共通）
+# 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
+"github:arkrtm/tinymemory" = "0.1.1"
+
 # エディタ・ファイラー
 neovim = "latest"
 tree-sitter = "latest" # nvim-treesitter のパーサービルド用
