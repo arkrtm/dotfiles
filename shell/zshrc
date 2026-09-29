@@ -1,0 +1,40 @@
+# ===== 履歴 =====
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt share_history hist_ignore_all_dups hist_ignore_space hist_reduce_blanks
+
+# ===== 補完 =====
+autoload -Uz compinit && compinit
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}' # 大文字小文字を区別しない
+zstyle ':completion:*' menu select
+
+# ===== キー操作（vi 風）=====
+bindkey -v
+KEYTIMEOUT=1 # Esc でノーマルモードへ即座に切り替え
+# モードに合わせてカーソル形状を変える（挿入: 縦棒 / ノーマル: ブロック）
+zle-keymap-select() {
+  if [[ $KEYMAP == vicmd ]]; then printf '\e[2 q'; else printf '\e[6 q'; fi
+}
+zle-line-init() { printf '\e[6 q'; }
+zle -N zle-keymap-select
+zle -N zle-line-init
+
+# ===== ツール =====
+command -v mise >/dev/null && eval "$(mise activate zsh)"
+command -v starship >/dev/null && eval "$(starship init zsh)"
+# fzf: Ctrl-R 履歴検索 / Ctrl-T ファイル / Alt-C ディレクトリ移動（bindkey -v の後に読む）
+command -v fzf >/dev/null && source <(fzf --zsh)
+
+# ls / cat 自体は置き換えない（Claude Code 等が実行するコマンドの挙動を変えないため）
+alias ll='eza -l --git --icons'
+alias la='eza -la --git --icons'
+alias lt='eza --tree --level=2 --icons'
+
+# ===== プラグイン（install.sh が clone）=====
+ZPLUGINS="$HOME/.local/share/zsh/plugins"
+[ -f "$ZPLUGINS/zsh-autosuggestions/zsh-autosuggestions.zsh" ] &&
+  source "$ZPLUGINS/zsh-autosuggestions/zsh-autosuggestions.zsh"
+# syntax-highlighting は最後に読む必要がある
+[ -f "$ZPLUGINS/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ] &&
+  source "$ZPLUGINS/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"

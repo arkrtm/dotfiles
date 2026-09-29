@@ -6,6 +6,8 @@ DOTFILES="$(cd "$(dirname "$0")" && pwd)"
 
 # リンク定義: <リポジトリ内パス> <$HOME からの配置先>
 LINKS="
+shell/zshenv             .zshenv
+shell/zshrc              .zshrc
 shell/bashrc             .bashrc
 shell/bash_profile       .bash_profile
 config/mise/config.toml  .config/mise/config.toml
@@ -46,6 +48,21 @@ chmod 600 "$DOTFILES/ssh/config"
 # git config --global の書き込み先を端末ローカルの ~/.gitconfig にする
 # （存在しないと ~/.config/git/config = リポジトリ側が書き換わる）
 touch "$HOME/.gitconfig"
+
+# zsh プラグイン（プラグインマネージャは使わず clone のみ。再実行で更新）
+ZPLUGINS="$HOME/.local/share/zsh/plugins"
+mkdir -p "$ZPLUGINS"
+for repo in zsh-users/zsh-autosuggestions zsh-users/zsh-syntax-highlighting; do
+  dir="$ZPLUGINS/${repo#*/}"
+  if [ -d "$dir/.git" ]; then
+    git -C "$dir" pull -q --ff-only
+  else
+    git clone -q --depth 1 "https://github.com/$repo.git" "$dir"
+  fi
+done
+if ! command -v zsh >/dev/null 2>&1; then
+  echo "warning: zsh が見つかりません（linux: sudo apt install zsh）。bash 設定で動作します"
+fi
 
 # mise 本体（~/.local/bin/mise）
 MISE="$HOME/.local/bin/mise"

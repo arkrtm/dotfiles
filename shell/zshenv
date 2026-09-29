@@ -1,0 +1,3 @@
+# 全ての zsh（非対話含む: スクリプト、Claude Code のコマンド実行等）で読まれる
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"

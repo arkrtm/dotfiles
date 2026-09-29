@@ -1,11 +1,33 @@
-# デザインはシェル決定後に詰める。現状はデフォルト + One Dark 配色
 "$schema" = "https://starship.rs/config-schema.json"
 
+# 2 行・最小構成: [ホスト] ディレクトリ ブランチ 状態 / 入力欄
+format = """
+$hostname$directory$git_branch$git_status
+$character"""
+add_newline = true
 palette = "onedark"
 
 [hostname]
 ssh_only = true
+format = "[$hostname]($style) "
 style = "bold yellow"
+
+[directory]
+truncation_length = 4
+style = "bold blue"
+
+[git_branch]
+format = "[$branch]($style) "
+style = "purple"
+
+[git_status]
+format = "[$all_status$ahead_behind]($style) "
+style = "red"
+
+[character]
+success_symbol = "[❯](green)"
+error_symbol = "[❯](red)"
+vimcmd_symbol = "[❮](green)"
 
 [palettes.onedark]
 black = "#282c34"

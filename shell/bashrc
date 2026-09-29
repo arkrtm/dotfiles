@@ -1,6 +1,6 @@
 # bash 用（zsh が入っていない linux のログインシェル向け）
 
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
 # 以降は対話シェルのみ
