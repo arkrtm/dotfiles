@@ -1,0 +1,8 @@
+# 共通設定（mac / linux 共通で使える内容のみ）
+Host nas
+    HostName 192.168.0.49
+    User arkrithm
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    ServerAliveInterval 60

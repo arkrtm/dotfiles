@@ -1,0 +1,13 @@
+[tools]
+# 基本 CLI
+ripgrep = "latest"
+fd = "latest"
+bat = "latest"
+eza = "latest"
+fzf = "latest"
+starship = "latest"
+gh = "latest"
+
+# 言語ツール（ランタイム自体の管理は uv / fnm に任せる）
+uv = "latest"
+"aqua:Schniz/fnm" = "latest"

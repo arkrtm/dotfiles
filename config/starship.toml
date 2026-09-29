@@ -1,0 +1,18 @@
+# デザインはシェル決定後に詰める。現状はデフォルト + One Dark 配色
+"$schema" = "https://starship.rs/config-schema.json"
+
+palette = "onedark"
+
+[hostname]
+ssh_only = true
+style = "bold yellow"
+
+[palettes.onedark]
+black = "#282c34"
+red = "#e06c75"
+green = "#98c379"
+yellow = "#e5c07b"
+blue = "#61afef"
+purple = "#c678dd"
+cyan = "#56b6c2"
+white = "#abb2bf"
