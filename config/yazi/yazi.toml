@@ -1,0 +1,10 @@
+# 既定値からの差分のみ（https://yazi-rs.github.io/docs/configuration/yazi）
+
+[plugin]
+# GeoTIFF は組み込みの画像プレビューではなく geoview で変換して表示
+prepend_preloaders = [
+	{ url = "*.{tif,tiff,TIF,TIFF}", run = "geotiff" },
+]
+prepend_previewers = [
+	{ url = "*.{tif,tiff,TIF,TIFF}", run = "geotiff" },
+]

@@ -1,0 +1,89 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["rasterio>=1.4", "numpy>=2"]
+# ///
+"""GeoTIFF（GDAL で読めるラスタ全般）の情報表示とプレビュー PNG 生成。
+
+  geoview FILE                   情報を表示
+  geoview FILE -o OUT.png        プレビュー PNG を書き出す（yazi / Claude Code 用）
+  geoview FILE -o OUT.png --size 1600
+
+3 バンド以上は 1-2-3 を RGB、それ以外は 1 バンド目をグレースケールで表示。
+各バンドは有効値の 2〜98 パーセンタイルで引き伸ばし、nodata は透明にする。
+"""
+
+import argparse
+import os
+import sys
+import warnings
+
+os.environ.setdefault("GDAL_PAM_ENABLED", "NO")  # .aux.xml を作らない
+
+import numpy as np
+import rasterio
+from rasterio.enums import Resampling
+from rasterio.errors import NotGeoreferencedWarning
+
+warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)  # 出力 PNG は座標なしで良い
+
+
+def show_info(ds):
+    crs = ds.crs.to_string() if ds.crs else "なし"
+    b = ds.bounds
+    print(f"file     : {ds.name}")
+    print(f"size     : {ds.width} x {ds.height} px, {ds.count} band(s), {ds.dtypes[0]}")
+    print(f"crs      : {crs}")
+    print(f"bounds   : {b.left:.6f}, {b.bottom:.6f}, {b.right:.6f}, {b.top:.6f}")
+    print(f"res      : {ds.res[0]:.6g}, {ds.res[1]:.6g}")
+    print(f"nodata   : {ds.nodata}")
+    print(f"overviews: {ds.overviews(1) or 'なし'}")
+    for i in range(1, ds.count + 1):
+        desc = ds.descriptions[i - 1] or ""
+        print(f"band {i:<3} : {ds.colorinterp[i - 1].name} {desc}".rstrip())
+
+
+def stretch(band):
+    valid = band.compressed()
+    if valid.size == 0:
+        return np.zeros(band.shape, dtype=np.uint8)
+    lo, hi = np.percentile(valid, (2, 98))
+    if hi <= lo:
+        hi = lo + 1
+    out = (band.filled(lo).astype(np.float64) - lo) / (hi - lo)
+    return (np.clip(out, 0, 1) * 255).astype(np.uint8)
+
+
+def render(ds, out, size):
+    scale = min(1.0, size / max(ds.width, ds.height))
+    h = max(1, round(ds.height * scale))
+    w = max(1, round(ds.width * scale))
+    bands = [1, 2, 3] if ds.count >= 3 else [1]
+    # out_shape 指定で縮小読み込み（オーバービューがあれば GDAL が使う）
+    data = ds.read(bands, out_shape=(len(bands), h, w), resampling=Resampling.nearest, masked=True)
+    rgb = [stretch(data[i]) for i in range(len(bands))]
+    if len(rgb) == 1:
+        rgb = rgb * 3
+    alpha = np.where(np.ma.getmaskarray(data).any(axis=0), 0, 255).astype(np.uint8)
+    with rasterio.open(out, "w", driver="PNG", width=w, height=h, count=4, dtype="uint8") as dst:
+        dst.write(np.stack(rgb + [alpha]))
+
+
+def main():
+    p = argparse.ArgumentParser(description="GeoTIFF の情報表示とプレビュー PNG 生成")
+    p.add_argument("file")
+    p.add_argument("-o", "--output", help="プレビュー PNG の出力先")
+    p.add_argument("--size", type=int, default=1024, help="プレビューの最大辺 px（既定 1024）")
+    args = p.parse_args()
+    try:
+        with rasterio.open(args.file) as ds:
+            if args.output:
+                render(ds, args.output, args.size)
+            else:
+                show_info(ds)
+    except rasterio.errors.RasterioIOError as e:
+        sys.exit(f"geoview: {e}")
+
+
+if __name__ == "__main__":
+    main()

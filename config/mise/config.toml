@@ -8,6 +8,11 @@ fzf = "latest"
 starship = "latest"
 gh = "latest"
 
+# エディタ・ファイラー
+neovim = "latest"
+tree-sitter = "latest" # nvim-treesitter のパーサービルド用
+yazi = "latest"
+
 # 言語ツール（ランタイム自体の管理は uv / fnm に任せる）
 uv = "latest"
 "aqua:Schniz/fnm" = "latest"

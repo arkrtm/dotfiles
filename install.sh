@@ -17,7 +17,10 @@ config/git/config        .config/git/config
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
+config/nvim              .config/nvim
+config/yazi              .config/yazi
 bin/agent-status         .local/bin/agent-status
+bin/geoview              .local/bin/geoview
 ssh/config               .ssh/config
 "
 
