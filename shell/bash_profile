@@ -1,2 +1,13 @@
+# chsh できない環境（UGOS 等）向け: 対話ログインなら zsh に切り替える
+# zsh が無ければ bash のまま。bash を使いたい時は NO_ZSH=1 bash -l
+case $- in
+  *i*)
+    if [ -z "${NO_ZSH:-}" ] && command -v zsh >/dev/null 2>&1; then
+      export SHELL="$(command -v zsh)"
+      exec zsh -l
+    fi
+    ;;
+esac
+
 # ログインシェル（ssh / tmux）でも bashrc を読む
 [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
