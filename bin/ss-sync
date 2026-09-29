@@ -1,0 +1,57 @@
+#!/bin/sh
+# 新しいスクリーンショットを SSH 先の ~/screenshots/ へ送る（mac: launchd の WatchPaths から起動）
+#   送信元: ~/Screenshots
+#   送信先: ~/.config/ss-sync/targets（1 行 1 ホスト。ssh config の Host 名）
+#   送信先では ss-YYYYmmdd-HHMMSS.png に改名し、KEEP_DAYS より古いものは削除する
+set -u
+
+SRC="$HOME/Screenshots"
+TARGETS="$HOME/.config/ss-sync/targets"
+STATE="$HOME/.local/state/ss-sync"
+KEEP_DAYS=7
+
+mkdir -p "$STATE"
+log() { echo "$(date '+%F %T') $*" >>"$STATE/log"; }
+
+sleep 1 # 書き込み完了待ち
+touch "$STATE/next"
+if [ -f "$STATE/last" ]; then
+  newer="-newer $STATE/last"
+else
+  newer="-mmin -1" # 初回は直近 1 分のものだけ（過去分を一括送信しない）
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+# shellcheck disable=SC2086
+find "$SRC" -maxdepth 1 -type f -name '[!.]*' \( -iname '*.png' -o -iname '*.jpg' \) $newer |
+  while IFS= read -r f; do
+    ext=$(printf '%s' "${f##*.}" | tr 'A-Z' 'a-z')
+    name="ss-$(date -r "$f" +%Y%m%d-%H%M%S)"
+    n=""
+    while [ -e "$tmp/$name$n.$ext" ]; do n=$((${n:-1} + 1)); done
+    cp -p "$f" "$tmp/$name$n.$ext"
+  done
+
+if [ -z "$(ls -A "$tmp")" ]; then
+  mv "$STATE/next" "$STATE/last"
+  exit 0
+fi
+
+ok=1
+while IFS= read -r host; do
+  case "$host" in '' | '#'*) continue ;; esac
+  # NAS(UGOS) は sftp が仮想パスのため scp は -O（従来方式）で送る
+  if ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
+    "mkdir -p ~/screenshots && find ~/screenshots -type f -mtime +$KEEP_DAYS -delete" &&
+    scp -O -q -p -o BatchMode=yes -o ConnectTimeout=5 "$tmp"/* "$host:screenshots/"; then
+    log "sent to $host: $(ls "$tmp" | tr '\n' ' ')"
+  else
+    log "FAILED to $host"
+    ok=0
+  fi
+done <"$TARGETS"
+
+# 全送信先に送れた時だけ既読位置を進める（失敗分は次回再送）
+[ "$ok" = 1 ] && mv "$STATE/next" "$STATE/last"
+exit 0

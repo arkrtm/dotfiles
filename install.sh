@@ -17,6 +17,9 @@ config/git/config        .config/git/config
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
+config/claude/CLAUDE.md  .claude/CLAUDE.md
+config/ss-sync           .config/ss-sync
+bin/ss-sync              .local/bin/ss-sync
 config/nvim              .config/nvim
 config/yazi              .config/yazi
 bin/agent-status         .local/bin/agent-status
@@ -80,9 +83,9 @@ if [ -n "$NVIM" ]; then
   "$NVIM" --headless "+Lazy! restore" +qa >/dev/null 2>&1 || echo "warning: nvim プラグインの restore に失敗"
 fi
 
-# mac: GUI アプリ等は Homebrew（Brewfile）
-if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
-  brew bundle --file="$DOTFILES/Brewfile"
+# mac 専用（Homebrew、スクリーンショット設定、launchd）
+if [ "$(uname -s)" = Darwin ]; then
+  "$DOTFILES/mac/setup.sh"
 fi
 
 echo "done."
