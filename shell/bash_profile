@@ -1,0 +1,2 @@
+# ログインシェル（ssh / tmux）でも bashrc を読む
+[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"

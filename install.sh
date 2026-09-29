@@ -6,6 +6,8 @@ DOTFILES="$(cd "$(dirname "$0")" && pwd)"
 
 # リンク定義: <リポジトリ内パス> <$HOME からの配置先>
 LINKS="
+shell/bashrc             .bashrc
+shell/bash_profile       .bash_profile
 config/mise/config.toml  .config/mise/config.toml
 config/starship.toml     .config/starship.toml
 config/bat/config        .config/bat/config

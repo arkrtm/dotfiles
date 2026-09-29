@@ -1,0 +1,13 @@
+# bash 用（zsh が入っていない linux のログインシェル向け）
+
+export PATH="$HOME/.local/bin:$PATH"
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
+# 以降は対話シェルのみ
+case $- in
+  *i*) ;;
+  *) return ;;
+esac
+
+command -v mise >/dev/null 2>&1 && eval "$(mise activate bash)"
+command -v starship >/dev/null 2>&1 && eval "$(starship init bash)"
