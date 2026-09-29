@@ -1,0 +1,46 @@
+{
+  "extraKnownMarketplaces": {
+    "tinymemory": {
+      "source": {
+        "source": "github",
+        "repo": "arkrtm/tinymemory"
+      }
+    }
+  },
+  "theme": "dark",
+  "enabledPlugins": {
+    "tinymemory@tinymemory": true
+  },
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] }
+    ],
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] }
+    ],
+    "PostToolUseFailure": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status done", "timeout": 5 }] }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] }
+    ]
+  }
+}

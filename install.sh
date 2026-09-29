@@ -10,6 +10,10 @@ config/mise/config.toml  .config/mise/config.toml
 config/starship.toml     .config/starship.toml
 config/bat/config        .config/bat/config
 config/git/config        .config/git/config
+config/tmux/tmux.conf    .config/tmux/tmux.conf
+config/ghostty/config    .config/ghostty/config
+config/claude/settings.json  .claude/settings.json
+bin/agent-status         .local/bin/agent-status
 ssh/config               .ssh/config
 "
 
@@ -47,5 +51,10 @@ if [ ! -x "$MISE" ]; then
   curl -fsSL https://mise.run | sh
 fi
 "$MISE" install --yes
+
+# mac: GUI アプリ等は Homebrew（Brewfile）
+if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+  brew bundle --file="$DOTFILES/Brewfile"
+fi
 
 echo "done."

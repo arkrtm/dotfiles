@@ -1,0 +1,15 @@
+# 見た目
+font-family = Hack Nerd Font Mono
+font-size = 14
+theme = Atom One Dark
+window-padding-x = 6
+window-padding-y = 4
+
+# SSH 先に Ghostty の terminfo を自動で入れる（入れられない時は xterm-256color で接続）
+shell-integration-features = ssh-terminfo,ssh-env
+
+# mac: Option を Alt として扱う（シェル・Neovim のショートカット用）
+macos-option-as-alt = true
+
+# Claude Code の完了・入力待ち通知（OSC 777）を表示
+desktop-notifications = true

@@ -1,0 +1,43 @@
+#!/bin/sh
+# Claude Code の hooks から呼ばれ、tmux のウィンドウ一覧にエージェントの状態を表示する
+#   usage: agent-status <working|waiting|done|idle>
+# ペインごとの状態を @agent_pane に持ち、ウィンドウ単位で集約して @agent に入れる
+# （優先度: waiting > working > done）。waiting / done になった時はデスクトップ通知も送る。
+
+cat >/dev/null # hooks が stdin に渡す JSON は使わない
+
+[ -n "${TMUX_PANE:-}" ] || exit 0
+command -v tmux >/dev/null 2>&1 || exit 0
+
+state="$1"
+pane="$TMUX_PANE"
+prev=$(tmux display -p -t "$pane" '#{@agent_pane}' 2>/dev/null) || exit 0
+
+if [ "$state" = idle ]; then
+  tmux set -p -t "$pane" -u @agent_pane
+else
+  tmux set -p -t "$pane" @agent_pane "$state"
+fi
+
+win=$(tmux display -p -t "$pane" '#{window_id}')
+agg=$(tmux list-panes -t "$win" -F '#{@agent_pane}' | awk '
+  /waiting/ { w = 1 } /working/ { k = 1 } /done/ { d = 1 }
+  END { if (w) print "waiting"; else if (k) print "working"; else if (d) print "done" }')
+if [ -n "$agg" ]; then
+  tmux set -w -t "$win" @agent "$agg"
+else
+  tmux set -w -t "$win" -u @agent
+fi
+
+# 状態が変わった時だけ通知（OSC 777 を tmux passthrough 経由で手元のターミナルへ）
+if [ "$state" != "$prev" ]; then
+  case "$state" in
+    waiting) msg="入力待ち" ;;
+    done) msg="完了" ;;
+    *) exit 0 ;;
+  esac
+  where=$(tmux display -p -t "$pane" '#{host_short} #{session_name}:#{window_index} #{window_name}')
+  tty=$(tmux display -p -t "$pane" '#{pane_tty}')
+  printf '\033Ptmux;\033\033]777;notify;Claude Code: %s;%s\a\033\\' "$msg" "$where" >"$tty" 2>/dev/null
+fi
+exit 0
