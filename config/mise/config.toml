@@ -11,7 +11,14 @@ gh = "latest"
 # エディタ・ファイラー
 neovim = "latest"
 tree-sitter = "latest" # nvim-treesitter のパーサービルド用
-yazi = "latest"
+
+# yazi: linux は glibc 非依存の musl 版（Debian 12 = glibc 2.36 でも動くように）
+[tools."github:sxyazi/yazi"]
+version = "latest"
+
+[tools."github:sxyazi/yazi".platforms]
+linux-x64 = { asset_pattern = "yazi-x86_64-unknown-linux-musl.zip" }
+linux-arm64 = { asset_pattern = "yazi-aarch64-unknown-linux-musl.zip" }
 
 # 言語ツール（ランタイム自体の管理は uv / fnm に任せる）
 uv = "latest"

@@ -91,13 +91,16 @@ require("lazy").setup({
     opts = { open_for_directories = true },
   },
 
-  -- パーサーのビルドに C コンパイラと tree-sitter CLI（mise）が必要。無い端末では読み込まない
+  -- パーサーのビルドに C コンパイラと tree-sitter CLI（mise）が必要。使えない端末では読み込まない
+  -- （tree-sitter の配布バイナリは glibc 2.39 以上が必要で、Debian 12 では起動しない）
   {
     "nvim-treesitter/nvim-treesitter",
     branch = "main",
     lazy = false,
     build = ":TSUpdate",
-    cond = vim.fn.executable("cc") == 1 and vim.fn.executable("tree-sitter") == 1,
+    cond = vim.fn.executable("cc") == 1
+      and vim.fn.executable("tree-sitter") == 1
+      and vim.system({ "tree-sitter", "--version" }):wait().code == 0,
     config = function()
       require("nvim-treesitter").install({
         "bash", "css", "dockerfile", "go", "html", "javascript", "json", "lua",
