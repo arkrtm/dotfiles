@@ -1,3 +1,7 @@
+# UGOS の /etc/profile.d/go.sh が設定する廃止済み GODEBUG を外す
+# （Go 1.24 以降のツール = fzf, gh 等が起動時に fatal error になるため）
+[[ "${GODEBUG:-}" == "tlskyber=0" ]] && unset GODEBUG
+
 # ===== 履歴 =====
 HISTFILE="$HOME/.zsh_history"
 HISTSIZE=50000
