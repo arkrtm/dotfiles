@@ -16,6 +16,10 @@ uv = "latest"
 # 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
 "github:arkrtm/tinymemory" = "0.1.1"
 
+# git / docker の TUI
+lazygit = "latest"
+lazydocker = "latest"
+
 # エディタ・ファイラー
 neovim = "latest"
 tree-sitter = "latest" # nvim-treesitter のパーサービルド用

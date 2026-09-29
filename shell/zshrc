@@ -34,6 +34,11 @@ command -v fzf >/dev/null && source <(fzf --zsh)
 alias ll='eza -l --git --icons'
 alias la='eza -la --git --icons'
 alias lt='eza --tree --level=2 --icons'
+alias lg='lazygit'
+alias lzd='lazydocker'
+# 並列作業: git worktree を作ってその中で Claude Code を起動（cw <名前>）
+# tmux の新しいウィンドウ（C-g c）で実行すると、状態表示もウィンドウごとに出る
+cw() { claude -w "$@"; }
 
 # ===== プラグイン（install.sh が clone）=====
 ZPLUGINS="$HOME/.local/share/zsh/plugins"
