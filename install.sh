@@ -18,6 +18,11 @@ config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
 config/claude/CLAUDE.md  .claude/CLAUDE.md
+config/claude/agents/reviewer.md  .claude/agents/reviewer.md
+config/claude/skills/verify  .claude/skills/verify
+config/claude/skills/review  .claude/skills/review
+config/claude/skills/issue   .claude/skills/issue
+bin/harness-hook         .local/bin/harness-hook
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync
 bin/lan-reachable        .local/bin/lan-reachable

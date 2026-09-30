@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Claude Code hooks: コードを変えたターンは TDD・検証・レビューの証拠がそろうまで完了させない。
+
+  harness-hook turn         UserPromptSubmit  ターン開始。前ターンの変更・検証・レビュー記録を消す
+  harness-hook guard-branch PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
+  harness-hook edit         PostToolUse       Edit/Write。コードなら「変更あり」、テストなら「テストあり」
+  harness-hook bash         PostToolUse       Bash。検証コマンドが成功したら「検証済み」
+  harness-hook review-done  SubagentStop      reviewer エージェントが終了したら「レビュー済み」
+  harness-hook stop         Stop              証拠が足りなければ 1 回だけ差し戻す
+
+状態は ~/.local/state/harness/<session_id>/ の空ファイル。依存なし、失敗しても常に exit 0。
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+CODE_EXT = {
+    ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".rs", ".go", ".rb", ".java", ".kt",
+    ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php", ".lua", ".sh", ".zsh", ".sql",
+}
+TEST_PATH = re.compile(r"(^|/)(tests?|spec|__tests__)/|(^|/)(test_[^/]+|[^/]+_test\.[^/]+|[^/]+\.(test|spec)\.[^/]+|[^/]+_spec\.[^/]+)$")
+# 「証拠」とみなす検証コマンド。ls tests のような閲覧は含めない
+VERIFY_CMD = re.compile(
+    r"(^|[;&|]\s*)("
+    r"(uv run |poetry run |pdm run |npx |pnpm |yarn |bun |bunx |python3? -m )?"
+    r"(pytest|unittest|ruff|mypy|pyright|jest|vitest|eslint|tsc|prettier --check|shellcheck)\b"
+    r"|cargo (test|check|clippy|build)\b|go (test|vet|build)\b"
+    r"|(npm|pnpm|yarn|bun) (test|run (test|lint|typecheck|check|build))\b"
+    r"|make (test|check|lint)\b|dotnet test\b|rspec\b|(sh|bash|zsh) -n\b"
+    r"|(sh|bash) \S*tests?/|nvim --headless\b"
+    r")"
+)
+REVIEWER = "reviewer"
+SKIP = {"tests": "TDD不要:", "verified": "検証不要:", "reviewed": "レビュー不要:"}
+
+
+def state_dir(session):
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    d = os.path.join(base, "harness", re.sub(r"[^A-Za-z0-9_.-]", "_", session or "nosession"))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def mark(d, name):
+    open(os.path.join(d, name), "w").close()
+
+
+def unmark(d, name):
+    try:
+        os.remove(os.path.join(d, name))
+    except FileNotFoundError:
+        pass
+
+
+def has(d, name):
+    return os.path.exists(os.path.join(d, name))
+
+
+def is_test(path):
+    return bool(TEST_PATH.search(path.replace(os.sep, "/")))
+
+
+def is_code(path):
+    return os.path.splitext(path)[1].lower() in CODE_EXT
+
+
+def git_test_changes(cwd):
+    try:
+        out = subprocess.run(
+            ["git", "-C", cwd, "status", "--porcelain", "--untracked-files=all"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except Exception:
+        return False
+    return any(is_test(line[3:].strip()) for line in out.splitlines() if len(line) > 3)
+
+
+PROTECTED = {"main", "master"}
+
+
+def current_branch(path):
+    """path を含む git リポジトリのブランチ名。リポジトリ外・detached なら None。
+    まだ存在しないディレクトリへの新規ファイルもあるので、存在する最も近い親から探す"""
+    while path and not os.path.isdir(path):
+        path = os.path.dirname(path)
+    try:
+        r = subprocess.run(
+            ["git", "-C", path or ".", "symbolic-ref", "--short", "-q", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return None
+    return r.stdout.strip() or None
+
+
+def prune(base_days=7):
+    base = os.path.dirname(state_dir("x"))
+    cutoff = time.time() - base_days * 86400
+    for name in os.listdir(base):
+        p = os.path.join(base, name)
+        try:
+            if os.path.getmtime(p) < cutoff:
+                for f in os.listdir(p):
+                    os.remove(os.path.join(p, f))
+                os.rmdir(p)
+        except OSError:
+            pass
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return
+    d = state_dir(data.get("session_id"))
+
+    if cmd == "turn":
+        for n in ("changed", "verified", "reviewed"):
+            unmark(d, n)
+        prune()
+    elif cmd == "guard-branch":
+        path = (data.get("tool_input") or {}).get("file_path") or ""
+        branch = current_branch(os.path.dirname(path) or data.get("cwd") or ".")
+        if branch in PROTECTED:
+            print(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        f"{branch} 上では編集しない。作業別のブランチを切ってから編集する: "
+                        "git switch -c <種別>/<短い名前>（大きな作業は claude -w / cw で worktree）"
+                    ),
+                }
+            }, ensure_ascii=False))
+    elif cmd == "edit":
+        path = (data.get("tool_input") or {}).get("file_path") or ""
+        if is_test(path):
+            mark(d, "tests")
+            unmark(d, "verified")
+        elif is_code(path):
+            mark(d, "changed")
+            unmark(d, "verified")
+            unmark(d, "reviewed")
+    elif cmd == "bash":
+        command = (data.get("tool_input") or {}).get("command") or ""
+        code = (data.get("tool_response") or {}).get("exit_code", 0)
+        if VERIFY_CMD.search(command) and code in (0, None):
+            mark(d, "verified")
+    elif cmd == "review-done":
+        if data.get("agent_type") == REVIEWER:
+            mark(d, "reviewed")
+    elif cmd == "stop":
+        if data.get("stop_hook_active") or not has(d, "changed"):
+            return
+        msg = data.get("last_assistant_message") or ""
+        ok = {
+            "tests": has(d, "tests") or git_test_changes(data.get("cwd") or "."),
+            "verified": has(d, "verified"),
+            "reviewed": has(d, "reviewed"),
+        }
+        missing = [k for k, v in ok.items() if not v and SKIP[k] not in msg]
+        if not missing:
+            return
+        text = {
+            "tests": "テストが追加・変更されていない（TDD: 先にテストを書く）",
+            "verified": "検証コマンド（テスト・型チェック・ビルド）を成功させていない → /verify",
+            "reviewed": "reviewer による敵対的レビューが未実施 → /review",
+        }
+        reason = (
+            "コードを変更したが完了条件を満たしていない: "
+            + "／".join(text[k] for k in missing)
+            + "。対応してから完了する。本当に不要なら『"
+            + "』『".join(SKIP[k] + " 理由" for k in missing)
+            + "』と最終回答に1行書けば完了できる。"
+        )
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        pass
+    sys.exit(0)
