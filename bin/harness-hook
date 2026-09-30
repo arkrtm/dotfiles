@@ -65,16 +65,20 @@ BYPASS = re.compile(
     re.I,
 )
 REVIEWER = "reviewer"
+HANDBACK = "SubagentHandback"  # サブエージェントが最終報告を返すツール（デスクトップアプリ）
 # reviewer の出力の判定行「<軸>: <判定>」（行頭。箇条書き記号と強調記号は許す）
 AXES = ("仕様適合", "テスト", "品質・保守性")
 VERDICT_LINE = re.compile(r"^[\s\-*]*(" + "|".join(AXES) + r")\**[:：](.*)$", re.M)
 PROTECTED = {"main", "master"}
+# テスト実行が作る生成物。名前は test_*.pyc でもテストではない（.gitignore が無いリポジトリで指紋に混ざらないようにする）
+ARTIFACT = re.compile(r"(^|/)__pycache__/|\.py[co]$")
 
 
 def reviewer_report(data):
     """reviewer の最終報告の本文。通常は SubagentStop の last_assistant_message。
     報告をツール呼び出し（ハンドバック）で返す環境ではそこに判定文が入らないので、その場合は
-    サブエージェント自身の記録（agent_transcript_path）から、今回の依頼より後で判定行を含む最後の出力を探す"""
+    サブエージェント自身の記録（agent_transcript_path）から、今回の依頼より後で判定行を含む最後の出力を探す。
+    対象は本文とハンドバックだけ（調査中に実行したコマンドの文字列などに含まれる判定行は報告ではない）"""
     text = data.get("last_assistant_message") or ""
     if VERDICT_LINE.search(text):
         return text
@@ -88,15 +92,17 @@ def reviewer_report(data):
                     continue
                 blocks = [b for b in blocks if isinstance(b, dict)] if isinstance(blocks, list) else []
                 if role == "user":
-                    # 新しい依頼（ツール結果ではない user）より前の判定は今回の報告ではない（再開した reviewer の古い承認を拾わない）
+                    # 新しい依頼（ツール結果ではない user）より前の判定は今回の報告ではない（再開した reviewer の古い承認を拾わない）。
+                    # 前提: 途中の注入（system-reminder 等）は user 形式では来ない。来た場合は承認を捨てる側（再レビューで回復）に倒れる
                     if not blocks or any(b.get("type") != "tool_result" for b in blocks):
                         text = ""
                     continue
                 for block in blocks if role == "assistant" else []:
                     if block.get("type") == "text":
                         out = block.get("text") or ""
-                    elif block.get("type") == "tool_use":  # 例: SubagentHandback の message
-                        out = "\n".join(v for v in (block.get("input") or {}).values() if isinstance(v, str))
+                    elif block.get("type") == "tool_use" and block.get("name") == HANDBACK:
+                        args = block.get("input")  # 例: SubagentHandback の message
+                        out = "\n".join(v for v in (args.values() if isinstance(args, dict) else []) if isinstance(v, str))
                     else:
                         continue
                     if VERDICT_LINE.search(out):
@@ -154,9 +160,10 @@ def get(d, name):
 
 
 def log(cmd, data, note=""):
-    """呼び出しごとに 1 行。動作確認とデバッグ用（~/.local/state/harness/log）"""
+    """呼び出しごとに 1 行（例外で終わったときは error= の行が加わる）。動作確認とデバッグ用（~/.local/state/harness/log）"""
     try:
-        ti = data.get("tool_input") or {}
+        ti = data.get("tool_input")
+        ti = ti if isinstance(ti, dict) else {}  # 想定外の形の入力でも、ログだけは残す
         what = (ti.get("file_path") or (ti.get("command") or "")[:60] or data.get("agent_type") or "").replace("\n", " ")
         with open(os.path.join(state_base(), "log"), "a") as f:
             f.write(f"{time.strftime('%H:%M:%S')} {(data.get('session_id') or '')[:8]} {cmd:<12} "
@@ -257,7 +264,8 @@ def head_bytes(top, rel, staged, n=2):
 
 
 def is_test(rel):
-    return bool(TEST_PATH.search(rel.replace(os.sep, "/")))
+    rel = rel.replace(os.sep, "/")
+    return bool(TEST_PATH.search(rel)) and not ARTIFACT.search(rel)
 
 
 def is_code(top, rel, staged=False):
@@ -368,6 +376,13 @@ def hook(cmd):
         data = json.load(sys.stdin)
     except Exception:
         return
+    try:
+        handle(cmd, data)
+    except Exception as e:  # hook としては止めない（exit 0）。指紋を作れない（証拠を記録しない）場合などの原因をログに残す
+        log(cmd, data, f"error={type(e).__name__}: {e}".replace("\n", " "))
+
+
+def handle(cmd, data):
     session = state_dir("session", data.get("session_id"))
     cwd = data.get("cwd") or "."
     if cmd not in ("review-done", "stop"):  # この 2 つは結果を添えて 1 行だけ書く

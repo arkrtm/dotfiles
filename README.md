@@ -73,7 +73,7 @@ OS 側で別途必要なもの（sudo / GUI）:
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
 - コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸。M/L は `/review branch` も）。証拠が無いコード変更は git の pre-commit が止める
 - 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）で、Claude が cwd にして作業したことのあるリポジトリ（その worktree を含む）。人の手動コミット、GUI クライアント、テストが作る一時リポジトリ、セッションの cwd 以外のリポジトリは対象外。検証とレビューの証拠は、セッションの cwd の作業ツリーに対して記録される
-- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイルと、拡張子の無い shebang 付きスクリプト。それ以外（Markdown、JSON、YAML など）の変更は関門を通る
+- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイルと、拡張子の無い shebang 付きスクリプト。それ以外（Markdown、JSON、YAML など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
 - 限界（ガードレールであって、セキュリティ境界ではない）:
   - 意図的な迂回は防ぎ切れない（`git commit-tree`、git 設定や環境変数の差し替え、証拠ファイルの書き換えなど。代表的な語は Bash hook が拒否し、CLAUDE.md で禁止している。閲覧目的のコマンドでも語を含めば拒否される）
   - pre-commit を通らない操作（`cherry-pick`、`rebase`、競合の無い `merge`）、競合解消の締めのコミット、テストコードだけのコミットは対象外

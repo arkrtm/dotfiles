@@ -23,6 +23,7 @@ $G switch -q -c feat/x
 SID="test-$$"
 
 fail=0
+EXPECTED_ERRORS=0   # hook が例外で終わることを意図したテストの数（最後に突き合わせる）
 judge() { # judge <説明> <期待> <肯定側の印> <肯定名> <否定名> <実際の出力>
   case "$6" in *"$3"*) got=$4 ;; *) got=$5 ;; esac
   if [ "$got" = "$2" ]; then echo "ok   $1"; else echo "FAIL $1 (expected $2, got $got): $6"; fail=1; fi
@@ -48,6 +49,8 @@ review() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_
 review_handback() { # 報告をツール呼び出し（SubagentHandback）で返す環境: 最後のテキストに判定文は無く、サブエージェントの記録にある
   printf '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"SubagentHandback","input":{"message":"%s"}}]}}\n{"message":{"role":"assistant","content":[{"type":"text","text":"報告を返しました"}]}}\n' "$1" > "$TMP/agent.jsonl"
   printf '{%s,"hook_event_name":"SubagentStop","agent_type":"reviewer","last_assistant_message":"報告を返しました","agent_transcript_path":"%s"}' "$(common)" "$TMP/agent.jsonl" | "$HOOK" review-done; }
+review_from() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"reviewer","last_assistant_message":"","agent_transcript_path":"%s"}' "$(common)" "$1" | "$HOOK" review-done; }  # 判定は記録からだけ読める
+log_count() { grep -c "$1" "$XDG_STATE_HOME/harness/log" || true; }
 stop() { printf '{%s,"hook_event_name":"Stop","stop_hook_active":%s,"last_assistant_message":"%s"}' "$(common)" "${2:-false}" "${1:-done}" | "$HOOK" stop; }
 guardb() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s"}}' "$(common)" "$1" | "$HOOK" guard-bash; }
 guarde() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$(common)" "$1" | "$HOOK" guard-branch; }
@@ -93,6 +96,7 @@ check "そのターンでドキュメントだけコミットしても（HEAD �
 if [ "$(id -u)" != 0 ]; then   # root は chmod 000 のファイルも読めるので、この検査は成り立たない
   fresh; write src/app.py c; write tests/test_app.py t; write src/locked.py x; chmod 000 "$REPO/src/locked.py"; bash_ "uv run pytest -q"; review reviewer
   check "読めないファイルがあって指紋を作れないときは、証拠を記録せず差し戻す" block "$(stop)"
+  EXPECTED_ERRORS=$((EXPECTED_ERRORS + 2))   # 上の bash と review-done は指紋を作れず例外で終わる（だから証拠が記録されない）
   chmod 644 "$REPO/src/locked.py"
 fi
 
@@ -130,18 +134,25 @@ review_handback '## 判定\n仕様適合: 承認\nテスト: 承認\n品質・�
 check "報告がハンドバック経由（最後のテキストに判定文が無い）でも、記録から判定を読んでレビュー済みにする" pass "$(stop)"
 write src/app.py code1c; bash_ "uv run pytest -q"
 # 再開された reviewer: 前回は承認、今回の依頼の後は判定を出さずに終わった（想定外の形の行も混ぜる）
-printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"text","text":"仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認"}]}}' \
-  '{"message":{"role":"user","content":"もう一度レビューして"}}' \
-  '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"x"}}]}}' \
-  '{"message":{"role":"user","content":[{"type":"tool_result","content":"x"}]}}' \
-  '[1,2]' '{"message":{"role":"assistant","content":["中断"]}}' > "$TMP/resumed.jsonl"
-review_from() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"reviewer","last_assistant_message":"","agent_transcript_path":"%s"}' "$(common)" "$1" | "$HOOK" review-done; }
-review_from "$TMP/resumed.jsonl"
+resumed() { # resumed <新しい依頼の行（空なら入れない）>
+  { printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"text","text":"仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認"}]}}'
+    [ -z "$1" ] || printf '%s\n' "$1"
+    printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"x"}}]}}' \
+      '{"message":{"role":"user","content":[{"type":"tool_result","content":"x"}]}}' \
+      '[1,2]' '{"message":{"role":"assistant","content":["中断"]}}' \
+      '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"SubagentHandback","input":"壊れた入力"}]}}'
+  } > "$TMP/resumed.jsonl"; review_from "$TMP/resumed.jsonl"; }
+before=$(log_count "review-done .*approved=False")
+resumed '{"message":{"role":"user","content":"もう一度レビューして"}}'
 check "記録に以前の承認があっても、今回の依頼の後に判定が無ければレビュー済みにしない" block "$(stop)"
-expect "そのときも review-done のログは残る（記録に想定外の行があっても落ちない）" grep -q "review-done .*approved=False report_chars=0" "$XDG_STATE_HOME/harness/log"
-sed -i.bak '2d' "$TMP/resumed.jsonl"; review_from "$TMP/resumed.jsonl"
+expect "そのときも review-done のログが 1 行残る（記録に想定外の行があっても落ちない）" [ "$(log_count "review-done .*approved=False")" = "$((before + 1))" ]
+resumed '{"message":{"role":"user","content":[{"type":"text","text":"もう一度レビューして"}]}}'
+check "新しい依頼がブロック形式（content がリスト）でも同じ" block "$(stop)"
+resumed ''
 check "（前提）同じ記録でも、新しい依頼の行が無ければ承認として読める" pass "$(stop)"
 write src/app.py code1d; bash_ "uv run pytest -q"
+printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"cat <<E\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認\nE"}}]}}' > "$TMP/quoted.jsonl"; review_from "$TMP/quoted.jsonl"
+check "reviewer が途中で実行したコマンドの中の判定行は、報告として読まない" block "$(stop)"
 review reviewer
 check "テスト・検証・レビュー承認がそろえば通す" pass "$(stop)"
 expect "review-done は承認の可否を 1 行でログに残す" grep -q "review-done .*approved=True" "$XDG_STATE_HOME/harness/log"
@@ -236,6 +247,10 @@ checkx "シンボリックリンクを含む変更も、証拠がそろってい
 fresh; $G config core.autocrlf true; printf 'a\r\nb\r\n' > "$REPO/src.py"; write tests/test_app.py t; bash_ "pytest"; review reviewer; $G add -A 2>/dev/null
 checkx "改行変換（core.autocrlf）があっても指紋が一致する" 0 precommit
 $G config --unset core.autocrlf
+# テスト実行が作る生成物（.gitignore の無い Python リポジトリの __pycache__）。検証の時点で既にある
+fresh; mkdir -p "$REPO/__pycache__" "$REPO/tests/__pycache__"; echo bin > "$REPO/__pycache__/test_app.cpython-311.pyc"; echo bin > "$REPO/tests/__pycache__/cache"; echo bin > "$REPO/test_old.pyo"
+ready c10; $G add src/app.py tests/test_app.py
+checkx "未追跡の __pycache__ / .pyc / .pyo があっても、レビューしたコードとテストをステージすればコミットできる" 0 precommit
 
 # ---- git 本体から（共通 hooks 経由）: どんな呼び方でも git が必ず通す ----
 fresh; write src/app.py g; $G add -A; before=$($G rev-list --count HEAD)
@@ -330,5 +345,11 @@ expect "ログは 1 呼び出し 1 行（コマンド中の改行を含めない
 expect "（前提）そのコマンドはログに残っている" grep -q "true uv run pytest" "$XDG_STATE_HOME/harness/log"
 printf 'not json' | "$HOOK" stop >/dev/null 2>&1; r=$?
 expect "壊れた入力でも exit 0" [ "$r" = 0 ]
+errors=$(log_count " error=")
+printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":"想定外の形"}' "$(common)" | "$HOOK" bash >/dev/null 2>&1; r=$?
+expect "hook が例外で終わっても exit 0" [ "$r" = 0 ]
+expect "そのとき原因をセッション付きでログに 1 行残す" [ "$(log_count "$(printf %.8s "$SID") bash .* error=AttributeError")" = 1 ]
+[ "$errors" = "$EXPECTED_ERRORS" ] || grep " error=" "$XDG_STATE_HOME/harness/log" || true
+expect "ここまでのテストで、意図せず例外で終わった hook は無い（あると pass / allow 側に見えてしまう）" [ "$errors" = "$EXPECTED_ERRORS" ]
 
 exit $fail
