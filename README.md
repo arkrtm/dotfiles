@@ -47,7 +47,7 @@ OS 側で別途必要なもの（sudo / GUI）:
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
 | `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory プラグイン、hooks（状態表示）、ログ 365 日 |
-| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示（スクショの場所） |
+| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み、食い違いの判断基準付き）、スクショの場所 |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
@@ -84,6 +84,7 @@ NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w
 - glibc 2.36: mise の gnu 版バイナリが動かないものがある → yazi は musl 版、tree-sitter CLI は動かないので nvim-treesitter は自動で無効
 - SFTP は仮想パス（`/home/` = 自分のホーム）。`scp -O`（従来方式）なら実パスで使える。ssh 経由の rsync は不可
 - sshd は 127.0.0.1 からの接続に応答しない
+- sshd が止まっていたことがある（2026-09-30、原因未確認）。`ssh nas` が `Connection refused` なら UGOS のコントロールパネル →「ターミナル」で SSH を有効にする
 - Tailscale: `/volume1/docker/nas-ts/docker-compose.yaml`（host ネットワーク + userspace）。ssh は `tailscale serve --tcp 22 tcp://192.168.0.49:22` で転送。LAN IP を変えたら ssh config と serve の両方を直す
 
 ### mise
