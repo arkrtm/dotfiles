@@ -14,7 +14,8 @@
   },
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] },
+      { "matcher": "compact|resume", "hooks": [{ "type": "command", "command": "sh -c 'PATH=\"$PATH:$HOME/.local/bin:$HOME/.cargo/bin\"; command -v tinymemory >/dev/null 2>&1 && exec tinymemory hook session-start; exit 0'", "timeout": 15 }] }
     ],
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] },

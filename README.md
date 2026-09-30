@@ -48,7 +48,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory プラグイン、hooks（状態表示 + ハーネス）、ログ 365 日 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory プラグイン、hooks（状態表示 + ハーネス + compact・resume 後の記憶の注入）、ログ 365 日 |
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、作業の進め方（S/M/L、TDD、検証、レビュー、ブランチ）、Linear の使い方、スクショの場所 |
 | `config/claude/skills/{verify,review,issue,wrap-up}` | `~/.claude/skills/…` | `/verify` 検証手順、`/review` reviewer による敵対的レビュー（fork。`/review fix` は範囲限定の再レビュー）、`/issue ARK-nn` Linear 起点の作業、`/wrap-up` M/L 完了時の締め（Linear 記録 → 知識の振り分け → tinymemory 保存） |
 | `config/claude/agents/reviewer.md` | `~/.claude/agents/reviewer.md` | 読み取り専用・effort high の敵対的レビュアー |
@@ -88,6 +88,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
   - 検証は「認識できる検証コマンドを単独で実行して成功した」ことしか見ない（何を検証したかは reviewer が見る）
 - 計画は plan mode、L のレビュー補助は同梱 `/code-review`。自作しない
 - 記憶: M/L の完了時に `/wrap-up` が「プロジェクトの CLAUDE.md / グローバルの CLAUDE.md / tinymemory fact / session」に振り分けて保存する（表は skill 内）。S は残さない。読み込みと整理（`/dream`）は tinymemory 側の仕組み
+  - 区切りでの保存（ARK-38）: 前回の session の保存（`tinymemory save --type session`）からコンテキストが溜まったら、`harness-hook` の Stop が 1 回差し戻して `/tinymemory:remember` させる。コミットしたターンなら 30%、それ以外でも 60%（同じ起点から 1 回だけ）。使用量は transcript の最後の assistant の usage、ウィンドウは既定 100 万（`HARNESS_CONTEXT_WINDOW` で変える）。clear は自動化しない（デスクトップアプリでは clear 後に自動で再開できないため、CLI とそろえた）。compact・resume の後も settings.json の SessionStart で記憶を注入する
 - 常時コストを増やさない: 新しい規則は CLAUDE.md に足す前に skill にできないか考える
 
 ## 端末ごとの注意

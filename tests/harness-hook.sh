@@ -45,7 +45,7 @@ expect() { # expect <説明> <test の条件…>
   if "$@"; then echo "ok   $desc"; else echo "FAIL $desc"; fail=1; fi
 }
 # hook 入力（実物と同じ形: Bash の tool_response に exit_code は無い）
-common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"/dev/null"' "$SID" "${CWD:-$REPO}"; }
+common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"%s"' "$SID" "${CWD:-$REPO}" "${TRANSCRIPT:-/dev/null}"; }
 turn() { printf '{%s,"hook_event_name":"UserPromptSubmit","prompt":"x"}' "$(common)" | "$HOOK" turn; }
 bash_() { # bash_ <command> [tool_input への追加 JSON] [interrupted]
   printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"%s"%s},"tool_response":{"stdout":"","stderr":"","interrupted":%s}}' "$(common)" "$1" "${2:-}" "${3:-false}" | "$HOOK" bash; }
@@ -342,6 +342,46 @@ check "main 上の変更は Stop でも差し戻す" block "$(stop)"
 $G reset -q --hard; $G clean -qfd; $G switch -q -c master
 checkd "master 上の編集も拒否する" deny "$(guarde "$REPO/src/app.py")"
 $G switch -q feat/x
+
+# ---- 区切りでの remember（前回の tinymemory への session の保存から、コンテキストが溜まったら保存させる）----
+# 使用量は transcript の最後の assistant の usage（input + cache_read + cache_creation）。ウィンドウは既定 100 万
+TRANSCRIPT="$TMP/transcript.jsonl"; SID_MAIN=$SID; SID="memo-$$"
+used() { printf '{"type":"assistant","isSidechain":false,"message":{"model":"m","usage":{"input_tokens":2,"cache_read_input_tokens":%s,"cache_creation_input_tokens":8,"output_tokens":99}}}\n' "$(($1 - 10))" >> "$TRANSCRIPT"; }
+commit_doc() { write README.md "memo$($G rev-list --count HEAD)"; $G add README.md; $G commit -q -m memo; }   # $(…) の中からも呼ぶので、内容はコミット数で変える
+milestone() { turn; used "$1"; commit_doc; stop; }   # このターンでコミットし、使用量が $1 のときの Stop
+save_session() { bash_ 'tinymemory save --type session --title t <<E\nx\nE'; }
+memo() { judge "$1" "$2" '/tinymemory:remember' remember pass "$3"; }
+fresh
+memo "区切り（コミット）でも、前回の保存から 30% 未満なら通す" pass "$(milestone 290000)"
+memo "区切りで 30% 以上溜まっていれば remember させる" remember "$(milestone 310000)"
+check "stop_hook_active なら二度目は通す" pass "$(stop done true)"
+turn; used 320000; save_session
+memo "tinymemory に session を保存したら、そこから数え直す" pass "$(milestone 600000)"   # 32 万 → 60 万 = 28%
+turn; used 610000; bash_ 'tinymemory save --type fact --title t <<E\nx\nE'
+memo "fact の保存は session の保存として数えない" remember "$(milestone 630000)"      # 32 万から 31%
+turn; used 700000
+memo "区切りでなければ 30% 以上でも通す" pass "$(stop)"
+turn; used 930000
+memo "区切りでなくても 60% 以上溜まっていれば remember させる" remember "$(stop)"
+turn; used 940000
+memo "60% の知らせは、同じ起点からは 1 回だけ" pass "$(stop)"
+turn; used 100000; stop >/dev/null   # compact で縮んだ
+memo "compact で縮んだら、縮んだ値から数え直す" remember "$(milestone 420000)"          # 10 万から 32%（32 万からなら 10%）
+turn; used 450000; save_session; turn; used 500000; commit_doc
+printf '%s\n' '{"type":"assistant","isSidechain":true,"message":{"usage":{"input_tokens":990000}}}' >> "$TRANSCRIPT"
+memo "サブエージェントの分は使用量に数えない" pass "$(stop)"                         # 数えると 45 万から 54%
+turn; used 800000; commit_doc
+printf '%s\n' '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}' >> "$TRANSCRIPT"
+memo "最後が usage 0 の合成メッセージ（中断・API エラー）でも、その前の使用量で判定する" remember "$(stop)"   # 45 万から 35%
+export HARNESS_CONTEXT_WINDOW=200000
+memo "ウィンドウの大きさは HARNESS_CONTEXT_WINDOW で変えられる" remember "$(milestone 530000)"   # 45 万から 8 万 = 40%
+unset HARNESS_CONTEXT_WINDOW
+turn; write src/app.py memo; used 990000; r=$(stop)
+check "証拠が足りない差し戻しがあれば、そちらを優先する" block "$r"
+memo "（そのときは remember の指示を出さない）" pass "$r"
+SID="memo-nogit-$$"; CWD="$TMP/nogit"; mkdir -p "$CWD"; turn; used 700000
+memo "git リポジトリの外でも 60% の知らせは出る" remember "$(stop)"
+CWD=""; TRANSCRIPT=""; SID=$SID_MAIN; $G reset -q --hard; $G clean -qfd
 
 # ---- その他 ----
 S="$XDG_STATE_HOME/harness/session"; mkdir -p "$S/old" "$S/old-nostart"; touch -t 202001010000 "$S/old/start" "$S/old-nostart"

@@ -9,18 +9,21 @@ exec "$HOME/.local/libexec/uv" run --script --quiet "$0" "$@"
 # requires-python = ">=3.9"
 # ///
 """Claude Code の自作ハーネス: コードを変えたら検証とレビュー（TDD を含む）の証拠がそろうまでコミットも完了もさせない。
+あわせて、コンテキストが溜まったら区切りで tinymemory に session を保存させる（compact や clear で流れが落ちないように）。
 
 これは「うっかり・手抜きを止めるガードレール」であり、セキュリティ境界ではない。Bash を使えるエージェントが
 意図的に迂回すること（commit-tree、git 設定の差し替え、証拠ファイルの書き換え等）は原理的に防ぎ切れない。
 代表的な迂回語は拒否するが、最終的には CLAUDE.md の規則（迂回しない）に依る。
 
 Claude Code の hooks から:
-  harness-hook turn          UserPromptSubmit  ターン開始。開始時点の作業ツリーの指紋を記録する
+  harness-hook turn          UserPromptSubmit  ターン開始。開始時点の作業ツリーの指紋と HEAD を記録する
   harness-hook guard-branch  PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
   harness-hook guard-bash    PreToolUse        Bash。関門を迂回する語（--no-verify 等）を含めば拒否
-  harness-hook bash          PostToolUse       Bash。検証コマンドが単独で成功したら、その時点の作業ツリーに「検証済み」
+  harness-hook bash          PostToolUse       Bash。検証コマンドが単独で成功したら、その時点の作業ツリーに「検証済み」。
+                                               tinymemory に session を保存したら、その時点のコンテキストの使用量を「前回の保存」に
   harness-hook review-done   SubagentStop      reviewer が 3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」
-  harness-hook stop          Stop              このターンにコードが変わり、証拠が足りなければ 1 回だけ差し戻す
+  harness-hook stop          Stop              このターンにコードが変わり、証拠が足りなければ 1 回だけ差し戻す。差し戻さないときは、
+                                               前回の保存からコンテキストが溜まっていれば 1 回だけ差し戻して remember させる
   （turn / bash / review-done / stop は、cwd のリポジトリを関門の対象に登録する）
 git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）:
   harness-hook pre-commit    Claude Code からのコミット（環境変数 CLAUDECODE あり）で、対象に登録済みのリポジトリのとき、
@@ -28,7 +31,7 @@ git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）
 
 判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・レビューは「どの内容に対して行ったか」を
 変更ファイルの blob ID の指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば無効になる）。
-証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態はセッション単位で持つ。
+証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態と前回の保存はセッション単位で持つ。
 依存は uv だけ（先頭の起動部が uv で Python を用意する。uv が無いと起動できず exit 127）。
 起動できれば、hook としては失敗しても常に exit 0（pre-commit だけが exit 1 を返す）。
 """
@@ -82,6 +85,11 @@ VERDICT_LINE = re.compile(r"^[\s\-*]*(" + "|".join(AXES) + r")\**[:：](.*)$", r
 PROTECTED = {"main", "master"}
 # テスト実行が作る生成物。名前は test_*.pyc でもテストではない（.gitignore が無いリポジトリで指紋に混ざらないようにする）
 ARTIFACT = re.compile(r"(^|/)__pycache__/|\.py[co]$")
+# tinymemory への session の保存（/tinymemory:remember も /wrap-up もこの形）。この時点の使用量を「前回の保存」にする
+SAVE_SESSION = re.compile(r"\btinymemory save\b[^\n]*--type[ =]session\b")
+# remember させる、前回の保存からの増加（ウィンドウに対する割合）: コミットした（HEAD が動いた）ターンで / 区切りでなくても（同じ起点から 1 回だけ）
+REMEMBER_AT_COMMIT, REMEMBER_ANYWAY = 0.3, 0.6
+WINDOW = 1_000_000  # 既定のコンテキストウィンドウ（トークン）。環境変数 HARNESS_CONTEXT_WINDOW で変える
 
 
 def reviewer_report(data):
@@ -234,6 +242,11 @@ def has_ref(top, ref):
     return git(top, "rev-parse", "-q", "--verify", ref) is not None
 
 
+def head(top):
+    """HEAD のコミット。git 外や最初のコミット前は空"""
+    return (git(top, "rev-parse", "HEAD") or "") if top else ""
+
+
 def protected_branch(top):
     """作業してはいけないブランチ（main/master）にいればその名前。最初のコミット前（git init 直後）は対象外"""
     out = git(top, "symbolic-ref", "--short", "-q", "HEAD")
@@ -355,6 +368,62 @@ def reason_text(missing, on_main):
     return "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから進める（省略しない）。"
 
 
+def gate_reason(session, top):
+    """このターンにコードが変わり、証拠が足りなければ差し戻しの理由。(理由 or None, ログの注記)"""
+    try:
+        # このターンでコード・テストの未コミット変更が変わっていなければ何もしない（以前からの変更で差し戻さない）
+        if get(session, "start") == tree_hash(top, working_changes(top)):
+            return None, "unchanged"
+        changed, missing, on_main = evidence(top)
+        reason = reason_text(missing, on_main) if changed and (missing or on_main) else None
+    except RuntimeError as e:  # 指紋を作れない（読めないファイル等）。証拠を確認できないので一度差し戻す
+        missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify と /review をやり直す。"
+    return reason, f"missing={missing} on_main={on_main}"
+
+
+# ---- コンテキストの使用量（区切りでの保存）-------------------------------------------
+
+def context_used(path):
+    """今のコンテキストの使用量（トークン）: transcript の最後の assistant の usage の input + cache_read + cache_creation。
+    サブエージェントの分（isSidechain）と、usage が 0 の合成メッセージは除く。読めなければ None"""
+    try:
+        with open(path or "", "rb") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            d = json.loads(line)
+            u = d["message"]["usage"] if d.get("type") == "assistant" and not d.get("isSidechain") else {}
+            n = sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if n:
+            return n
+    return None
+
+
+def remember_reason(data, session, top):
+    """前回の tinymemory への保存からコンテキストが溜まっていれば、remember させる理由。(理由 or None, ログの注記)"""
+    used = context_used(data.get("transcript_path"))
+    if not used:
+        return None, "used=?"
+    saved = min(int(get(session, "saved") or 0), used)  # compact で縮んだら、縮んだ値から数え直す
+    put(session, "saved", str(saved))
+    grown = (used - saved) / int(os.environ.get("HARNESS_CONTEXT_WINDOW") or WINDOW)
+    committed = head(top) != (get(session, "head") or "")
+    note = f"used={used} grown={grown:.0%} committed={committed}"
+    if committed and grown >= REMEMBER_AT_COMMIT:
+        why = "コミットした区切り"
+    elif grown >= REMEMBER_ANYWAY and get(session, "alerted") != str(saved):
+        put(session, "alerted", str(saved))
+        why = "区切りを待たずに 1 回だけ知らせる"
+    else:
+        return None, note
+    return (f"前回の tinymemory への保存から、コンテキストがウィンドウの {grown:.0%} 増えた（{why}）。"
+            "/tinymemory:remember で session（やったこと・現在の状態・次の手順）を保存してから終える。"), note
+
+
 def deny(reason):
     """PreToolUse でツールの実行を拒否する"""
     print(json.dumps({"hookSpecificOutput": {
@@ -405,6 +474,7 @@ def handle(cmd, data):
 
     if cmd == "turn":
         put(session, "start", tree_hash(top, working_changes(top)) if top else "")
+        put(session, "head", head(top))
         prune()
     elif cmd == "guard-branch":
         ti = data.get("tool_input") or {}
@@ -428,6 +498,9 @@ def handle(cmd, data):
         if (top and VERIFY_CMD.search(command) and not NOT_VERIFY.search(command)
                 and not ti.get("run_in_background") and not resp.get("backgroundTaskId") and not resp.get("interrupted")):
             put(repo_state(top), "verified", tree_hash(top, working_changes(top)))
+        used = context_used(data.get("transcript_path")) if SAVE_SESSION.search(command) else None
+        if used:
+            put(session, "saved", str(used))
     elif cmd == "review-done":
         verdict = reviewer_report(data)
         # fail-closed: 3 軸の判定行がすべて「承認」のときだけ（空・中断・質問で終わった場合は記録しない）
@@ -436,19 +509,14 @@ def handle(cmd, data):
         if ok:
             put(repo_state(top), "reviewed", tree_hash(top, working_changes(top)))
     elif cmd == "stop":
-        if data.get("stop_hook_active") or not top:
+        if data.get("stop_hook_active"):
             log(cmd, data, "skip")
             return
-        try:
-            # このターンでコード・テストの未コミット変更が変わっていなければ何もしない（以前からの変更で差し戻さない）
-            if get(session, "start") == tree_hash(top, working_changes(top)):
-                log(cmd, data, "unchanged")
-                return
-            changed, missing, on_main = evidence(top)
-            reason = reason_text(missing, on_main) if changed and (missing or on_main) else None
-        except RuntimeError as e:  # 指紋を作れない（読めないファイル等）。証拠を確認できないので一度差し戻す
-            missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify と /review をやり直す。"
-        log(cmd, data, f"missing={missing} on_main={on_main}")
+        reason, note = gate_reason(session, top) if top else (None, "no-repo")
+        if not reason:  # 関門の差し戻しが先（remember の判定で例外になっても、関門の差し戻しは消えない）
+            reason, more = remember_reason(data, session, top)
+            note += " " + more
+        log(cmd, data, note)
         if reason:
             print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 
