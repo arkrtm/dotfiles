@@ -81,6 +81,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
   - 意図的な迂回は防ぎ切れない（`git commit-tree`、git 設定や環境変数の差し替え、証拠ファイルの書き換えなど。代表的な語は Bash hook が拒否し、CLAUDE.md で禁止している。閲覧目的のコマンドでも語を含めば拒否される）
   - pre-commit を通らない操作（`cherry-pick`、`rebase`、競合の無い `merge`）、競合解消の締めのコミット、テストコードだけのコミットは対象外
   - リポジトリ側で `core.hooksPath` を設定している場合（husky 等）は関門が呼ばれない
+  - `/review fix` の起点となる前回の版は依頼に書かれた値を信じる（tree であることしか確かめない）。承認は作業ツリー全体に記録されるので、起点が偽りなら修正差分の外は見られていない
   - 共通 hooks にリンクを置いていない hook 名（`reference-transaction`、`post-index-change`、`pre-auto-gc`、`p4-*`。高頻度で呼ばれるため）は、リポジトリ自身に同名の hook があっても実行されない
   - グローバルな `core.hooksPath` との非互換: `pre-commit install`（pre-commit フレームワーク）は hooksPath が設定されていると拒否する。`git lfs install` は hooks を `~/.config/git/hooks`（= この dotfiles）に書こうとする。必要なリポジトリでは、そのリポジトリの設定で hooksPath を `.git/hooks` に向ける（その場合、そのリポジトリでは関門は効かない）
   - TDD（テストが十分か）は reviewer が内容を読んで判定する。hook はテストファイルの有無を見ない
