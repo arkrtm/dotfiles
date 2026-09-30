@@ -8,11 +8,16 @@ HOOK="$DOTFILES/bin/harness-hook"
 HOOKS="$DOTFILES/config/git/hooks"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+# hook は $HOME/.local/libexec/uv で動く。隔離した HOME では mise の shim が使えないので、先に uv の実体を控える
+UV="$HOME/.local/libexec/uv"; [ -x "$UV" ] || UV="$(mise which uv 2>/dev/null || true)"
+[ -x "$UV" ] || { echo "FAIL uv の実体が見つからない（dotfiles の install.sh を実行すること）"; exit 1; }
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}" # uv 管理の Python も元の HOME のものを使う（毎回ダウンロードしない）
 export XDG_STATE_HOME="$TMP/state"
 export HOME="$TMP/home"                       # 利用者のグローバル git 設定・インストール済み hook から隔離する
 unset XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM 2>/dev/null || true
 export CLAUDECODE=1                           # Claude Code から実行されたコミットとして扱わせる
 mkdir -p "$HOME/.local/bin"; ln -s "$HOOK" "$HOME/.local/bin/harness-hook"   # run-hook が呼ぶ実体をテスト対象にする
+mkdir -p "$HOME/.local/libexec"; ln -s "$UV" "$HOME/.local/libexec/uv"
 REPO="$TMP/repo"; mkdir -p "$REPO/tests" "$REPO/src"
 G="git -C $REPO -c user.name=t -c user.email=t@t"
 GH="$G -c core.hooksPath=$HOOKS"              # 共通 hooks 経由（本番は ~/.config/git/config の設定で有効になる）

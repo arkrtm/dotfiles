@@ -1,6 +1,9 @@
 # bash 用（zsh が入っていない linux のログインシェル向け）
 
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+# Node は fnm の既定版（shell/zshenv と同じ）
+export FNM_DIR="$HOME/.local/share/fnm"
+export PATH="$FNM_DIR/aliases/default/bin:$PATH"
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export EDITOR=nvim VISUAL=nvim
 
@@ -15,4 +18,5 @@ case $- in
 esac
 
 command -v mise >/dev/null 2>&1 && eval "$(mise activate bash)"
+command -v fnm >/dev/null 2>&1 && eval "$(fnm env --shell bash)" # fnm use を使えるようにする
 command -v starship >/dev/null 2>&1 && eval "$(starship init bash)"

@@ -16,6 +16,9 @@ uv = "latest"
 # 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
 "github:arkrtm/tinymemory" = "0.1.1"
 
+# tmux: 公式の静的ビルド（sudo・Homebrew 不要、mac / linux 共通）
+"aqua:tmux/tmux-builds" = "latest"
+
 # git / docker の TUI
 lazygit = "latest"
 lazydocker = "latest"

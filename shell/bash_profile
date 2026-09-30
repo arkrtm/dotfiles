@@ -1,10 +1,15 @@
 # chsh できない環境（UGOS 等）向け: 対話ログインなら zsh に切り替える
 # zsh が無ければ bash のまま。bash を使いたい時は NO_ZSH=1 bash -l
+# install.sh が入れる zsh（~/.local/bin）は bashrc で PATH に入る前なので、ここで探す場所に足す
 case $- in
   *i*)
-    if [ -z "${NO_ZSH:-}" ] && command -v zsh >/dev/null 2>&1; then
-      export SHELL="$(command -v zsh)"
-      exec zsh -l
+    if [ -z "${NO_ZSH:-}" ]; then
+      _zsh="$(PATH="$HOME/.local/bin:$PATH" command -v zsh)"
+      if [ -n "$_zsh" ]; then
+        export SHELL="$_zsh"
+        exec "$_zsh" -l
+      fi
+      unset _zsh
     fi
     ;;
 esac

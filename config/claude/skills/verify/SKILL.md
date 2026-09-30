@@ -13,7 +13,7 @@ description: 変更後の検証手順。プロジェクトのテスト・型チ�
    - `Makefile` / `justfile` → `make test` / `just test`（`check`、`lint` も可）
    - Gradle / Maven / Swift / PHP → `./gradlew test`、`mvn test`、`swift test`、`phpunit`
    - シェルスクリプト → `shellcheck`、または `tests/` 配下の検査スクリプト（`sh -n` のような構文チェックだけでは証拠にならない）
-   - dotfiles → `sh tests/harness-hook.sh`、`sh tests/install.sh`
+   - dotfiles → `sh tests/harness-hook.sh`、`sh tests/install.sh`。install.sh・shell 設定・mise の設定を変えたら `sh tests/install-nosudo.sh` も（docker が要る。mac からは `DOCKER='ssh nas docker' sh tests/install-nosudo.sh`）
 2. 変更に関係するテストを先に、次に全体を実行する。失敗したら直してから再実行する（テストを弱めて通さない）
    - **検証コマンドは単独で実行する**: パイプ（`| tail`）、`;`、`||`、`>/dev/null`、バックグラウンド実行を付けない（`cd dir && cmd` は可）。付けると終了コードが証拠にならず、hook が「検証済み」にしない。出力を減らしたいときは `-q` などのオプションを使う
    - `--collect-only` や `--version`、構文チェックだけ（`sh -n`）は検証にならない

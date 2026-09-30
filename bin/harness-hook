@@ -1,4 +1,13 @@
-#!/usr/bin/env python3
+#!/bin/sh
+"""true"
+# sh としての起動部（Python から見ると、ここは何もしない文字列）: uv で自分自身を Python として実行し直す。
+# hook を起動する側の PATH の並びや、mise の shim（cwd の mise 設定で壊れうる）に左右されないよう、
+# install.sh が置く ~/.local/libexec/uv を直接使う（無ければ exit 127。PATH の uv には落とさない）
+exec "$HOME/.local/libexec/uv" run --script --quiet "$0" "$@"
+"""
+# /// script
+# requires-python = ">=3.9"
+# ///
 """Claude Code の自作ハーネス: コードを変えたら検証とレビュー（TDD を含む）の証拠がそろうまでコミットも完了もさせない。
 
 これは「うっかり・手抜きを止めるガードレール」であり、セキュリティ境界ではない。Bash を使えるエージェントが
@@ -20,7 +29,8 @@ git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）
 判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・レビューは「どの内容に対して行ったか」を
 変更ファイルの blob ID の指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば無効になる）。
 証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態はセッション単位で持つ。
-依存なし。hook としては失敗しても常に exit 0（pre-commit だけが exit 1 を返す）。
+依存は uv だけ（先頭の起動部が uv で Python を用意する。uv が無いと起動できず exit 127）。
+起動できれば、hook としては失敗しても常に exit 0（pre-commit だけが exit 1 を返す）。
 """
 import hashlib
 import json

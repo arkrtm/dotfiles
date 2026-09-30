@@ -4,9 +4,14 @@
 #   sh tests/install.sh
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
+# harness-hook は $HOME/.local/libexec/uv で動く。空の HOME では mise の shim が使えないので、先に uv の実体を控える
+UV="$HOME/.local/libexec/uv"; [ -x "$UV" ] || UV="$(mise which uv 2>/dev/null || true)"
+[ -x "$UV" ] || { echo "FAIL uv の実体が見つからない（dotfiles の install.sh を実行すること）"; exit 1; }
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}" # uv 管理の Python も元の HOME のものを使う（毎回ダウンロードしない）
 export HOME="$(mktemp -d)"
 unset XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM CLAUDECODE 2>/dev/null || true
 trap 'rm -rf "$HOME"' EXIT
+mkdir -p "$HOME/.local/libexec"; ln -s "$UV" "$HOME/.local/libexec/uv"
 fail=0
 ok() { echo "ok   $1"; }
 ng() { echo "FAIL $1"; fail=1; }

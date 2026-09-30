@@ -26,6 +26,7 @@ zle -N zle-line-init
 
 # ===== ツール =====
 command -v mise >/dev/null && eval "$(mise activate zsh)"
+command -v fnm >/dev/null && eval "$(fnm env --shell zsh)" # fnm use を使えるようにする
 command -v starship >/dev/null && eval "$(starship init zsh)"
 # fzf: Ctrl-R 履歴検索 / Ctrl-T ファイル / Alt-C ディレクトリ移動（bindkey -v の後に読む）
 command -v fzf >/dev/null && source <(fzf --zsh)

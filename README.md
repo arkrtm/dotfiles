@@ -1,14 +1,14 @@
 # dotfiles
 
 mac / linux（Ubuntu・WSL・NAS = Debian 12）共通の開発環境。Windows ネイティブは対象外。
-CLI ツールは sudo 不要で `~/.local` 以下に入る。設定は `$HOME` へのシンボリックリンクなので、
+環境構築は **sudo 不要・ユーザー領域のみ**（`~/.local` 以下。システム全体には何も入れない）。Python は uv、Node は fnm で管理する。設定は `$HOME` へのシンボリックリンクなので、
 **どの端末で編集してもこのリポジトリが変わる** → commit / push → 他端末で `git pull`（必要なら `./install.sh`）。
 
 経緯・決定理由は Linear の Dev-Environment プロジェクト（ARK-28、ドキュメント「ツール選定」）。
 
 ## セットアップ
 
-前提: `git` `curl` があること。
+前提: `git` `curl` があること（sudo は不要）。
 
 ```sh
 git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
@@ -19,28 +19,30 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 
 1. 下表のファイルをシンボリックリンクで配置
 2. zsh プラグイン 2 つを clone（プラグインマネージャなし）
-3. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ、`config/mise/config.toml` のツールを全部入れる
-4. Neovim プラグインを `lazy-lock.json` の版に揃える
-5. mac のみ: `mac/setup.sh`（Brewfile、スクリーンショット設定、launchd 登録）
+3. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
+4. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ、`config/mise/config.toml` のツール（tmux を含む）を全部入れる
+5. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
+6. `harness-hook` 用に uv の実体を `~/.local/libexec/uv`（PATH には入れない）にリンクし、Python を用意する（システムに 3.9 以上が無い時だけ）
+7. Neovim プラグインを `lazy-lock.json` の版に揃える
+8. mac のみ: `mac/setup.sh`（Brewfile、スクリーンショット設定、launchd 登録）
 
-OS 側で別途必要なもの（sudo / GUI）:
+install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
 | | mac | Ubuntu / WSL | NAS (UGOS) |
 |---|---|---|---|
-| zsh | 標準 | `sudo apt install zsh` → `chsh -s /usr/bin/zsh` | `sudo apt-get install time zsh-common zsh`（下記「NAS」参照） |
 | Ghostty | Brewfile | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows Terminal | 不要 |
-| tmux | Brewfile | `sudo apt install tmux` | 既存 3.3a |
 | フォント | Hack Nerd Font（手動導入済み） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` | 不要 |
 | Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` | Docker（下記） |
 | GitHub | `gh auth login` | `gh auth login` | `gh auth login` |
+| ログインシェル | 標準で zsh | 任意: `chsh -s "$(command -v zsh)"`（`/etc/shells` に無い zsh は不可）。しなくても `bash_profile` が `exec zsh` | chsh 不可 → `exec zsh` |
 
 ## 構成
 
 | リポジトリ | 配置先 | 内容 |
 |---|---|---|
-| `shell/zshenv` `shell/zshrc` | `~/.zshenv` `~/.zshrc` | vi キー、fzf（Ctrl-R/T, Alt-C）、starship、mise、エイリアス `ll la lt lg lzd cw` |
+| `shell/zshenv` `shell/zshrc` | `~/.zshenv` `~/.zshrc` | vi キー、fzf（Ctrl-R/T, Alt-C）、starship、mise、fnm（既定の Node を PATH に、対話シェルでは `fnm env`）、エイリアス `ll la lt lg lzd cw` |
 | `shell/bashrc` `shell/bash_profile` | `~/.bashrc` `~/.bash_profile` | zsh が無い端末用。対話ログインで zsh があれば `exec zsh`（`NO_ZSH=1` で抑止） |
-| `config/mise/config.toml` | `~/.config/mise/config.toml` | rg fd bat eza fzf starship gh uv fnm lazygit lazydocker neovim tree-sitter yazi tinymemory |
+| `config/mise/config.toml` | `~/.config/mise/config.toml` | rg fd bat eza fzf starship gh uv fnm tmux lazygit lazydocker neovim tree-sitter yazi tinymemory |
 | `config/starship.toml` | `~/.config/starship.toml` | 2 行・最小、One Dark |
 | `config/tmux/tmux.conf` | `~/.config/tmux/tmux.conf` | prefix `C-g`、hjkl、`-` `\|` 分割、passthrough（画像）、extended-keys、OSC52、エージェント状態表示 |
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |
@@ -56,7 +58,7 @@ OS 側で別途必要なもの（sudo / GUI）:
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale |
 | `bin/*` | `~/.local/bin/*` | 下記 |
-| `Brewfile` `mac/` | — | mac 専用（tmux, ghostty, スクショ, launchd） |
+| `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ, launchd） |
 
 `bin/`:
 
@@ -64,7 +66,7 @@ OS 側で別途必要なもの（sudo / GUI）:
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png` に改名して送信先の `~/screenshots/` へ `scp -O`（7 日で削除）
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
-- `harness-hook` — Claude Code の自作ハーネス（ARK-30）。git の pre-commit（`config/git/hooks/run-hook`、`core.hooksPath` で全リポジトリ共通）として、ステージした内容に証拠（検証成功と、reviewer の 3 軸 = 仕様適合・テスト・品質・保守性の承認）が無いコード変更のコミットを止める。Claude Code の hooks としては、main/master 上の編集と代表的な迂回（`--no-verify` 等）を拒否し、Stop でも 1 回差し戻す。証拠は内容（blob ID）の指紋で作業ツリー単位に `~/.local/state/harness/repo/` へ、ログは `~/.local/state/harness/log`。対象は Claude Code から行うコミットだけ（人の手動コミットは止めない）。テスト: `sh tests/harness-hook.sh`、`sh tests/install.sh`
+- `harness-hook` — Claude Code の自作ハーネス（ARK-30）。git の pre-commit（`config/git/hooks/run-hook`、`core.hooksPath` で全リポジトリ共通）として、ステージした内容に証拠（検証成功と、reviewer の 3 軸 = 仕様適合・テスト・品質・保守性の承認）が無いコード変更のコミットを止める。Claude Code の hooks としては、main/master 上の編集と代表的な迂回（`--no-verify` 等）を拒否し、Stop でも 1 回差し戻す。証拠は内容（blob ID）の指紋で作業ツリー単位に `~/.local/state/harness/repo/` へ、ログは `~/.local/state/harness/log`。対象は Claude Code から行うコミットだけ（人の手動コミットは止めない）。uv で動く: 先頭の sh の起動部が、install.sh の置く `~/.local/libexec/uv`（uv の実体へのリンク）で自分を `uv run --script` し直す。起動側の PATH の並びや、mise の shim（cwd の mise 設定で壊れうる）には左右されない。uv が無いと Claude Code の hooks は動かず編集・迂回の拒否が効かない（Claude からのコミットは pre-commit が失敗して止まる）。テスト: `sh tests/harness-hook.sh`、`sh tests/install.sh`、`sh tests/install-nosudo.sh`（sudo も python3 も無い debian:12 コンテナで install.sh を通す。docker が要る。mac からは `DOCKER='ssh nas docker'`）
 
 ## Claude Code ハーネス（superpowers の代替）
 
@@ -125,9 +127,10 @@ NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w
 ### mise
 
 - 公開 24 時間未満のリリースは `latest` で選ばれない（サプライチェーン対策）。自作の tinymemory は版を明示しているので、**リリースしたら `config/mise/config.toml` の版を上げる**
+- tmux は Homebrew から mise に移した（ARK-37）。以前から使っている mac では `brew uninstall tmux` で Homebrew 版を消す（`brew bundle` は消さない。残ると PATH 次第で版がずれ、クライアントとサーバーの版が合わなくなる）
 - `config.toml` の後半はテーブル形式。**その後ろに `key = value` を書くとテーブルに入ってしまう**ので、通常のツールは前半に追加する
 - tinymemory のプラグイン hook は PATH・`~/.local/bin`・`~/.cargo/bin` しか探さない（hook 文字列は変更不可）→ `install.sh` が `~/.local/bin/tinymemory` に shim を置く
 
 ### 使わないもの（決定済み）
 
-conda / conda-forge / pixi（Python は uv）、Windows ネイティブ、superpowers（自作ハーネスを別途作成: ARK-30）
+conda / conda-forge / pixi（Python は uv）、システムや Homebrew の Python・Node を開発に使うこと（uv / fnm で管理）、Windows ネイティブ、superpowers（自作ハーネスを別途作成: ARK-30）
