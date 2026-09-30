@@ -76,7 +76,8 @@ ssh-ed25519 AAAA... arkrithm@<端末名>
 EOF
 ```
 
-登録済みの端末が手元に無い時は、UGOS の SSH 設定でパスワード認証を戻す手段が無いため、上記ファイルを消す（要 sudo、UGOS の Web 端末等）。
+登録済みの端末がすべて使えなくなった時: UGOS の SSH 設定ではパスワード認証を戻せない（オフ・オンしてもこのファイルは残る）。
+UGOS の Docker アプリで `/etc/ssh` をマウントしたコンテナを作り、`10-no-password.conf` を削除 → UGOS で SSH をオフ・オンすると、パスワードで入れるようになる。
 NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w`（ssh config で `HostKeyAlias nas`）。
 
 ### スクリーンショット → NAS の Claude Code
