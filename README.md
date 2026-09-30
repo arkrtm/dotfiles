@@ -63,15 +63,14 @@ OS 側で別途必要なもの（sudo / GUI）:
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png` に改名して送信先の `~/screenshots/` へ `scp -O`（7 日で削除）
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
-- `harness-hook` — Claude Code の自作ハーネス（ARK-30）。PreToolUse で main/master 上の編集を拒否。Stop で「コードを変えたのにテスト変更・変更後の検証成功・変更後の reviewer レビューが無い」なら 1 回だけ差し戻す。判定は git の状態に基づく（Edit でも `sed -i` でも同じ）。状態とログは `~/.local/state/harness/`。テスト: `sh tests/harness-hook.sh`
+- `harness-hook` — Claude Code の自作ハーネス（ARK-30）。PreToolUse で main/master 上の編集を拒否し、証拠（テスト変更・変更後の検証成功・変更後の reviewer レビュー）が無い `git commit` を拒否。Stop でも足りなければ 1 回差し戻す。判定は git の状態に基づく（Edit でも `sed -i` でも同じ）。状態とログは `~/.local/state/harness/`。テスト: `sh tests/harness-hook.sh`
 
 ## Claude Code ハーネス（superpowers の代替）
 
 常時読み込むのは CLAUDE.md だけ（約 2,500 トークン）。手順は skill、強制は hook。
 
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
-- コードを書くときの規則: 作業ブランチ、TDD、`/verify`、`/review`。Stop hook が証拠を確認し、足りなければ 1 回差し戻す
-- 逃げ道: 最終回答に「TDD不要: 理由」「検証不要: 理由」「レビュー不要: 理由」
+- コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様 + 保守性の 2 軸。M/L は `/review branch` も）。証拠が無い `git commit` は hook が拒否する。逃げ道はない
 - 計画は plan mode、L のレビュー補助は同梱 `/code-review`。自作しない
 - 常時コストを増やさない: 新しい規則は CLAUDE.md に足す前に skill にできないか考える
 

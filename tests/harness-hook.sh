@@ -64,7 +64,23 @@ turn; write src/app.py code5; bash_ "ls tests"
 check "ls tests は検証コマンドとみなさない" block "$(stop)"
 
 turn; bash_ "sed -i s/x/y/ src/app.py"
-check "『検証不要:』『レビュー不要:』『TDD不要:』を宣言すれば通す" pass "$(stop 'TDD不要: 設定値の変更のみ。検証不要: 同上。レビュー不要: 同上')"
+check "『検証不要:』などの宣言では通さない（逃げ道なし）" block "$(stop 'TDD不要: 設定値の変更のみ。検証不要: 同上。レビュー不要: 同上')"
+
+# コミットの関門（PreToolUse Bash）: 証拠がそろうまで git commit を拒否する
+gcommit() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s"}}' "$(common)" "$1" | "$HOOK" guard-commit; }
+checkc() { case "$3" in *'"permissionDecision": "deny"'*) got=deny ;; *) got=allow ;; esac
+  if [ "$got" = "$2" ]; then echo "ok   $1"; else echo "FAIL $1 (expected $2, got $got): $3"; fail=1; fi; }
+checkc "証拠なしの git commit は拒否する" deny "$(gcommit "git add -A && git commit -m x")"
+checkc "git commit 以外のコマンドは通す" allow "$(gcommit "git status && git diff")"
+checkc "git log --grep commit のような閲覧は通す" allow "$(gcommit "git log --grep commit")"
+checkc "git -C dir commit も拒否する" deny "$(gcommit "git -C . commit -m x")"
+write tests/test_app.py t2; bash_ "uv run pytest -q"; review reviewer
+checkc "テスト・検証・レビューがそろえば git commit を通す" allow "$(gcommit "git commit -am x")"
+write src/app.py code6
+checkc "コミット前に再編集すれば再び拒否する" deny "$(gcommit "git commit -am x")"
+clean
+write README.md doc2
+checkc "ドキュメントだけの変更のコミットは通す" allow "$(gcommit "git commit -am docs")"
 clean
 
 # テストを先にコミットし、次のターンで実装するケース: ブランチ上の差分からテスト変更を認める

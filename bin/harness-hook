@@ -3,6 +3,7 @@
 
   harness-hook turn         UserPromptSubmit  ターン開始。このターンの活動記録を消す
   harness-hook guard-branch PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
+  harness-hook guard-commit PreToolUse        Bash。git commit なのに証拠が足りなければ拒否（未検証コードをリポジトリに入れない）
   harness-hook edit         PostToolUse       Edit/Write。活動あり
   harness-hook bash         PostToolUse       Bash。活動あり。検証コマンドが成功したら、その時点の差分に対して「検証済み」
   harness-hook review-done  SubagentStop      reviewer が終了したら、その時点の差分に対して「レビュー済み」
@@ -38,7 +39,6 @@ VERIFY_CMD = re.compile(
 )
 REVIEWER = "reviewer"
 PROTECTED = {"main", "master"}
-SKIP = {"tests": "TDD不要:", "verified": "検証不要:", "reviewed": "レビュー不要:"}
 
 
 # ---- 状態 -------------------------------------------------------------------
@@ -161,6 +161,40 @@ def diff_hash(cwd):
     return h.hexdigest()
 
 
+# ---- 証拠の判定 --------------------------------------------------------------
+
+def evidence(d, cwd):
+    """(コード変更があるか, 足りない証拠の一覧, main/master 上か)"""
+    changed = working_changes(cwd)
+    if not any(is_code(p) and not is_test(p) for p in changed):
+        return False, [], False
+    now = diff_hash(cwd)
+    ok = {
+        "tests": any(is_test(p) for p in changed + branch_changes(cwd)),
+        "verified": get(d, "verified") == now,
+        "reviewed": get(d, "reviewed") == now,
+    }
+    return True, [k for k, v in ok.items() if not v], current_branch(cwd) in PROTECTED
+
+
+TEXT = {
+    "tests": "テストが追加・変更されていない（TDD: 先にテストを書く）",
+    "verified": "変更後に検証コマンド（テスト・型チェック・ビルド）を成功させていない → /verify",
+    "reviewed": "変更後に reviewer の敵対的レビューを通していない → /review",
+}
+
+
+def reason_text(missing, on_main):
+    parts = [TEXT[k] for k in missing]
+    if on_main:
+        parts.insert(0, "main/master 上で変更している → git switch -c <種別>/<名前> で作業ブランチに移す")
+    return "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから進める（省略はできない）。"
+
+
+# git [-C dir] [-c k=v] commit …（サブコマンドの前に来るのはオプションだけ。git log --grep commit は対象外）
+COMMIT_CMD = re.compile(r"(^|[;&|]\s*)git\s+(-\S+\s+(\S+\s+)?)*commit\b")
+
+
 # ---- 本体 --------------------------------------------------------------------
 
 def main():
@@ -190,6 +224,19 @@ def main():
                     ),
                 }
             }, ensure_ascii=False))
+    elif cmd == "guard-commit":
+        command = (data.get("tool_input") or {}).get("command") or ""
+        if COMMIT_CMD.search(command):
+            changed, missing, on_main = evidence(d, cwd)
+            log(cmd, data, f"missing={missing} on_main={on_main}")
+            if changed and (missing or on_main):
+                print(json.dumps({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": "コミットできない。" + reason_text(missing, on_main),
+                    }
+                }, ensure_ascii=False))
     elif cmd == "edit":
         put(d, "active")
     elif cmd == "bash":
@@ -204,34 +251,10 @@ def main():
     elif cmd == "stop":
         if data.get("stop_hook_active") or get(d, "active") is None:
             return
-        changed = working_changes(cwd)
-        if not any(is_code(p) and not is_test(p) for p in changed):
-            return
-        msg = data.get("last_assistant_message") or ""
-        now = diff_hash(cwd)
-        ok = {
-            "tests": any(is_test(p) for p in changed + branch_changes(cwd)),
-            "verified": get(d, "verified") == now,
-            "reviewed": get(d, "reviewed") == now,
-        }
-        missing = [k for k, v in ok.items() if not v and SKIP[k] not in msg]
-        on_main = current_branch(cwd) in PROTECTED
+        changed, missing, on_main = evidence(d, cwd)
         log(cmd, data, f"missing={missing} on_main={on_main}")
-        if not missing and not on_main:
-            return
-        text = {
-            "tests": "テストが追加・変更されていない（TDD: 先にテストを書く）",
-            "verified": "変更後に検証コマンド（テスト・型チェック・ビルド）を成功させていない → /verify",
-            "reviewed": "変更後に reviewer の敵対的レビューを通していない → /review",
-        }
-        parts = [text[k] for k in missing]
-        if on_main:
-            parts.insert(0, "main/master 上で変更している → git switch -c <種別>/<名前> で作業ブランチに移す")
-        reason = "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから完了する。"
-        if missing:
-            reason += "本当に不要なら『" + "』『".join(SKIP[k] + " 理由" for k in missing) + "』と最終回答に1行書けば完了できる。"
-        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
-
+        if changed and (missing or on_main):
+            print(json.dumps({"decision": "block", "reason": reason_text(missing, on_main)}, ensure_ascii=False))
 
 if __name__ == "__main__":
     try:
