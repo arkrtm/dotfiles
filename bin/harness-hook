@@ -19,22 +19,30 @@ Claude Code の hooks から:
   harness-hook turn          UserPromptSubmit  ターン開始。開始時点の作業ツリーの指紋と HEAD を記録する
   harness-hook guard-branch  PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
   harness-hook guard-bash    PreToolUse        Bash。関門を迂回する語（--no-verify 等）を含めば拒否
-  harness-hook bash          PostToolUse       Bash。検証コマンドが単独で成功したら、その時点の作業ツリーに「検証済み」。
+  harness-hook bash          PostToolUse       Bash。検証コマンドが単独で成功したら、その時点の作業ツリーに「検証済み」
+                                               （.harness-verify があれば、そこに書いたコマンドがすべて同じ内容で成功したときだけ。
+                                               サブエージェント内の実行は記録しない）。
                                                tinymemory に session を保存したら、その時点のコンテキストの使用量を「前回の保存」に
-  harness-hook review-done   SubagentStop      reviewer が 3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」
-  harness-hook stop          Stop              このターンにコードが変わり、証拠が足りなければ 1 回だけ差し戻す。差し戻さないときは、
-                                               前回の保存からコンテキストが溜まっていれば 1 回だけ差し戻して remember させる
-  （turn / bash / review-done / stop は、cwd のリポジトリを関門の対象に登録する）
+  harness-hook bash-failed   PostToolUseFailure Bash。検証コマンドが失敗したら（パイプ等の形でも）、その作業ツリーの「検証済み」を消す
+  harness-hook review-done   SubagentStop      reviewer の報告を <git-dir>/harness-last-review に保存する（承認・不承認に関わらず）。
+                                               3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」
+  harness-hook stop          Stop              このターンにコード（既存のテストの変更・削除を含む）が変わり、証拠が足りなければ 1 回だけ差し戻す。
+                                               差し戻さないときは、前回の保存からコンテキストが溜まっていれば 1 回だけ差し戻して remember させる
+  （turn / bash / bash-failed / review-done / stop は、cwd のリポジトリを関門の対象に登録する）
 git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）:
   harness-hook pre-commit    Claude Code からのコミット（環境変数 CLAUDECODE あり）で、対象に登録済みのリポジトリのとき、
                              ステージ済みの内容に証拠が足りなければ exit 1。人の手動コミットや、テストが作る一時リポジトリは対象外
 
+コードかどうかは拡張子・ファイル名・shebang と、リポジトリのトップの .harness-code（fnmatch のパターン）で決める
+（.harness-code と .harness-verify 自体もコード）。
 判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・レビューは「どの内容に対して行ったか」を
 変更ファイルの blob ID の指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば無効になる）。
 証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態と前回の保存はセッション単位で持つ。
 依存は uv だけ（先頭の起動部が uv で Python を用意する。uv が無いと起動できず exit 127）。
 起動できれば、hook としては失敗しても常に exit 0（pre-commit だけが exit 1 を返す）。
 """
+import fnmatch
+import functools
 import hashlib
 import json
 import os
@@ -43,12 +51,18 @@ import subprocess
 import sys
 import time
 
-# 「コード」とみなす拡張子（これ以外で拡張子が無いものは shebang で判定）。ここに無い種類のファイルは関門の対象外
+# 「コード」とみなす拡張子（これ以外で拡張子が無いものは shebang で判定）。ここにも CODE_NAME・.harness-code にも無いファイルは関門の対象外
 CODE_EXT = {
     ".py", ".ipynb", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte", ".rs", ".go", ".rb", ".java",
     ".kt", ".scala", ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php", ".lua", ".ex", ".exs", ".dart",
-    ".sh", ".zsh", ".sql",
+    ".sh", ".zsh", ".sql", ".mts", ".cts", ".bash", ".json", ".toml", ".yaml", ".yml", ".ini", ".cfg",
 }
+# 拡張子に関わらずコードとみなすファイル名（大文字小文字は区別しない）
+CODE_NAME = {"dockerfile", "makefile", "justfile"}
+# リポジトリのトップに置く関門の設定（1 行 1 項目。空行と # で始まる行は無視）。関門を黙って弱められないよう、これ自体もコード
+#   .harness-code    コードとみなすパスの fnmatch パターン（* は / にも当たる。例: config/claude/*）
+#   .harness-verify  検証コマンド。あれば、これがすべて同じ内容で成功したときだけ「検証済み」（宣言に無いコマンドは証拠にならない）
+CODE_FILE, VERIFY_FILE = ".harness-code", ".harness-verify"
 # テストとみなすパス（テストだけの変更は関門の対象外にする。指紋には含める）
 TEST_PATH = re.compile(
     r"(^|/)(?i:tests?|spec|__tests__)/|(^|/)[^/]*\.(?i:tests?)/"  # tests/、Tests/、Foo.Tests/
@@ -72,6 +86,8 @@ VERIFY_CMD = re.compile(
 # 検証の証拠にならない形: パイプ・; ・|| ・単独の & ・複数行（検証コマンド自体の終了コードが分からなくなる）、情報表示、出力の破棄。
 # 失敗したコマンドは PostToolUseFailure になるので、この形でなければ「PostToolUse に来た = 検証コマンドが成功した」と言える
 NOT_VERIFY = re.compile(r"[|;\n]|(?<![>&])&(?!&)|--(?:version|help|collect-only|co)\b|>\s*/dev/null")
+# .harness-verify の行と比べる前に取り除く、先頭の「cd <引数> && 」（比べるのは残りと行の完全一致）
+CD_PREFIX = re.compile(r"^cd\b[^&;|\n]*&&\s*")
 # Bash で関門を迂回する代表的な語（シェル構文は解釈せず部分文字列で見る。誤検知は許容。網羅はできない）
 BYPASS = re.compile(
     r"--no-v|\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*\s-[a-z]*n[a-z]*\b|commit-tree|hookspath|GIT_CONFIG|CLAUDECODE|state/harness",
@@ -291,9 +307,21 @@ def is_test(rel):
     return bool(TEST_PATH.search(rel)) and not ARTIFACT.search(rel)
 
 
+@functools.lru_cache(maxsize=None)  # ファイルごとの is_code から呼ばれるので、1 回の起動で 1 回だけ読む
+def repo_lines(top, name, staged=False):
+    """リポジトリのトップの関門の設定（CODE_FILE / VERIFY_FILE）の行。空行と # で始まる行は除く。無ければ空。
+    staged=True はインデックスの内容（コミット時）"""
+    text = (git(top, "show", f":{name}") if staged else get(top, name)) or ""
+    return tuple(s for s in (line.strip() for line in text.splitlines()) if s and not s.startswith("#"))
+
+
 def is_code(top, rel, staged=False):
-    """拡張子で判定。拡張子が無いファイルは先頭の shebang（#!）でスクリプトとみなす。
+    """関門の設定ファイル自体、CODE_NAME のファイル名、.harness-code のパターン、拡張子で判定。
+    拡張子が無いファイルは先頭の shebang（#!）でスクリプトとみなす。
     削除や shebang の書き換えも検出できるよう、変更後だけでなく HEAD 側の内容も見る"""
+    if (rel in (CODE_FILE, VERIFY_FILE) or os.path.basename(rel).lower() in CODE_NAME
+            or any(fnmatch.fnmatchcase(rel, p) for p in repo_lines(top, CODE_FILE, staged))):
+        return True
     _, ext = os.path.splitext(rel)
     if ext:
         return ext.lower() in CODE_EXT
@@ -343,9 +371,16 @@ def tree_hash(top, changes, staged=False):
 # ---- 証拠の判定 --------------------------------------------------------------
 
 TEXT = {
-    "verified": "この内容に対して検証コマンド（テスト・型チェック・ビルド）を単独で成功させていない → /verify",
+    "verified": "この内容に対して検証コマンド（テスト・型チェック・ビルド。.harness-verify があれば、そこに書かれたコマンドすべて）を単独で成功させていない → /verify",
     "reviewed": "この内容に対して reviewer の敵対的レビューで 3 軸（仕様適合・テスト・品質・保守性）とも承認されていない → /review",
 }
+
+
+def verified_runs(top, now):
+    """指紋 now の内容に対して成功した検証コマンドの集合。指紋が違えば None。
+    verified は 1 行目が指紋、2 行目以降がその指紋で成功したコマンド（指紋が変われば置き換える）"""
+    fp, *runs = (get(repo_state(top), "verified") or "").split("\n")
+    return set(runs) if fp == now else None
 
 
 def evidence(top, staged=False):
@@ -353,11 +388,14 @@ def evidence(top, staged=False):
     staged=True はコミット時: これからコミットされる内容（インデックス）で判定する。
     テストが十分か（TDD）は reviewer が内容を読んで判定する。ここではファイル名から推測しない"""
     changed = staged_changes(top) if staged else working_changes(top)
-    if not any(is_code(top, p, staged) and not is_test(p) for _, p in changed):
+    # 証拠を求める変更: テスト以外のコードと、既存のテストの変更・削除（テストを弱めうる。追加 A・未追跡 ?? は除く）。
+    # 状態 s は作業ツリーなら XY、ステージ済みなら 1 文字
+    if not any(("A" not in s and ("M" in s or "D" in s)) if is_test(p) else is_code(top, p, staged) for s, p in changed):
         return False, [], False
-    d = repo_state(top)
     now = tree_hash(top, changed, staged)
-    ok = {"verified": get(d, "verified") == now, "reviewed": get(d, "reviewed") == now}
+    runs = verified_runs(top, now)
+    ok = {"verified": runs is not None and set(repo_lines(top, VERIFY_FILE, staged)) <= runs,
+          "reviewed": get(repo_state(top), "reviewed") == now}
     return True, [k for k, v in ok.items() if not v], bool(protected_branch(top))
 
 
@@ -375,7 +413,9 @@ def gate_reason(session, top):
         if get(session, "start") == tree_hash(top, working_changes(top)):
             return None, "unchanged"
         changed, missing, on_main = evidence(top)
-        reason = reason_text(missing, on_main) if changed and (missing or on_main) else None
+        # ターンを終えてよい場合の一文は Stop だけに付ける（pre-commit の拒否文には出さない）
+        reason = (reason_text(missing, on_main) + "ユーザーの判断を待つ（質問・裁定・相談）なら、その旨を書いて終えてよい"
+                  "（コミットは pre-commit が止める）。") if changed and (missing or on_main) else None
     except RuntimeError as e:  # 指紋を作れない（読めないファイル等）。証拠を確認できないので一度差し戻す
         missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify と /review をやり直す。"
     return reason, f"missing={missing} on_main={on_main}"
@@ -421,7 +461,10 @@ def remember_reason(data, session, top):
     else:
         return None, note
     return (f"前回の tinymemory への保存から、コンテキストがウィンドウの {grown:.0%} 増えた（{why}）。"
-            "/tinymemory:remember で session（やったこと・現在の状態・次の手順）を保存してから終える。"), note
+            "/tinymemory:remember で session だけを保存する（fact と CLAUDE.md への振り分けは /wrap-up で行う）。"
+            "このセッションで前に保存した session があれば `tinymemory archive <id>` で外す。"
+            "起点の issue があれば、状態と次の手順を 1〜2 行コメントする（tinymemory は端末ごと）。"
+            "M/L を締めるところなら、代わりに /wrap-up（session の保存を含む）。"), note
 
 
 def deny(reason):
@@ -468,7 +511,7 @@ def handle(cmd, data):
         log(cmd, data)
 
     # Claude が cwd にして作業しているリポジトリを関門の対象に登録する（ターン開始時だけでなく、途中で cd した場合も）
-    top = toplevel(cwd) if cmd in ("turn", "bash", "review-done", "stop") else None
+    top = toplevel(cwd) if cmd in ("turn", "bash", "bash-failed", "review-done", "stop") else None
     if top:
         put(tracked_state(top), "tracked")
 
@@ -494,18 +537,34 @@ def handle(cmd, data):
         command = ti.get("command") or ""
         resp = data.get("tool_response") or {}
         # 実際の tool_response は {stdout, stderr, interrupted, …} で exit_code は無い（2.1.285 で確認）。
-        # 失敗したコマンドは PostToolUseFailure になるので、パイプ等の無い単独実行なら、ここに来た時点で検証は成功している
-        if (top and VERIFY_CMD.search(command) and not NOT_VERIFY.search(command)
+        # 失敗したコマンドは PostToolUseFailure になるので、パイプ等の無い単独実行なら、ここに来た時点で検証は成功している。
+        # .harness-verify があれば、宣言した行との完全一致だけを成功として数える
+        run = CD_PREFIX.sub("", command.strip())
+        declared = repo_lines(top, VERIFY_FILE) if top else ()
+        passed = (run in declared) if declared else (VERIFY_CMD.search(command) and not NOT_VERIFY.search(command))
+        # サブエージェント内（agent_id あり）の実行は記録しない（検証はセッション自身が行う）
+        if (top and passed and not data.get("agent_id")
                 and not ti.get("run_in_background") and not resp.get("backgroundTaskId") and not resp.get("interrupted")):
-            put(repo_state(top), "verified", tree_hash(top, working_changes(top)))
+            now = tree_hash(top, working_changes(top))
+            put(repo_state(top), "verified", "\n".join([now, *sorted((verified_runs(top, now) or set()) | {run})]))
         used = context_used(data.get("transcript_path")) if SAVE_SESSION.search(command) else None
         if used:
             put(session, "saved", str(used))
+    elif cmd == "bash-failed":
+        # 検証コマンド（パイプ等の形でも、宣言した行でも）が失敗したら、それまでの「検証済み」を消す（サブエージェント内でも）
+        command = (data.get("tool_input") or {}).get("command") or ""
+        if top and (VERIFY_CMD.search(command) or CD_PREFIX.sub("", command.strip()) in repo_lines(top, VERIFY_FILE)):
+            put(repo_state(top), "verified")
     elif cmd == "review-done":
         verdict = reviewer_report(data)
         # fail-closed: 3 軸の判定行がすべて「承認」のときだけ（空・中断・質問で終わった場合は記録しない）
-        ok = bool(top) and data.get("agent_type") == REVIEWER and approved(verdict)
+        by_reviewer = bool(top) and data.get("agent_type") == REVIEWER
+        ok = by_reviewer and approved(verdict)
         log(cmd, data, f"approved={ok} report_chars={len(verdict)}")  # 承認が記録されない時の切り分け用
+        # 報告は承認・不承認に関わらず、作業ツリーごとの git-dir に保存する（/review fix で前回の報告として読む）
+        gitdir = git(top, "rev-parse", "--absolute-git-dir") if by_reviewer and verdict else None
+        if gitdir:
+            put(gitdir.strip(), "harness-last-review", verdict)
         if ok:
             put(repo_state(top), "reviewed", tree_hash(top, working_changes(top)))
     elif cmd == "stop":

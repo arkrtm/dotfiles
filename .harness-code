@@ -1,0 +1,5 @@
+# harness-hook の関門の対象に足すパス（fnmatch。* は / にも当たる）
+# 拡張子や shebang ではコードと判定できないが、振る舞いを変えるファイル（Claude Code の手順・設定、シェルの設定）
+config/*
+shell/*
+CLAUDE.md

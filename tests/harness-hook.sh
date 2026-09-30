@@ -95,8 +95,12 @@ check "証拠を取った後にテスト資材（コード以外）を変えて�
 fresh; write src/app.py code
 check "コード変更のみ → 差し戻す" block "$(stop)"
 check "差し戻しの理由に、足りない証拠（/verify と /review）が含まれる" block "$(stop | grep /verify | grep /review)"
+check "差し戻しの理由に、ユーザーの判断を待つならその旨を書いて終えてよいことが含まれる" block "$(stop | grep 'ユーザーの判断を待つ')"
 check "stop_hook_active なら二度目は通す（ループ防止）" pass "$(stop done true)"
 check "『検証不要:』などの宣言では通さない" block "$(stop 'TDD不要: x。検証不要: x。レビュー不要: x')"
+$G add -A
+expect "（前提）同じ変更をステージすると pre-commit は理由を出して拒否する" [ -n "$(precommit 2>&1 | grep 'コミットできない' || true)" ]
+expect "pre-commit の拒否文には、ターンを終えてよいという一文を含めない（Stop の差し戻しだけ）" [ -z "$(precommit 2>&1 | grep 'ユーザーの判断を待つ' || true)" ]
 
 fresh; write src/app.py old; turn; bash_ "ls"
 check "以前からの未コミット変更があっても、このターンで変えていなければ差し戻さない" pass "$(stop)"
@@ -175,6 +179,11 @@ write src/app.py code2
 check "その後に再編集すれば検証・レビューは無効になり差し戻す" block "$(stop)"
 bash_ "cargo test"; review reviewer
 check "再検証・再レビューすれば通す" pass "$(stop)"
+# reviewer の報告は承認・不承認に関わらず <git-dir>/harness-last-review に保存する（次の /review fix で前回の報告として読む）
+review reviewer '仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
+expect "review-done は reviewer の報告を .git/harness-last-review に保存する（不承認でも）" grep -q "仕様適合: 修正が必要" "$REPO/.git/harness-last-review"
+review reviewer
+expect "次の review-done で上書きされる" [ "$(cat "$REPO/.git/harness-last-review")" = "$(printf "$OK3")" ]
 
 # 検証として認める／認めないコマンドの形
 # 証拠は内容の指紋で持つので、ケースごとに内容を変える（同じ内容だと前のケースの「検証済み」が一致してしまう）
@@ -198,8 +207,36 @@ reviewed_only; printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","t
 check "実行中にバックグラウンドへ回された（終了前の）実行も検証として認めない" block "$(stop)"
 reviewed_only; bash_ "uv run pytest -q" "" true
 check "中断された実行は検証として認めない" block "$(stop)"
+reviewed_only; printf '{%s,"agent_id":"a1","agent_type":"implementer","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$(common)" | "$HOOK" bash
+check "サブエージェント内（agent_id あり）の検証の成功は記録しない" block "$(stop)"
 reviewed_only; bash_ "uv run pytest -q"; n_same=$n; fresh; write src/app.py "v$n_same"; write tests/test_app.py "v$n_same"
 check "同じ内容に戻せば、以前の検証・レビューがそのまま有効（指紋は内容で決まる）" pass "$(stop)"
+
+# 検証コマンドの失敗（PostToolUseFailure）は、その作業ツリーの「検証済み」を消す
+bash_fail() { printf '{%s,"hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"%s"},"error":"Exit code 1","is_interrupt":false}' "$(common)" "$1" | "$HOOK" bash-failed; }
+fresh; ready vf1; bash_fail "ls nothing"
+check "検証コマンドでないコマンドの失敗では、検証済みは消えない" pass "$(stop)"
+bash_fail "uv run pytest -q 2>&1 | tail -3"
+check "同じ内容で検証コマンドが失敗すれば（パイプ付きの形でも）、検証済みが消えて差し戻す" block "$(stop)"
+$G add -A
+checkx "同じく、pre-commit も失敗する" 1 precommit
+
+# 宣言した検証コマンド（リポジトリのトップの .harness-verify）: 書かれたコマンドがすべて同じ内容で成功したときだけ検証済み
+fresh; printf '# 宣言した検証コマンド\nsh tests/run.sh\n\n./ci.sh\n' > "$REPO/.harness-verify"; write src/app.py hv1; review reviewer
+bash_ "uv run pytest -q"
+check "宣言があれば、宣言に無い検証コマンドの成功は証拠にならない" block "$(stop)"
+bash_ "sh tests/run.sh"
+check "宣言した 2 つのうち 1 つだけの成功では差し戻す" block "$(stop)"
+bash_ "cd $REPO && ./ci.sh"
+check "もう 1 つも成功すれば通す（先頭の cd … && を除いて比べる。検証コマンドの形でなくてよい）" pass "$(stop)"
+write src/app.py hv2; review reviewer; bash_ "./ci.sh"
+check "その後に内容を変えると、両方やり直しになる" block "$(stop)"
+bash_ "sh tests/run.sh"
+check "（前提）両方をやり直せば通す" pass "$(stop)"
+$G add -A
+checkx "同じく、宣言したコマンドがすべて成功した内容をステージすればコミットできる" 0 precommit
+bash_fail "./ci.sh"
+check "宣言したコマンドの失敗でも、検証済みは消える" block "$(stop)"
 
 # テストが十分か（TDD）は reviewer が判定する。hook はテストファイルの有無を見ない
 fresh; write src/app.py refactor-only; bash_ "uv run pytest -q"; review reviewer
@@ -213,6 +250,39 @@ for t in tests/test_x.py Tests/FooTests/FooTests.swift Foo.Tests/BarTests.cs src
 done
 fresh; write src/latest.js c
 check "名前が test で終わるだけのコード（latest.js）はテスト扱いしない" block "$(stop)"
+# 既存のテストの変更・削除はテストを弱めうるので、テスト以外のコードの変更が無くても証拠を求める（テストの追加だけなら対象外）
+fresh; echo weakened > "$REPO/tests/test_base.py"
+check "既存のテストの変更は差し戻す" block "$(stop)"
+bash_ "uv run pytest -q"; review reviewer
+check "（前提）証拠がそろえば通す" pass "$(stop)"
+fresh; rm "$REPO/tests/test_base.py"
+check "既存のテストの削除は差し戻す" block "$(stop)"
+$G add -A
+checkx "同じく、既存のテストの削除をステージしたコミットにも証拠が要る" 1 precommit
+fresh; write tests/test_added.py t; $G add -A
+checkx "新しいテストの追加だけなら、コミットに証拠は要らない" 0 precommit
+
+# 設定ファイル・ビルド定義もコード
+for f in pyproject.toml package.json compose.yaml .github/workflows/ci.yml tox.ini setup.cfg src/m.mts src/m.cts run.bash \
+  Dockerfile sub/Makefile justfile; do
+  fresh; write "$f" x
+  check "設定ファイル・ビルド定義だけの変更も差し戻す: $f" block "$(stop)"
+done
+# リポジトリのトップの .harness-code（1 行 1 パターン、fnmatch の * は / にも当たる）に当たるパスもコード
+fresh; printf '# 関門の対象に加えるパス\nconfig/claude/*\n\n' > "$REPO/.harness-code"
+check ".harness-code 自体の追加も差し戻す" block "$(stop)"
+$G add .harness-code; $G commit -q -m harness-code
+fresh; write config/claude/skills/x/SKILL.md doc
+check ".harness-code のパターンに当たる Markdown は差し戻す（* は / にも当たる）" block "$(stop)"
+$G add -A
+checkx "同じく、ステージしたコミットにも証拠が要る" 1 precommit
+fresh; write docs/x.md doc
+check ".harness-code のパターンに当たらない Markdown は通す" pass "$(stop)"
+fresh; printf '# 空にする\n' > "$REPO/.harness-code"
+check ".harness-code 自体の変更（関門を弱める変更）も差し戻す" block "$(stop)"
+fresh; write .harness-verify "make test"
+check ".harness-verify 自体の変更も差し戻す" block "$(stop)"
+$G rm -q .harness-code; $G commit -q -m rm-harness-code
 
 # cwd がサブディレクトリでも、判定はリポジトリのトップレベルで行う
 fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "pytest"; review reviewer
@@ -357,7 +427,12 @@ save_session() { bash_ 'tinymemory save --type session --title t <<E\nx\nE'; }
 memo() { judge "$1" "$2" '/tinymemory:remember' remember pass "$3"; }
 fresh
 memo "区切り（コミット）でも、前回の保存から 30% 未満なら通す" pass "$(milestone 290000)"
-memo "区切りで 30% 以上溜まっていれば remember させる" remember "$(milestone 310000)"
+r=$(milestone 310000)
+memo "区切りで 30% 以上溜まっていれば remember させる" remember "$r"
+memo "remember の理由に、M/L を締めるところなら /wrap-up を使うことが含まれる" remember "$(printf '%s' "$r" | grep /wrap-up)"
+memo "remember の理由に、保存するのは session だけ（振り分けは /wrap-up）が含まれる" remember "$(printf '%s' "$r" | grep 'session だけを保存')"
+memo "remember の理由に、前に保存した session を archive することが含まれる" remember "$(printf '%s' "$r" | grep 'tinymemory archive')"
+memo "remember の理由に、起点の issue へ状態をコメントすることが含まれる（tinymemory は端末ごと）" remember "$(printf '%s' "$r" | grep 'issue' | grep '端末ごと')"
 check "stop_hook_active なら二度目は通す" pass "$(stop done true)"
 turn; used 320000; save_session
 memo "tinymemory に session を保存したら、そこから数え直す" pass "$(milestone 600000)"   # 32 万 → 60 万 = 28%

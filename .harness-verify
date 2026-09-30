@@ -1,0 +1,5 @@
+# コードを変えたら、同じ内容に対してすべて通す（harness-hook が確かめる。1 つでも失敗すると証拠は消える）
+# install.sh・shell・mise の設定を変えたら DOCKER='ssh nas docker' sh tests/install-nosudo.sh も（CLAUDE.md）
+sh tests/harness-hook.sh
+sh tests/install.sh
+sh tests/review-snapshot.sh

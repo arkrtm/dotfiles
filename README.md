@@ -71,14 +71,14 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 ## Claude Code ハーネス（superpowers の代替）
 
-常時読み込むのは CLAUDE.md だけ（約 2,500 トークン）。手順は skill、強制は hook。
+常時読み込むのは CLAUDE.md・skill と agent の説明・SessionStart で注入する記憶（合わせて約 6k トークン。ARK-47 の計測）。手順は skill、強制は hook。
 
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
 - コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸。複数コミットのブランチは `/review branch` も）。証拠が無いコード変更は git の pre-commit が止める
 - レビューの往復を抑える仕組み（ARK-41。superpowers の範囲限定の再レビューと ECC の報告前の関門を参考）: フルレビューは 1 回。直した後は `/review fix` が「前回の未解決の指摘」と「前回見た版からの修正差分」だけを見る（版は `skills/review/snapshot.sh` が作業ツリー全体の tree ID として記録）。重大・中は具体的な発生条件が書けるものだけで、軽と範囲外は判定に影響しない（issue に記録）。reviewer は検証を回し直さない。`/review fix` は 2 回まで、それでも残ればユーザーが指摘ごとに裁定する
-- 並列実装とデバッグ（ARK-42。superpowers の subagent-driven-development・systematic-debugging と ECC の multi-*・build-error-resolver を参考に自作し、どちらも入れない）: `/implement` は計画を「持ち分のファイルが重ならないタスク」に分けて波ごとに implementer を同時に起動し、コントローラは短い状態報告だけを受けて統合・検証・レビューする。小さなタスクでは 1 人あたりの固定費（約 6 万トークン）が勝つので使わない。`/diagnose` は再現コマンド → 安い順の絞り込み（スタックトレースの箇所 → 逆向きの追跡 → 最近の変更 → 動く例との比較 → 境界の計測 → `git bisect run`。原因が見えたらそこで止める）→ 反証できる仮説 → 回帰テスト付きで共有の関数を直す。3 回直らなければ設計を疑って相談する
+- 並列実装とデバッグ（ARK-42。superpowers の subagent-driven-development・systematic-debugging と ECC の multi-*・build-error-resolver を参考に自作し、どちらも入れない）: `/implement` は計画を「持ち分のファイルが重ならないタスク」に分けて波ごとに implementer を同時に起動し、コントローラは短い状態報告だけを受けて統合・検証・レビューする。implementer はツールを絞っていて、小さなタスク 1 つで約 1.5 万トークン（汎用のエージェントの約 4 分の 1。ARK-47）。`/diagnose` は再現コマンド → 安い順の絞り込み（スタックトレースの箇所 → 逆向きの追跡 → 最近の変更 → 動く例との比較 → 境界の計測 → `git bisect run`。原因が見えたらそこで止める）→ 反証できる仮説 → 回帰テスト付きで共有の関数を直す。3 回直らなければ設計を疑って相談する
 - 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）で、Claude が cwd にして作業したことのあるリポジトリ（その worktree を含む）。人の手動コミット、GUI クライアント、テストが作る一時リポジトリ、セッションの cwd 以外のリポジトリは対象外。検証とレビューの証拠は、セッションの cwd の作業ツリーに対して記録される
-- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイルと、拡張子の無い shebang 付きスクリプト。それ以外（Markdown、JSON、YAML など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
+- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイル（設定の .json .toml .yaml .yml .ini .cfg を含む）、名前が Dockerfile・Makefile・justfile のファイル、拡張子の無い shebang 付きスクリプト、リポジトリの `.harness-code` に書いたパス。それ以外（Markdown など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
 - 限界（ガードレールであって、セキュリティ境界ではない）:
   - 意図的な迂回は防ぎ切れない（`git commit-tree`、git 設定や環境変数の差し替え、証拠ファイルの書き換えなど。代表的な語は Bash hook が拒否し、CLAUDE.md で禁止している。閲覧目的のコマンドでも語を含めば拒否される）
   - pre-commit を通らない操作（`cherry-pick`、`rebase`、競合の無い `merge`）、競合解消の締めのコミット、テストコードだけのコミットは対象外
@@ -87,9 +87,11 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
   - 共通 hooks にリンクを置いていない hook 名（`reference-transaction`、`post-index-change`、`pre-auto-gc`、`p4-*`。高頻度で呼ばれるため）は、リポジトリ自身に同名の hook があっても実行されない
   - グローバルな `core.hooksPath` との非互換: `pre-commit install`（pre-commit フレームワーク）は hooksPath が設定されていると拒否する。`git lfs install` は hooks を `~/.config/git/hooks`（= この dotfiles）に書こうとする。必要なリポジトリでは、そのリポジトリの設定で hooksPath を `.git/hooks` に向ける（その場合、そのリポジトリでは関門は効かない）
   - TDD（テストが十分か）は reviewer が内容を読んで判定する。hook はテストファイルの有無を見ない
-  - 検証は「認識できる検証コマンドを単独で実行して成功した」ことしか見ない（何を検証したかは reviewer が見る）
+  - 検証は「認識できる検証コマンドを単独で実行して成功した」ことしか見ない（何を検証したかは reviewer が見る）。穴を塞ぐ仕組み（ARK-47）: 検証コマンドが後で失敗すると証拠は消える／リポジトリの `.harness-verify` に書いたコマンドがあれば、すべてが同じ内容で成功したときだけ有効／サブエージェント内（hook の入力に `agent_id` がある）の検証は記録しない
+  - 関門の対象: 上の「コード」（この repo の `.harness-code` は `config/*`・`shell/*`・`CLAUDE.md`）と、既存テストの変更・削除（テストを弱めて通すのを防ぐ。テストの追加だけなら対象外）。`.harness-code`・`.harness-verify` 自体の変更も対象
+  - reviewer の報告は git dir の `harness-last-review` に保存し、`/review fix` は前回の版と未解決の指摘をそこから読む（メインの転記に頼らない）
 - 計画は plan mode、L のレビュー補助は同梱 `/code-review`。自作しない
-- 記憶: M/L の完了時に `/wrap-up` が「プロジェクトの CLAUDE.md / グローバルの CLAUDE.md / tinymemory fact / session」に振り分けて保存する（表は skill 内）。S は残さない。読み込みと整理（`/dream`）は tinymemory 側の仕組み
+- 記録と記憶: 置き場所（Linear・CLAUDE.md・README・コミット・tinymemory の fact / session）の振り分けは `skills/wrap-up` の表。M/L の最後に `/wrap-up` が振り分けて保存する。作業の途中はコンテキストが溜まると区切りで session だけを保存させる（ARK-38）。tinymemory は端末ごとなので、別の端末で続けるための状態は Linear に書く。読み込みと整理（`/dream`）は tinymemory 側の仕組み
   - 区切りでの保存（ARK-38）: 前回の session の保存（`tinymemory save --type session`）からコンテキストが溜まったら、`harness-hook` の Stop が 1 回差し戻して `/tinymemory:remember` させる。コミットしたターンなら 30%、それ以外でも 60%（同じ起点から 1 回だけ）。使用量は transcript の最後の assistant の usage、ウィンドウは既定 100 万（`HARNESS_CONTEXT_WINDOW` で変える）。clear は自動化しない（デスクトップアプリでは clear 後に自動で再開できないため、CLI とそろえた）。compact・resume の後も settings.json の SessionStart で記憶を注入する
 - 常時コストを増やさない: 新しい規則は CLAUDE.md に足す前に skill にできないか考える
 

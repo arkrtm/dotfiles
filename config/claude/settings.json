@@ -40,7 +40,8 @@
       { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook bash", "timeout": 15 }] }
     ],
     "PostToolUseFailure": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] },
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook bash-failed", "timeout": 15 }] }
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status done", "timeout": 5 }] },
