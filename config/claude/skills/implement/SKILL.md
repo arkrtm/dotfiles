@@ -41,7 +41,7 @@ argument-hint: "[計画ファイルのパス | ARK-nn | 補足]"
 依頼の前にコントローラが用意するもの:
 - 全体のテストを一括で動かす前提（テストのパッケージ設定 `tests/__init__.py`・conftest・`.gitignore` など）。無いと各実装者が自分のテストしか動かせず、全員が同じ懸念を返してくる
 - 複数のタスクが使う型・シグネチャの骨組み（型・空の関数）。必要なときだけ
-- 要件の写し（`harness-hook requirements-path`。CLAUDE.md の手順 1）
+- 要件の写し（`harness-hook requirements-path`。CLAUDE.md の手順 2）
 
 複数のタスクが同じ共有ファイル（登録表・設定・ルーティング・README 等）を触るなら、その変更は最後の波の 1 タスクにまとめるか、統合のときにコントローラが書く
 

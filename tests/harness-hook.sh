@@ -68,8 +68,9 @@ guardb() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Bash","tool_i
 guarde() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$(common)" "$1" | "$HOOK" guard-branch; }
 precommit() { (cd "$REPO" && "$HOOK" pre-commit); }
 write() { mkdir -p "$(dirname "$REPO/$1")"; echo "$2" > "$REPO/$1"; }
-fresh() { $G reset -q --hard; $G clean -qfd; turn; }                 # きれいな作業ツリーで新しいターンを始める
-reqs() { printf '%b\n' "${1:-AC1: 要件と受け入れ条件}" > "$(cd "${CWD:-$REPO}" && "$HOOK" requirements-path)"; }  # 承認済みの要件の写しを書く（今のブランチ。\n は改行）
+fresh() { $G reset -q --hard; $G clean -qfd; reqs; turn; }           # きれいな作業ツリーで、要件の写しを保存して新しいターンを始める
+reqs() { printf '%b\n' "${1:-AC1: 要件と受け入れ条件}" | (cd "${CWD:-$REPO}" && "$HOOK" requirements-save) >/dev/null; }  # 承認済みの要件の写しを保存する（今のブランチ。\n は改行）
+has() { printf '%s' "$1" | grep -qF -- "$2"; }   # has <文字列> <部分文字列>
 ready() { reqs; write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; accept; review reviewer; }  # 証拠がそろった状態
 reqs   # feat/x の要件の写し（関門は、コードを変えたら承認済みの要件の写しを求める）
 
@@ -79,7 +80,9 @@ check "変更なしなら通す" pass "$(stop)"
 fresh; write README.md doc
 check "ドキュメントだけの変更は通す" pass "$(stop)"
 fresh; write notes doc
-check "拡張子も shebang も無いファイルはコード扱いしない" pass "$(stop)"
+check "拡張子の無いファイルは、文書の名前でなければコード変更として扱う" block "$(stop)"
+fresh; write LICENSE doc
+check "拡張子の無い文書の名前（LICENSE など）は通す" pass "$(stop)"
 fresh; printf '#!/bin/sh\necho hi\n' > "$REPO/bin-tool"
 check "拡張子の無い shebang 付きスクリプトはコード変更として扱う" block "$(stop)"
 fresh; write "src/日本語.py" code
@@ -256,10 +259,22 @@ reqs
 # 証拠は内容の指紋で持つので、ケースごとに内容を変える（同じ内容だと前のケースの「検証済み」が一致してしまう）
 n=0
 unverified() { n=$((n + 1)); fresh; write src/app.py "v$n"; write tests/test_app.py "v$n"; accept; review reviewer; }  # 検証だけが足りない状態
-for c in "uv run pytest -q" "cd $REPO && uv run pytest -q" "cd src && uv run pytest -q"; do
+for c in "uv run pytest -q" "cd $REPO && uv run pytest -q" "cd $REPO/ && uv run pytest -q"; do
   unverified; bash_ "$c"
-  check "検証として認める（宣言したコマンド。先頭の cd … && は除いて比べる）: $c" pass "$(stop)"
+  check "検証として認める（宣言したコマンドを、リポジトリのトップで。先頭の cd <トップ> && は除いて比べる）: $c" pass "$(stop)"
 done
+# 宣言した検証を並列に実行しても（hook が同時に動いても）、すべての成功が記録される（記録の読み書きが競合しない）
+for round in 1 2 3; do
+  fresh; printf 'sh tests/p1.sh\nsh tests/p2.sh\nsh tests/p3.sh\nsh tests/p4.sh\nsh tests/p5.sh\n' > "$REPO/.harness-verify"
+  write src/app.py "par$round"; accept; review reviewer
+  for i in 1 2 3 4 5; do bash_ "sh tests/p$i.sh" & done; wait
+  check "並列に実行した宣言の検証 5 本がすべて記録される（$round 回目）" pass "$(stop)"
+done
+# 下位のディレクトリで実行した検証は、全体の検証ではない（pytest・go test などは下位しか走らない）
+unverified; bash_ "cd src && uv run pytest -q"
+check "検証として認めない（cd で下位に移って実行した）" block "$(stop)"
+unverified; mkdir -p "$REPO/src"; CWD="$REPO/src"; bash_ "uv run pytest -q"; CWD=""
+check "検証として認めない（cwd が下位のまま実行した）" block "$(stop)"
 for c in "pytest -q" "uv run pytest -q tests/test_app.py" "cargo test" "sh tests/run.sh" "uv run ruff check ." "npm run lint" "uvx ruff check ." \
   "uv run pytest -q 2>&1" "uv run pytest -q 2>&1 | tail -3" "uv run pytest -q || echo done" "uv run pytest -q; echo done" "uv run pytest -q &" \
   "uv run pytest -q >/dev/null" "time uv run pytest -q" "cd $REPO\\nuv run pytest -q" "echo uv run pytest -q"; do
@@ -358,6 +373,13 @@ expect "requirements-save は、標準入力を要件の写しとして保存し
 expect "（同じく）内容がそのまま書かれる" [ "$(cat "$REQ")" = "$(printf '承認済みの要件\n- AC1 x')" ]
 checkx "空の入力では保存せず失敗する（写しを空で上書きしない）" 1 sh -c "printf '' | (cd '$REPO' && '$HOOK' requirements-save)"
 expect "（同じく）前の内容が残る" [ "$(cat "$REQ")" = "$(printf '承認済みの要件\n- AC1 x')" ]
+# 写しはブランチごとなので、ブランチを切った後に保存する（main・master の上では保存しない）
+$G switch -q main
+if out=$(printf 'AC1: x\n' | (cd "$REPO" && "$HOOK" requirements-save) 2>&1); then code=0; else code=1; fi
+expect "main の上では requirements-save は保存せず失敗する" [ "$code" != 0 ]
+expect "理由に、先に作業ブランチを切ることが出る" has "$out" "作業ブランチを切ってから"
+expect "main の写しは作られない" [ ! -e "$(cd "$REPO" && pwd -P)/.git/harness-requirements/main.md" ]
+$G switch -q feat/x
 # 承認済みの要件の写しが無い・空なら差し戻す。書き換えれば、検証・受け入れ・レビューの証拠はすべて無効になる
 fresh; rm "$REQ"; write src/app.py rq1; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
 check "要件の写しが無ければ、ほかの証拠がそろっていても差し戻す" block "$r"
@@ -375,6 +397,16 @@ checkx "同じく、ステージ済みの内容でも pre-commit は拒否する
 reqs
 check "要件を元に戻せば、以前の証拠が有効（指紋は内容で決まる）" pass "$(stop)"
 checkx "同じく、コミットできる（要件の写しは、作業ツリーとインデックスで同じ指紋に入る）" 0 precommit
+# 写しは、保存した後に HEAD が進んだら（コミット等）古い。次のコード変更には保存し直しが要る（同じ依頼の続きなら同じ内容でよい）
+fresh; ready st1; $G add -A; $GH commit -q -m st1
+write src/app.py st2; write tests/test_app.py st2; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
+check "保存した後にコミットがあった写しは古いので、ほかの証拠がそろっていても差し戻す" block "$r"
+expect "理由に、写しを保存し直すことが出る" has "$r" "保存し直す"
+$G add -A
+checkx "（同じく）pre-commit も拒否する" 1 precommit
+reqs
+check "同じ内容で保存し直せば、以前の証拠のまま通す" pass "$(stop)"
+checkx "（同じく）pre-commit も通す" 0 precommit
 
 # テストが十分か（TDD）は reviewer が判定する。hook はテストファイルの有無を見ない
 fresh; write src/app.py refactor-only; bash_ "uv run pytest -q"; accept; review reviewer
@@ -415,6 +447,16 @@ for f in README.md notes.txt logo.png; do
   fresh; write "$f" x
   check "文書・画像だけの変更は通す: $f" pass "$(stop)"
 done
+# 文書・画像など以外はすべて対象（依存の定義・lockfile・環境・テンプレート・スキーマなど、振る舞いを変えうるもの）
+for f in requirements.txt requirements-dev.txt requirements/base.txt CMakeLists.txt go.mod uv.lock Cargo.lock Gemfile .env app/views/x.erb templates/x.j2 \
+  prisma/schema.prisma tsconfig.jsonc BUILD.bazel Procfile data/seed.csv; do
+  fresh; write "$f" x
+  check "文書・画像以外は差し戻す: $f" block "$(stop)"
+done
+for f in docs/guide.rst CHANGELOG LICENSE.md assets/icon.svg docs/spec.pdf src/.DS_Store; do
+  fresh; write "$f" x
+  check "文書・画像だけの変更は通す: $f" pass "$(stop)"
+done
 # リポジトリのトップの .harness-code（1 行 1 パターン、fnmatch の * は / にも当たる）に当たるパスもコード
 fresh; printf '# 関門の対象に加えるパス\nconfig/claude/*\n\n' > "$REPO/.harness-code"
 check ".harness-code 自体の追加も差し戻す" block "$(stop)"
@@ -432,7 +474,7 @@ check ".harness-verify 自体の変更も差し戻す" block "$(stop)"
 $G rm -q .harness-code; $G commit -q -m rm-harness-code
 
 # cwd がサブディレクトリでも、判定はリポジトリのトップレベルで行う
-fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "uv run pytest -q"; accept; review reviewer
+fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "cd $REPO && uv run pytest -q"; accept; review reviewer
 check "cwd がサブディレクトリでも証拠を正しく突き合わせる" pass "$(stop)"
 write src/deep.py c2
 check "サブディレクトリ cwd で未追跡コードを書き換えると証拠は無効になる" block "$(stop)"
@@ -450,6 +492,10 @@ done
 checkx "（前提）上の ref が無ければ失敗する" 1 precommit
 OTHER="$TMP/other"; git init -q -b feat "$OTHER"; echo c > "$OTHER/app.py"; git -C "$OTHER" add -A
 checkx "Claude が作業していないリポジトリ（テストが作る一時リポジトリ等）は対象外" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
+OUTSIDE="$TMP/outside"; git init -q -b feat "$OUTSIDE"; echo c > "$OUTSIDE/app.py"; git -C "$OUTSIDE" add -A; mkdir -p "$TMP/elsewhere"
+checkx "未登録でも、一時ディレクトリ（TMPDIR）の外のリポジトリには関門を掛ける（親ディレクトリから git -C でコミットした場合など）" 1 \
+  env TMPDIR="$TMP/elsewhere" sh -c "cd '$OUTSIDE' && '$HOOK' pre-commit"
+checkx "（同じリポジトリでも）一時ディレクトリの中にあれば、未登録なら対象外" 0 env TMPDIR="$TMP" sh -c "cd '$OUTSIDE' && '$HOOK' pre-commit"
 CWD="$OTHER"; bash_ "ls"; CWD=""
 checkx "ターンの途中で cd した先のリポジトリも、そこでコマンドを実行した時点から対象になる" 1 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 # 検証コマンドの宣言（.harness-verify か <git-common-dir>/harness-verify）が無いリポジトリでは、何を成功させても検証の証拠にならない
@@ -514,6 +560,34 @@ mkdir -p "$REPO/.git/hooks"; printf '#!/bin/sh\nexit 1\n' > "$REPO/.git/hooks/pr
 checkx "worktree からでも、本体リポジトリの .git/hooks に委譲される" 1 $GW commit -q -m docs
 rm "$REPO/.git/hooks/pre-commit"
 
+# ---- 関門（pre-commit）を通らなかったコミットを Stop で見つける（git の hook に依らない事後の確認）----
+fresh; write src/app.py ug1; $G add -A; $G commit -q -m unguarded   # hook を通らないコミット（$G は共通 hooks を使わない）
+r=$(stop)
+check "このターンに pre-commit を通らずにコードをコミットしたら、Stop が差し戻す" block "$r"
+expect "理由に、そのコミットと戻し方（git reset --soft）が出る" sh -c "printf '%s' \"\$1\" | grep -q '$($G rev-parse --short HEAD)' && printf '%s' \"\$1\" | grep -q 'reset --soft'" _ "$r"
+fresh; ready ug2; $G add -A; $GH commit -q -m gated
+check "pre-commit を通ったコミットでは差し戻さない" pass "$(stop)"
+# リポジトリ自身の pre-commit（lint-staged の整形など）が関門の後でインデックスを書き換えても、関門を通ったコミットとして扱う
+mkdir -p "$REPO/.git/hooks"; printf '#!/bin/sh\necho formatted >> src/app.py && git add src/app.py\n' > "$REPO/.git/hooks/pre-commit"; chmod +x "$REPO/.git/hooks/pre-commit"
+fresh; ready ug4; $G add -A; $GH commit -q -m gated-then-formatted
+rm "$REPO/.git/hooks/pre-commit"
+expect "（前提）リポジトリの hook が整形した内容がコミットされている" grep -q formatted "$REPO/src/app.py"
+check "関門の後でリポジトリの hook がインデックスを書き換えても、関門を通ったコミットでは差し戻さない" pass "$(stop)"
+fresh; write src/app.py ug5; $G add -A; $GH commit -q -n -m skipped   # -n で pre-commit を飛ばす（post-commit は呼ばれる）
+check "pre-commit を飛ばしたコミットは、post-commit が呼ばれても関門を通ったことにならない" block "$(stop)"
+write src/app.py ug3; $G add -A; $G commit -q -m before; turn
+check "ターンより前のコミットでは差し戻さない" pass "$(stop)"
+# 実際の git で: リポジトリ側の core.hooksPath（husky 等）があると、共通 hooks の pre-commit は呼ばれない
+HUSKY="$TMP/husky"; git init -q -b main "$HUSKY"; echo 'uv run pytest -q' > "$HUSKY/.harness-verify"
+git -C "$HUSKY" add -A; git -C "$HUSKY" -c user.name=t -c user.email=t@t commit -q -m init; git -C "$HUSKY" switch -q -c feat/h
+printf '[core]\n\thooksPath = %s\n[user]\n\tname = t\n\temail = t@t\n' "$HOOKS" > "$TMP/global.gitconfig"
+CWD="$HUSKY"; turn; echo c1 > "$HUSKY/app.py"; git -C "$HUSKY" add -A
+checkx "（前提）リポジトリ側の設定が無ければ、共通 hooks の pre-commit が証拠なしのコミットを止める" 1 env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m gated
+mkdir -p "$HUSKY/.husky"; git -C "$HUSKY" config core.hooksPath .husky
+checkx "（前提）リポジトリ側の core.hooksPath があると pre-commit は呼ばれず、証拠なしでコミットできてしまう" 0 env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m nohook
+check "その証拠なしのコミットを、Stop が差し戻す" block "$(stop)"
+CWD=""
+
 # ---- リポジトリ自身の hook への委譲（run-hook）----
 fresh; write README.md d1; $G add -A
 HK="$REPO/.git/hooks"; mkdir -p "$HK"
@@ -577,8 +651,27 @@ done
 for c in 'git \"commit-tree\" abc' "git 'commit-tree' abc" 'git -c core.\"hooksPath\"=/x commit -m x' 'git -c \"core.hooksPath\"=/x commit -m x' \
   'git --config-env=\"core.hooksPath\"=H commit -m x' "git config core.'hooksPath' /x" "git config alias.c 'commit -n'" \
   'git config --global alias.c \"commit -n\"' "git -c alias.c='commit -n' c -m x" 'git -c \"alias.c=commit -n\" c -m x' \
-  "git config alias.t '!git commit-tree x'" "git config alias.t commit-tree"; do
+  "git config alias.t '!git commit-tree x'" "git config alias.t commit-tree" "git -c alias.c='!git commit -n' c" \
+  "git config alias.c '!sh -c \\\"git commit --no-verify\\\"'"; do
   checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+# 証拠を記録する hook のサブコマンドを Bash から直接呼ぶ形は拒否する（偽の入力で証拠を作れる）。写しの保存と場所は通す
+for c in "harness-hook review-done <<'E'\\n{}\\nE" "~/.local/bin/harness-hook bash < /tmp/forged.json" "echo '{}' | harness-hook review-done" \
+  "uv run --script bin/harness-hook stop" "harness-hook post-commit" "/usr/bin/env harness-hook review-done < /tmp/x.json"; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+for c in "harness-hook requirements-path" "harness-hook requirements-save < /tmp/req.md" "cat bin/harness-hook" "grep -n review-done bin/harness-hook" \
+  "echo harness-hook review-done" "grep -n harness-hook stop.md"; do
+  checkd "通す: $c" allow "$(guardb "$c")"
+done
+# 読むだけの形を通しても、設定する・消す形は拒否のまま
+for c in "git config --unset core.hooksPath" "git config --add core.hooksPath /x" "env CLAUDECODE= git commit -m x" "FOO=1 CLAUDECODE= git commit -m x" \
+  "if true; then CLAUDECODE= git commit -m x; fi" "{ CLAUDECODE= git commit -m x; }" "nohup CLAUDECODE= git commit -m x" \
+  "time CLAUDECODE= git commit -m x" "command CLAUDECODE= git commit -m x" "exec CLAUDECODE= git commit -m x" "sudo -E CLAUDECODE= git commit -m x" \
+  "declare CLAUDECODE=; git commit -m x" "typeset -x CLAUDECODE=" "local CLAUDECODE=" "readonly CLAUDECODE=" \
+  "git config core.hooksPath --get" "git config --global core.hooksPath --get-all" "git config core.hooksPath -l" \
+  "git commit --no-verify=true -m x" "git log -1 && git commit -n -m x" "/usr/bin/git commit -n -m x" "git -C . commit -n -m x"; do
+  checkd "拒否する: $c" deny "$(guardb "$c")"
 done
 # 文字列で見る形（BYPASS）も、クォートを外したコマンドに当てる（クォートで語を割る形）。別の設定ファイルを読ませる include.path、
 # rsync での上書きも拒否する
@@ -587,8 +680,53 @@ for c in 'git commit --\"no-verify\" -m x' 'git commit --no-\"verify\" -m x' 'en
   'git config --global includeIf.\"gitdir:~/\".path /tmp/evil' "rsync -a /tmp/c/ ~/.config/git/" "rsync /tmp/x ~/.config/git/hooks/pre-commit"; do
   checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
 done
+# rsync の -t は時刻を保つオプション（cp の -t のように行き先を取らない）
+for c in "rsync -avt src/ ~/.config/git/hooks/" "rsync -rt /tmp/c/ ~/.config/git/"; do
+  checkd "拒否する: $c" deny "$(guardb "$c")"
+done
+# ヒアドキュメントの本文を検査するのは、シェル・インタプリタに渡すとき（同じ行にシェル等の語があるとき）だけ。
+# 記憶の保存・コミットメッセージ・ファイルへの書き出しの本文は、ただのデータなので迂回の語があっても通す
+for c in "bash -s <<'E'\\ngit commit -n -m x\\nE" "cat <<'E' | sh\\ngit commit -n -m x\\nE" \
+  "python3 - <<'E'\\nimport os; os.system('git commit -n -m x')\\nE" "ssh nas <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "awk '{system(\$0)}' <<'E'\\ngit commit -n -m x\\nE" "fish <<'E'\\ngit commit -n -m x\\nE" \
+  "cat > x.sh <<'E'\\ngit commit -n -m x\\nE\\nsh x.sh" "cat > f <<'E'\\ngit commit -n -m x\\nE\\nchmod +x f && ./f" \
+  "tee f <<'E' >/dev/null\\ngit commit -n -m x\\nE\\n. ./f" "sh<<'E'\\ngit commit --no-verify -m x\\nE" "bash<<E\\ngit commit -n -m x\\nE" \
+  "\$SHELL <<'E'\\ngit commit --no-verify -m x\\nE" "cd .git && cat >> config <<'E'\\n[core]\\n\\thooksPath = /dev/null\\nE" \
+  "cat >> \\\"\$(git rev-parse --git-dir)/config\\\" <<'E'\\n[core] hooksPath = /dev/null\\nE" "! CLAUDECODE= git commit -m x" \
+  "cat > Makefile <<'E'\\nall:\\n\\tgit commit --no-verify -m x\\nE\\nmake" \
+  "cat > package.json <<'E'\\n{\\\"scripts\\\":{\\\"c\\\":\\\"git commit --no-verify -m x\\\"}}\\nE\\nnpm run c" \
+  "git commit \$(cat <<E\\n--no-verify\\nE\\n) -m x" "git -c \\\"\$(cat <<E\\ncore.hooksPath=/dev/null\\nE\\n)\\\" commit -m x" \
+  "read -r a <<E\\n--no-verify\\nE\\ngit commit \$a -m x" "cat >> \\\"\$(git rev-parse --git-path config)\\\" <<E\\n[core]\\nhooksPath=/x\\nE" \
+  "cat > mise.toml <<'E'\\n[tasks.c]\\nrun = \\\"git commit --no-verify -m x\\\"\\nE\\nmise run c" \
+  "git -c alias.x='!sh' x <<'E'\\ngit commit -n -m x\\nE" "git x <<'E'\\ngit commit --no-verify -m x\\nE" "gh x <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "cat <<'E' | git x\\ngit commit --no-verify -m x\\nE" "cd ~ && git apply <<'E'\\n+\\thooksPath = /dev/null\\nE" \
+  "git apply --unsafe-paths --directory=\\\"\$HOME\\\" <<'E'\\n+\\thooksPath = /dev/null\\nE" \
+  "git -c core.editor='sh -c' commit <<'E'\\ngit commit --no-verify -m x\\nE" "git -c core.pager=sh log <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "GIT_EDITOR='sh -c' git commit <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git commit -e -F - <<'E'\\ngit config --global core.hooksPath /dev/null\\nE" "git commit --edit -F - <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git tag -a v1 -e -F - <<'E'\\ngit commit --no-verify -m x\\nE" "git notes add -e -F - <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git commit -aeF - <<'E'\\ngit commit --no-verify -m x\\nE" "git commit --ed -F - <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git commit -F - --e <<'E'\\ngit commit --no-verify -m x\\nE" "git tag -a v1 --edi -F - <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "gh pr create -e --body-file - <<'E'\\ngit commit --no-verify -m x\\nE" "gh pr create --editor --body-file - <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git commit -t /dev/stdin <<'E'\\ngit commit --no-verify -m x\\nE" "git commit --template=/dev/stdin <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git commit -a -t /dev/stdin <<'E'\\ngit commit --no-verify -m x\\nE" "git commit -c HEAD <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git -p commit -F - <<'E'\\ngit commit --no-verify -m x\\nE" "cat <<'E' | git commit -F - && git -p log\\ngit commit --no-verify -m x\\nE" \
+  "gh pr create --editor=true --body-file - <<'E'\\ngit commit --no-verify -m x\\nE" "gh pr create -e=true --body-file - <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git commit -a <<'E'\\ngit commit --no-verify -m x\\nE" "git commit --signoff <<'E'\\ngit commit --no-verify -m x\\nE" \
+  "git tag -a v1 <<'E'\\ngit commit --no-verify -m x\\nE" "git notes add <<'E'\\ngit commit --no-verify -m x\\nE"; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+for c in "tinymemory save --type fact --title t <<'E'\\ngit commit -n と --no-verify は使わない。hooksPath を rsync で戻す形も拒否\\nE" \
+  "git commit -F - <<'E'\\nguard: deny --no-verify, commit-tree and git commit -n\\nE" "cat > notes.md <<'E'\\ngit commit -n -m x\\nE" \
+  "cat > f <<'E'\\nset core.hooksPath carefully\\nE" "cat > docs/notes.md <<'E'\\nthe hook blocks git config core.hooksPath /x\\nE" \
+  "tinymemory save --tag go <<'E'\\nnever git commit --no-verify\\nE" "tinymemory save --title \\\"bash tips\\\" <<'E'\\nnever git commit --no-verify\\nE" \
+  "gh pr create --title t --body-file - <<'E'\\nnever git commit --no-verify\\nE" "git -C . commit -q -F - <<'E'\\navoid --no-verify\\nE" \
+  "git commit -aF - <<'E'\\navoid --no-verify\\nE" "git tag -a v1 -F - <<'E'\\navoid --no-verify\\nE" "git notes add -F - <<'E'\\navoid --no-verify\\nE" \
+  "cat <<'E' | git commit --file=- --cleanup=strip\\navoid --no-verify\\nE" "git add -A && git commit -q -F - <<'E'\\navoid --no-verify\\nE"; do
+  checkd "通す: $(printf '%s' "$c" | tr '\\' ' ')" allow "$(guardb "$c")"
+done
 for c in "git config alias.st status" "git config alias.ci commit" "git -c alias.lg='log --oneline -n 5' lg" "git grep -n commit-tree" \
-  "rsync -a src/ /tmp/dest/"; do
+  "rsync -a src/ /tmp/dest/" "rsync -rt ~/.config/git/ /tmp/backup/"; do
   checkd "通す: $c" allow "$(guardb "$c")"
 done
 # hooksPath を含む行で書き込む（リダイレクト・mv・cp・rsync・sponge・tee・sed -i など）形は、行き先を問わず拒否する（cd の後の相対パスでも）
@@ -626,7 +764,9 @@ for c in "git add -A && git commit -m x" "git log --oneline -n 5" "git status" "
   'git commit -m \"remove -n option\"' "git commit -m 'handle -inf values'" 'git commit --message=\"use -n\"' 'git commit -am \"drop -n\"' \
   "git log --grep=commit-tree" "grep -rn hooksPath file" "grep -n core.hooksPath README.md" \
   "cat ~/.config/git/config" "grep -n hooksPath ~/.gitconfig" "sed -n 1,5p .git/config" "cat ~/.gitconfig > /tmp/copy" \
-  "cp ~/.gitconfig /tmp/backup" "cp ~/.gitconfig ~/.gitconfig.bak" "grep -rn hooksPath . 2>/dev/null" "(cd /tmp && ls)" 'echo $(date)'; do
+  "cp ~/.gitconfig /tmp/backup" "cp ~/.gitconfig ~/.gitconfig.bak" "grep -rn hooksPath . 2>/dev/null" "(cd /tmp && ls)" 'echo $(date)' \
+  "git config --get core.hooksPath" "git config --global --get-all core.hooksPath" "git log src/commit.py -n 3" \
+  'echo \"CLAUDECODE=$CLAUDECODE\"' "aws s3 ls --no-verify-ssl"; do
   checkd "通す: $(printf '%s' "$c" | tr '\\' ' ')" allow "$(guardb "$c")"
 done
 expect "拒否の理由に、一致した語を含める" [ -n "$(guardb "git commit --no-verify" | grep -- "--no-v")" ]
@@ -645,7 +785,9 @@ fresh; $G switch -q main
 checkd "main 上の編集は拒否する（まだ無いディレクトリへの新規ファイルでも）" deny "$(guarde "$REPO/src/new/app.py")"
 checkd "リポジトリ外のシンボリックリンク経由でも、実体が main 上なら拒否する" deny "$(guarde "$TMP/outside-link.py")"
 checkd "NotebookEdit（notebook_path）も同じく拒否する" deny "$(printf '{%s,"hook_event_name":"PreToolUse","tool_name":"NotebookEdit","tool_input":{"notebook_path":"%s"}}' "$(common)" "$REPO/nb.ipynb" | "$HOOK" guard-branch)"
-turn; ready m; $G add -A
+# main の上には requirements-save では保存できないので、証拠がそろった状態を作るために写しを直接置く
+turn; P="$(cd "$REPO" && "$HOOK" requirements-path)"; printf 'AC1: x\n' > "$P"; $G rev-parse HEAD > "$P.head"
+write src/app.py m; write tests/test_app.py m; bash_ "uv run pytest -q"; accept; review reviewer; $G add -A
 checkx "main 上では証拠がそろっていても pre-commit は失敗する" 1 precommit
 check "main 上の変更は Stop でも差し戻す" block "$(stop)"
 $G reset -q --hard; $G clean -qfd; $G switch -q -c master

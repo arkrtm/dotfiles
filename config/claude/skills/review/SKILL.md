@@ -42,7 +42,7 @@ argument-hint: "[fix | branch | interim] 検証のコマンドと結果（fix: �
 
 ## branch（ブランチ全体）
 
-1. 対象: `git diff $(git merge-base main HEAD 2>/dev/null || git merge-base master HEAD)...HEAD` と、あれば作業中の差分
+1. 対象: 基点のブランチ（`git symbolic-ref --short refs/remotes/origin/HEAD`。無ければ main か master のあるほう）との `git diff <基点>...HEAD` と、あれば作業中の差分
 2. 個々の行より、**全体の一貫性・構造の劣化・重複・命名のぶれ**を優先して見る
 3. フルの出力形式で返す（指摘の番号は `B1-<n>`）
 

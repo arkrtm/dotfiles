@@ -72,7 +72,8 @@ done
 R="$TMP/repo"; G="git -C $R -c user.name=t -c user.email=t@t"
 mkdir -p "$R/tests"; $G init -q -b main; echo base > "$R/tests/test_a.py"; echo 'uv run pytest -q' > "$R/.harness-verify"   # 検証コマンドの宣言
 $G add -A; $G commit -q -m init; $G switch -q -c feat/x
-echo 'AC1: 要件と受け入れ条件' > "$(cd "$R" && "$HOOK" requirements-path)"   # 承認済みの要件の写し（関門が求める。受け入れは写しの AC 番号と突き合わせる）
+req() { printf "$1" | (cd "$R" && "$HOOK" requirements-save) >/dev/null; }   # 写しを保存する（保存した時の HEAD も記録される）
+req 'AC1: 要件と受け入れ条件\n'   # 承認済みの要件の写し（関門が求める。受け入れは写しの AC 番号と突き合わせる）
 SID="acc-$$"
 common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"/dev/null"' "$SID" "$R"; }
 turn() { printf '{%s,"hook_event_name":"UserPromptSubmit","prompt":"x"}' "$(common)" | "$HOOK" turn; }
@@ -172,19 +173,18 @@ case "$msg" in *バックグラウンド*|*終えてよい*) ng "AC11: pre-commi
 case "$msg" in *コミットできない*) ;; *) ng "AC11: pre-commit の拒否文が想定外: $msg" ;; esac
 
 # ---------- ARK-50 AC1: 写しの AC 番号がすべて報告に「合格」で出ていないと受け入れ済みにしない ----------
-REQ="$(cd "$R" && "$HOOK" requirements-path)"
-printf 'AC1: a\nAC2: b\nAC10: c\n' > "$REQ"
+req 'AC1: a\nAC2: b\nAC10: c\n'
 accepts 'ARK-50 AC1: 写しの AC1・AC2・AC10 がすべて合格（写しに無い AC3 も報告にある）' "$S- [AC1] 合格 — a\n- [AC2] 合格 — a\n- [AC3] 合格 — a\n- [AC10] 合格 — a$V"
 rejects 'ARK-50 AC1: 写しの AC10 が報告に無い（AC1 はある）' "$S- [AC1] 合格 — a\n- [AC2] 合格 — a$V"
 rejects 'ARK-50 AC1: 写しの AC10 の代わりに AC11 がある' "$S- [AC1] 合格 — a\n- [AC2] 合格 — a\n- [AC11] 合格 — a$V"
 rejects 'ARK-50 AC1: 写しの AC2 が節の外にだけある' "$S- [AC1] 合格 — a\n- [AC10] 合格 — a\n## 検査スクリプト\n- [AC2] 合格 — a$V"
 # 写しに AC 番号が 1 つも無い → 受け入れ済みにせず、理由に番号の付け方
-printf '要件\n- 受け入れ条件（番号なし）\n' > "$REQ"
+req '要件\n- 受け入れ条件（番号なし）\n'
 rejects 'ARK-50 AC1: 写しに AC 番号が無い' "$S- [AC1] 合格 — a$V"
 msg="$(cd "$R" && "$HOOK" pre-commit 2>&1 || true)"
 case "$msg" in *'受け入れ条件に AC1, AC2'*'番号を付ける'*) ;; *) ng "ARK-50 AC1: 写しに AC 番号が無いときの拒否理由に番号の付け方が無い: $msg" ;; esac
 case "$(stop)" in *'受け入れ条件に AC1, AC2'*'番号を付ける'*) ;; *) ng "ARK-50 AC1: 写しに AC 番号が無いときの Stop の理由に番号の付け方が無い" ;; esac
-echo 'AC1: 要件と受け入れ条件' > "$REQ"
+req 'AC1: 要件と受け入れ条件\n'
 
 # reviewer が受け入れの形で終わっても受け入れ済み・レビュー済みにしない（acceptor だけが受け入れを記録する）
 change w1; verify; sub reviewer "$PASS"; sub reviewer "$REV"; $G add -A

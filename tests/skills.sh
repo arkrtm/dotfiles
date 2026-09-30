@@ -1,6 +1,7 @@
 #!/bin/sh
 # ハーネスの一貫性の検査: skill・agent の frontmatter、文中のスラッシュコマンド、install.sh の LINKS、
-# settings.json の SubagentStop の matcher と bin/harness-hook の agent 名の定数が食い違っていないこと
+# settings.json の SubagentStop の matcher と bin/harness-hook の agent 名の定数、流れの段の順序（CLAUDE.md の流れの 1 行・
+# 手順の番号・README の流れの図）が食い違っていないこと
 #   sh tests/skills.sh [-v] [<リポジトリのトップ>]   既定はこのリポジトリ。失敗した項目と要約 1 行だけを出す（-v で通った項目も）
 # 検査そのものの否定のテスト（一時ディレクトリに写して 1 か所ずつ壊し、FAIL が出ること）も毎回走る
 set -eu
@@ -24,6 +25,12 @@ fm() { # fm <ファイル>: frontmatter（1 行目の --- から次の --- ま�
 }
 field() { fm "$1" 2>/dev/null | sed -n "/^$2:/{s/^$2:[[:space:]]*//;s/[[:space:]]*\$//;p;}" | head -n 1; }  # field <ファイル> <キー>
 has() { printf '%s\n' "$2" | grep -qxF -- "$1"; }  # has <語> <1 行 1 語の一覧>
+in_order() { # in_order <文> <印…>: 印がこの順に文の中に現れる（それぞれ前の印より後に）
+  rest=$1; shift
+  for m in "$@"; do
+    case "$rest" in *"$m"*) rest=${rest#*"$m"} ;; *) return 1 ;; esac
+  done
+}
 
 checks() { # checks <リポジトリのトップ>
   c="$1/config/claude"; skills=
@@ -64,6 +71,15 @@ EOF
     p="config/claude/${p#"$c"/}"; p=${p%/}
     expect "install.sh の LINKS に $p がある" has "$p" "$links"
   done
+  # 流れの段の順序が、CLAUDE.md の流れの 1 行・手順の番号・README の流れの図で一致すること
+  flow=$(grep -m 1 '^流れ（' "$c/CLAUDE.md" || true)
+  expect "CLAUDE.md の流れの 1 行の段の順序（ブランチ → 要件の固定 → /accept → /verify → /review → コミット → /wrap-up → 統合）" \
+    in_order "$flow" '→ ブランチ' '→ 要件の固定' '→ `/accept`' '→ `/verify`' '→ `/review`' '→ コミット' '→ `/wrap-up`' '→ 統合'
+  steps=$(sed -n 's/^[0-9][0-9]*\. \*\*\([^*]*\)\*\*.*/\1/p' "$c/CLAUDE.md" | tr '\n' ' ')
+  expect "CLAUDE.md の手順の番号の順序（$steps）" [ "$steps" = "ブランチ 要件の固定 TDD 受け入れ検証 検証 レビュー コミット 締め 統合 " ]
+  diagram=$(awk '/^### 流れの全体図/ { f = 1; next } f && /^```/ { n++; if (n == 2) exit; next } f && n == 1' "$1/README.md")
+  expect "README の流れの図の段の順序" \
+    in_order "$diagram" '→ ブランチ' '→ 要件の写しを固定' '→ /accept' '→ /verify' '→ /review' '→ コミット' '→ /wrap-up' '→ 統合'
   # bin/harness-hook の agent 名の定数（REVIEWER = "reviewer" の形。agents/<名前>.md があるもの）は、SubagentStop で hook が動くこと
   matcher=$(awk '/"SubagentStop"/ { f = 1 } f && match($0, /"matcher": *"[^"]*"/) { m = substr($0, RSTART, RLENGTH); sub(/^"matcher": *"/, "", m); sub(/"$/, "", m); print m; exit } f && /^[[:space:]]*[]][[:space:]]*,?[[:space:]]*$/ { exit }' "$c/settings.json")
   for a in $(grep -E '^[A-Z][A-Z0-9_]*(, *[A-Z][A-Z0-9_]*)* = "' "$1/bin/harness-hook" | grep -oE '"[^"]*"' | tr -d '"'); do
@@ -79,7 +95,7 @@ T="$TMP/repo"
 fresh() { # 壊す前の写しを作る
   rm -rf "$T"; mkdir -p "$T/config/claude" "$T/bin"
   cp -R "$ROOT/config/claude/skills" "$ROOT/config/claude/agents" "$ROOT/config/claude/CLAUDE.md" "$ROOT/config/claude/settings.json" "$T/config/claude/"
-  cp "$ROOT/install.sh" "$T/"; cp "$ROOT/bin/harness-hook" "$T/bin/"
+  cp "$ROOT/install.sh" "$ROOT/README.md" "$T/"; cp "$ROOT/bin/harness-hook" "$T/bin/"
 }
 edit() { # edit <ファイル> <sed の式>（sed -i は GNU と BSD で書き方が違うので使わない）
   sed "$2" "$1" > "$TMP/edit"; mv "$TMP/edit" "$1"
@@ -108,6 +124,13 @@ fresh; edit "$T/install.sh" "\\|^config/claude/skills/$s[[:space:]]|d"; run
 expect "否定: LINKS に skills/$s が無ければ FAIL" failed "LINKS に config/claude/skills/$s "
 fresh; edit "$T/config/claude/settings.json" '/"SubagentStop"/,/]/s/"matcher": *"[^"]*"/"matcher": "nobody"/'; run
 expect "否定: SubagentStop の matcher に agent が無ければ FAIL" failed "SubagentStop の matcher"
+
+fresh; edit "$T/config/claude/CLAUDE.md" '/^流れ（/s/→ ブランチ → 要件の固定/→ 要件の固定 → ブランチ/'; run
+expect "否定: CLAUDE.md の流れの 1 行で要件の固定がブランチより前なら FAIL" failed "CLAUDE.md の流れの 1 行の段の順序"
+fresh; edit "$T/config/claude/CLAUDE.md" 's/^1\. \*\*ブランチ\*\*/1. **要件の固定X**/'; run
+expect "否定: CLAUDE.md の手順の番号が入れ替わっていれば FAIL" failed "CLAUDE.md の手順の番号の順序"
+fresh; edit "$T/README.md" 's|→ ブランチ（基点から）|→ @|; s|→ 要件の写しを固定|→ ブランチ（基点から）|; s|→ @|→ 要件の写しを固定|'; run
+expect "否定: README の流れの図でブランチと要件の固定を入れ替えれば FAIL" failed "README の流れの図の段の順序"
 
 echo "skills: ok $passed, FAIL $fail"
 [ "$fail" -eq 0 ]

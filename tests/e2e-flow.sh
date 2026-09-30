@@ -25,7 +25,8 @@ class TestBase(unittest.TestCase):
 EOF
 git -C "$R" init -q -b main
 git -C "$R" add -A
-git -C "$R" -c user.name=e2e -c user.email=e2e@example.com commit -q -m init
+# 準備のコミットは人の操作として行う（Claude から実行すると CLAUDECODE を引き継ぎ、TMPDIR の外のリポジトリには関門が掛かるため）
+env -u CLAUDECODE git -C "$R" -c user.name=e2e -c user.email=e2e@example.com commit -q -m init
 BASE=$(git -C "$R" rev-parse HEAD)
 
 case "$SCENARIO" in

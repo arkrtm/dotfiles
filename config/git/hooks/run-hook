@@ -1,18 +1,25 @@
 #!/bin/sh
 # 全リポジトリ共通の git hooks（core.hooksPath = ~/.config/git/hooks）。各 hook 名はこのファイルへのシンボリックリンク。
-# 1. pre-commit のときだけ、ハーネスの関門（証拠の無いコード変更のコミットを止める）
+# 1. pre-commit のときは、ハーネスの関門（証拠の無いコード変更のコミットを止める）。post-commit のときは、関門を通ったコミットの記録
 # 2. そのリポジトリ自身の同名 hook（.git/hooks/<name>）があれば、引数と標準入力をそのまま渡して実行する
-# 注意: リポジトリ側で core.hooksPath を設定していると（husky 等）このファイルは呼ばれず、関門も効かない
+# 注意: リポジトリ側で core.hooksPath を設定していると（husky 等）このファイルは呼ばれない
+#       （そのターンに作られた、関門を通らないコミットは、Claude Code の Stop で harness-hook が見つけて差し戻す）
 # reference-transaction は全ての参照更新で呼ばれる（git init の途中でも）ため、リンクを置いていない
 name=$(basename "$0")
-# 関門の対象は Claude Code からのコミットだけ（人の手動コミットでは harness-hook を起動しない）
-if [ "$name" = pre-commit ] && [ -n "${CLAUDECODE:-}" ]; then
-  gate="$HOME/.local/bin/harness-hook"
-  if [ -x "$gate" ]; then
-    "$gate" pre-commit || exit 1
-  else
-    echo "harness: $gate が無いため関門を通さずに続行する（dotfiles の install.sh を実行すること）" >&2
-  fi
+# 関門の対象は Claude Code からのコミットだけ（人の手動コミットでは harness-hook を起動しない）。
+# HARNESS_GIT_PID（hook を起動した git の PID）で、同じ git commit の pre-commit と post-commit を結び付ける
+gate="$HOME/.local/bin/harness-hook"
+if [ -n "${CLAUDECODE:-}" ]; then
+  case "$name" in
+    pre-commit)
+      if [ -x "$gate" ]; then
+        HARNESS_GIT_PID=$PPID "$gate" pre-commit || exit 1
+      else
+        echo "harness: $gate が無いため関門を通さずに続行する（dotfiles の install.sh を実行すること）" >&2
+      fi ;;
+    post-commit)  # 関門を通ったコミットの tree を記録する（Stop の突き合わせ用。失敗してもコミットは済んでいる）
+      [ ! -x "$gate" ] || HARNESS_GIT_PID=$PPID "$gate" post-commit || true ;;
+  esac
 fi
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 repo_hook="$common_dir/hooks/$name"
