@@ -128,6 +128,20 @@ require("lazy").setup({
     opts = { open_for_directories = true },
   },
 
+  -- コマンドライン・メッセージ・通知の UI を置き換える（通知は noice 自身の表示。nvim-notify は入れない）
+  {
+    "folke/noice.nvim",
+    event = "VeryLazy",
+    dependencies = { "MunifTanjim/nui.nvim" },
+    opts = {
+      presets = {
+        bottom_search = true, -- / と ? の検索は従来どおり画面下に出す
+        command_palette = true, -- : のコマンドラインと補完候補を画面上部にまとめて出す
+        long_message_to_split = true, -- 長いメッセージは分割ウィンドウに出す
+      },
+    },
+  },
+
   -- パーサーのビルドに C コンパイラと tree-sitter CLI（mise）が必要。使えない端末では読み込まない
   -- （tree-sitter の配布バイナリは glibc 2.39 以上が必要で、Debian 12 では起動しない）
   {
