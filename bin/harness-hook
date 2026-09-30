@@ -37,11 +37,27 @@ REVIEWER = "reviewer"
 SKIP = {"tests": "TDD不要:", "verified": "検証不要:", "reviewed": "レビュー不要:"}
 
 
-def state_dir(session):
+def state_base():
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    d = os.path.join(base, "harness", re.sub(r"[^A-Za-z0-9_.-]", "_", session or "nosession"))
+    return os.path.join(base, "harness")
+
+
+def state_dir(session):
+    d = os.path.join(state_base(), re.sub(r"[^A-Za-z0-9_.-]", "_", session or "nosession"))
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def log(cmd, data, note=""):
+    """呼び出しごとに 1 行。動作確認とデバッグ用（~/.local/state/harness/log）"""
+    try:
+        ti = data.get("tool_input") or {}
+        what = ti.get("file_path") or (ti.get("command") or "")[:60] or data.get("agent_type") or ""
+        with open(os.path.join(state_base(), "log"), "a") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {(data.get('session_id') or '')[:8]} {cmd:<12} "
+                    f"{data.get('tool_name') or data.get('hook_event_name') or ''} {what} {note}\n")
+    except Exception:
+        pass
 
 
 def mark(d, name):
@@ -97,12 +113,15 @@ def current_branch(path):
 
 
 def prune(base_days=7):
-    base = os.path.dirname(state_dir("x"))
+    base = state_base()
     cutoff = time.time() - base_days * 86400
     for name in os.listdir(base):
         p = os.path.join(base, name)
         try:
-            if os.path.getmtime(p) < cutoff:
+            if name == "log":
+                if os.path.getsize(p) > 1_000_000:
+                    os.remove(p)
+            elif os.path.getmtime(p) < cutoff:
                 for f in os.listdir(p):
                     os.remove(os.path.join(p, f))
                 os.rmdir(p)
@@ -117,6 +136,7 @@ def main():
     except Exception:
         return
     d = state_dir(data.get("session_id"))
+    log(cmd, data)
 
     if cmd == "turn":
         for n in ("changed", "verified", "reviewed"):
@@ -163,6 +183,7 @@ def main():
             "reviewed": has(d, "reviewed"),
         }
         missing = [k for k, v in ok.items() if not v and SKIP[k] not in msg]
+        log(cmd, data, f"missing={missing}")
         if not missing:
             return
         text = {

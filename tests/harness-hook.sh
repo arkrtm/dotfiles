@@ -73,6 +73,9 @@ git -C "$REPO" switch -q -c master
 checkg "master 上の編集も拒否する" deny "$(guard "$REPO/src/app.py")"
 git -C "$REPO" switch -q feat/x
 
+[ -d "$XDG_STATE_HOME/harness/x" ] && { echo "FAIL prune が x ディレクトリを作っている"; fail=1; } || echo "ok   余計な状態ディレクトリを作らない"
+grep -q "stop .*missing=" "$XDG_STATE_HOME/harness/log" && echo "ok   呼び出しログが残る" || { echo "FAIL 呼び出しログが無い"; fail=1; }
+
 turn; printf 'not json' | "$HOOK" stop >/dev/null 2>&1; r=$?
 [ "$r" = 0 ] && echo "ok   壊れた入力でも exit 0" || { echo "FAIL 壊れた入力で exit $r"; fail=1; }
 
