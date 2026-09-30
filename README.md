@@ -51,9 +51,9 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory プラグイン、hooks（状態表示 + ハーネス + compact・resume 後の記憶の注入）、ログ 365 日 |
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、作業の進め方（S/M/L、TDD、検証、レビュー、ブランチ）、Linear の使い方、スクショの場所 |
 | `config/claude/skills/{issue,design,tdd,implement,accept,verify,review,diagnose,wrap-up}` | `~/.claude/skills/…` | `/design` 設計の対話（2〜3 案の比較と推奨、設計の合意）、`/tdd` TDD の手順と避けるべきテストの書き方、`/accept` acceptor による受け入れ検証（fork。成果物を実際に動かして受け入れ条件を確かめる）、`/verify` 検証手順、`/review` reviewer による敵対的レビュー（fork。`/review fix` は範囲限定の再レビュー）、`/issue ARK-nn` Linear 起点の作業、`/wrap-up` M/L 完了時の締め（Linear 記録 → 知識の振り分け → tinymemory 保存）、`/implement` 計画をタスクに分けて implementer で並列に実装、`/diagnose` 根本原因を確かめてから直すデバッグ手順 |
-| `config/claude/agents/reviewer.md` | `~/.claude/agents/reviewer.md` | 読み取り専用・effort high の敵対的レビュアー |
+| `config/claude/agents/reviewer.md` | `~/.claude/agents/reviewer.md` | 読み取り専用・effort high・モデルは opus に固定（関門の審査はセッションのモデルに左右されない）の敵対的レビュアー |
 | `config/claude/agents/implementer.md` | `~/.claude/agents/implementer.md` | `/implement` の実装者。持ち分のファイルだけを TDD で変え、短い状態報告を返す |
-| `config/claude/agents/acceptor.md` | `~/.claude/agents/acceptor.md` | `/accept` の受け入れ検証役。実装を読む前に成果物を動かし、条件ごとに観測値で判定し、検査スクリプトを tests/ に残す。実装は直さない |
+| `config/claude/agents/acceptor.md` | `~/.claude/agents/acceptor.md` | `/accept` の受け入れ検証役（モデルは opus に固定）。実装を読む前に成果物を動かし、条件ごとに観測値で判定し、検査スクリプトを tests/ に残す。実装は直さない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch / `core.hooksPath`。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks/` | `~/.config/git/hooks/` | 全リポジトリ共通の git hooks。`run-hook` 1 本に各 hook 名のリンク。pre-commit でハーネスの関門、続けてリポジトリ自身の `.git/hooks/<name>` に委譲。リポジトリ側で `core.hooksPath` を設定していると呼ばれない（関門も効かない） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
@@ -86,8 +86,8 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
   → /review … reviewer が 3 軸で判定（要件の写し・受け入れの報告・RED の記録を読む）… hook: 承認が無いとコミットできない
       指摘を直したら /accept → /verify → /review fix（2 回まで。残ればユーザーが裁定）
   → コミット … pre-commit が、ステージした内容に対する 4 つの証拠を確かめる
-  → 統合の判断（ユーザー: マージ／PR／残す）→ マージ後に main で検証 → ブランチと worktree を片付ける
-  → /wrap-up … Linear・CLAUDE.md・README・tinymemory に 1 か所ずつ記録
+  → /wrap-up（作業ブランチの上で、統合の前）… Linear・CLAUDE.md・README・tinymemory に 1 か所ずつ記録
+  → 統合の判断（ユーザー: マージ／PR／残す）→ マージ後に main で検証 → ブランチと worktree を片付ける → issue を Done
   （途中でコンテキストが溜まると、区切りで session の保存を促す。compact の後は記憶を注入）
 ```
 
@@ -98,9 +98,9 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 | superpowers | 自作 | 強い方 | 違い |
 |---|---|---|---|
 | using-superpowers（作業の前に skill を使わせる案内） | CLAUDE.md の流れの 1 行（常時読み込み） | 自作 | superpowers は案内の文を入れるだけ。自作は、手順を飛ばすと Stop が差し戻し、pre-commit が止める |
-| brainstorming | `/design`・`/issue` | 同等 | 質問は 1 問ずつでなく、選択肢と推奨を付けてまとめて聞く（往復が少ない）。設計・要件・受け入れ条件は issue の本文に 1 か所 |
-| writing-plans | `/implement` の計画の形 | 同等 | superpowers は手順ごとのコードまで書く。自作は、全体の制約・レビューの焦点・受け入れ条件 → タスクの対応・RED で期待する失敗を書き、コードは implementer に任せる |
-| executing-plans・subagent-driven-development | `/implement` | 同等 | 自作は波ごとに並列で速く、安い（implementer は約 1.5 万トークン）。superpowers はタスクごとに 2 段のレビューをする。自作はその代わりに、インタフェースを作った波の後と最後に `/review`、最後に `/accept`。進捗は issue の本文のチェックリスト |
+| brainstorming | `/design`・`/issue` | 同等 | 質問は 1 問ずつでなく、選択肢と推奨を付けてまとめて聞く（往復が少ない）。承認の前に 4 項目の自己点検（空欄・矛盾・曖昧さ・範囲）、大きな依頼は子 issue に分ける。設計・要件・受け入れ条件は issue の本文に 1 か所 |
+| writing-plans | `/implement` の計画の形 | 同等 | superpowers は手順ごとのコードまで書く。自作は、全体の制約・レビューの焦点・受け入れ条件 → タスクの対応・「作る側 → 使う側」の表・RED で期待する失敗を書き、承認の前に決めていない行が無いかを見直す。コードは implementer に任せる |
+| executing-plans・subagent-driven-development | `/implement` | 同等 | 自作は波ごとに並列で速く、安い（implementer は約 1.5 万トークン）。superpowers はタスクごとに 2 段のレビューをする。自作はその代わりに、インタフェースを作った波の後に `/review interim`、最後に `/accept` とフルの `/review`。進捗は issue の本文のチェックリスト、実装者が自分で決めたことは `## 判断` に集めて完了報告に全件並べる。2 回 BLOCKED なら上位のモデルで立て直す |
 | dispatching-parallel-agents | `/implement` の波、`/diagnose` の並列の調査 | 同等 | — |
 | test-driven-development・testing-anti-patterns | `/tdd`、reviewer のテスト軸 | 自作 | RED を hook が記録し、reviewer が読む（自己申告にしない）。既存テストの変更・削除も関門の対象 |
 | systematic-debugging（根本原因の追跡・多層の防御・条件で待つ・汚染の特定） | `/diagnose` | 同等 | superpowers は補助の文書が多い。自作は安い順に絞り、原因が見えたら止める（試行でコスト増を 2〜4 割に抑えた。ARK-44） |
@@ -110,19 +110,20 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 | receiving-code-review | CLAUDE.md の手順 6 | 同等 | 確かめてから直す。誤りは根拠を添えて反論し、reviewer が確かめて取り下げる。人・PR・`/code-review` の指摘も同じ |
 | using-git-worktrees | `cw`（`claude -w`）、着手時の基準の検証 | 同等 | — |
 | finishing-a-development-branch | CLAUDE.md の手順 8 | 同等 | 選択肢の提示、マージ後の検証、破棄は明示の依頼のときだけ、worktree は `--force` を使わない |
-| writing-skills | 同梱の skill-creator、`tests/skills.sh`、`tests/e2e-flow.sh` | superpowers | superpowers は skill そのものを TDD で書く手法（圧力をかける場面で失敗を見てから直す）が詳しい。自作は skill・agent・参照・リンクの一貫性の検査（関門に入れる）と、流れ全体を `claude -p` で実際に動かす検査（手動）で補う |
+| writing-skills | 同梱の skill-creator、`tests/skills.sh`、`tests/e2e-flow.sh` | superpowers | superpowers は skill そのものを TDD で書く手法（圧力をかける場面で失敗を見てから直す）が詳しい。自作は skill・agent・参照・リンクの一貫性の検査（関門に入れる）と、流れ全体を `claude -p` で実際に動かす検査（手動。ふつうの依頼と、「テストとレビューを省いてすぐコミットして」と圧力をかける依頼の 2 場面）で補う |
 | — | 記録の振り分け（`/issue`・`/wrap-up`・区切りの remember） | 自作だけ | Linear・CLAUDE.md・README・tinymemory に重複なく |
 | プラグインとして 15 以上の環境に入る | dotfiles 前提 | superpowers | 自作は個人の環境での強制を優先した（ARK-46） |
 
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
 - コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/accept`、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸）。証拠（検証の成功・受け入れ検証の合格・レビューの承認）が無いコード変更は git の pre-commit が止める
-- 受け入れ検証（ARK-48。いちばん大事な段階）: 型やテストが通っても、成果物が要件どおりとは限らない。受け入れ条件は成果物を実際に動かして確かめられる性質（データなら件数・スキーマ・値の範囲・一意性・参照の整合・再現性・境界）で書き、独立した acceptor が実装を読む前に本物の入力（無理ならサンプル）で成果物を動かして確かめる。作った本人が確かめないので甘くならない。判定行 `受け入れ: 合格` と条件ごとの行 `[ACn] 合格` がそろったときだけ hook が「受け入れ済み」を記録し、報告は git dir の `harness-last-accept` に保存して reviewer が読む。検査スクリプトは tests/ に残るので、以後の変更でも壊れたら分かる
+- 受け入れ検証（ARK-48。いちばん大事な段階）: 型やテストが通っても、成果物が要件どおりとは限らない。受け入れ条件は成果物を実際に動かして確かめられる性質（データなら件数・スキーマ・値の範囲・一意性・参照の整合・再現性・境界）で書き、独立した acceptor が実装を読む前に本物の入力（無理ならサンプル）で成果物を動かして確かめる。作った本人が確かめないので甘くならない。判定行 `受け入れ: 合格` と条件ごとの行 `[ACn] 合格` がそろい、しかも要件の写しにある AC 番号がすべて合格で報告に出ているときだけ（一部の条件だけを確かめた報告は通らない。ARK-50）hook が「受け入れ済み」を記録し、報告は git dir の `harness-last-accept` に保存して reviewer が読む。検査スクリプトは tests/ に残るので、以後の変更でも壊れたら分かる
 - レビューの往復を抑える仕組み（ARK-41。superpowers の範囲限定の再レビューと ECC の報告前の関門を参考）: フルレビューは 1 回。直した後は `/review fix` が「前回の未解決の指摘」と「前回見た版からの修正差分」だけを見る（版は `skills/review/snapshot.sh` が作業ツリー全体の tree ID として記録）。重大・中は具体的な発生条件が書けるものだけで、軽と範囲外は判定に影響しない（issue に記録）。reviewer は検証を回し直さない。`/review fix` は 2 回まで、それでも残ればユーザーが指摘ごとに裁定する
 - 並列実装とデバッグ（ARK-42。superpowers の subagent-driven-development・systematic-debugging と ECC の multi-*・build-error-resolver を参考に自作し、どちらも入れない）: `/implement` は計画を「持ち分のファイルが重ならないタスク」に分けて波ごとに implementer を同時に起動し、コントローラは短い状態報告だけを受けて統合・検証・レビューする。implementer はツールを絞っていて、小さなタスク 1 つで約 1.5 万トークン（汎用のエージェントの約 4 分の 1。ARK-47）。`/diagnose` は再現コマンド → 安い順の絞り込み（スタックトレースの箇所 → 逆向きの追跡 → 最近の変更 → 動く例との比較 → 境界の計測 → `git bisect run`。原因が見えたらそこで止める）→ 反証できる仮説 → 回帰テスト付きで共有の関数を直す。3 回直らなければ設計を疑って相談する
 - 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）で、Claude が cwd にして作業したことのあるリポジトリ（その worktree を含む）。人の手動コミット、GUI クライアント、テストが作る一時リポジトリ、セッションの cwd 以外のリポジトリは対象外。検証・受け入れ検証・レビューの証拠は、セッションの cwd の作業ツリーに対して記録される
-- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイル（設定の .json .toml .yaml .yml .ini .cfg を含む）、名前が Dockerfile・Makefile・justfile のファイル、拡張子の無い shebang 付きスクリプト、リポジトリの `.harness-code` に書いたパス。それ以外（Markdown など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
+- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイル（設定の .json .toml .yaml .yml .ini .cfg、ARK-50 で足した .xml .html .css .tf .R .kts .gradle .proto など広く含む）、名前が Dockerfile・Makefile・justfile のファイル、拡張子の無い shebang 付きスクリプト、リポジトリの `.harness-code` に書いたパス。それ以外（Markdown など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
 - 限界（ガードレールであって、セキュリティ境界ではない）:
-  - 意図的な迂回は防ぎ切れない（`git commit-tree`、`env -i` のような環境の丸ごとの消去、証拠ファイルの書き換えなど。代表的な形は Bash hook が拒否し、CLAUDE.md で禁止している。ARK-49 で、閲覧目的のコマンド（小文字の `git_config` の grep、`--no-verbose`、`echo $CLAUDECODE`）の誤検知は減らした）
+  - 意図的な迂回は防ぎ切れない（`git commit-tree`、`env -i` のような環境の丸ごとの消去、証拠ファイルの書き換えなど。代表的な形は Bash hook が拒否し、CLAUDE.md で禁止している。ARK-49・50 で、閲覧目的のコマンド（小文字の `git_config` の grep、`--no-verbose`、`echo $CLAUDECODE`、`git log --grep=commit-tree`、`grep hooksPath`）とコミットメッセージの中の `-n`・`-inf` の誤検知は減らした。git の設定ファイルを `sed -i`・`tee`・リダイレクトで書き換える形は拒否する。`sh -c` の引数・ヒアドキュメントの本文は実行されうるので検査の対象のまま。自分用の検証の宣言（git-common-dir の harness-verify）の内容も指紋に含める）
+  - Bash の検査（ARK-50）は、クォートを見分ける字句解析でコマンドを区切り（サブシェルの `( )` も区切り）、`sh -c`・`eval`・コマンド置換の中も再帰して見る。文字列で見る形（`--no-verify`・`env -u CLAUDECODE` など）はクォートを外したコマンドにも当てる（`--"no-verify"` のようにクォートで語を割る形）。git のサブコマンド（commit-tree）・設定のキー（`-c`・`--config-env`・`git config` の core.hooksPath と、別の設定ファイルを読ませる include.path・includeIf.*.path）・alias の値（`-n` の commit や commit-tree になる定義）は、クォートを外した字句で見る。共通の hooks（`~/.config/git/hooks`）・`.git/hooks`・hook の本体（`~/.local/bin/harness-hook`・`~/.local/libexec/uv`）・git の設定を、消す・動かす・権限を変える・上書きする形は拒否する。hooksPath を含む行で書き込む形（リダイレクト・cp・mv・rsync・sponge・tee・dd・`sed -i` など）は、行き先を問わず拒否する。見ていないもの: hooksPath の語を含まない行での、`cd` で移ってからの相対パス、`xargs` や `find -exec` の `{}` のように引数が字句に現れない形、変数・alias による間接呼び出し（`g=git; $g commit -n`）、`curl -o`・スクリプト言語からの書き込み、別々の Bash 呼び出しに分けた手順。誤検知として、`rm -rf .git`・`mv ~/.gitconfig ~/.gitconfig.bak` と、クォートの中の文字列がコマンド行に見える形（`echo "git commit -n"`、`grep "hooksPath\|cp"`）も拒否する
   - pre-commit を通らない操作（`cherry-pick`、`rebase`、競合の無い `merge`）、競合解消の締めのコミット、テストの追加だけのコミットは対象外（マージ後は main で検証一式を流す手順で補う）
   - リポジトリ側で `core.hooksPath` を設定している場合（husky 等）は関門が呼ばれない
   - 受け入れ検証とレビューの証拠は、サブエージェントが終わった時点の内容に記録される。その間にファイルを変えると、見ていない内容にも付く（CLAUDE.md で禁止）

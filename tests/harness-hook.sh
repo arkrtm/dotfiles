@@ -69,7 +69,7 @@ guarde() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Edit","tool_i
 precommit() { (cd "$REPO" && "$HOOK" pre-commit); }
 write() { mkdir -p "$(dirname "$REPO/$1")"; echo "$2" > "$REPO/$1"; }
 fresh() { $G reset -q --hard; $G clean -qfd; turn; }                 # きれいな作業ツリーで新しいターンを始める
-reqs() { echo "${1:-要件と受け入れ条件}" > "$(cd "${CWD:-$REPO}" && "$HOOK" requirements-path)"; }  # 承認済みの要件の写しを書く（今のブランチ）
+reqs() { printf '%b\n' "${1:-AC1: 要件と受け入れ条件}" > "$(cd "${CWD:-$REPO}" && "$HOOK" requirements-path)"; }  # 承認済みの要件の写しを書く（今のブランチ。\n は改行）
 ready() { reqs; write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; accept; review reviewer; }  # 証拠がそろった状態
 reqs   # feat/x の要件の写し（関門は、コードを変えたら承認済みの要件の写しを求める）
 
@@ -167,10 +167,10 @@ resumed() { # resumed <新しい依頼の行（空なら入れない）>
       '[1,2]' '{"message":{"role":"assistant","content":["中断"]}}' \
       '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"SubagentHandback","input":"壊れた入力"}]}}'
   } > "$TMP/resumed.jsonl"; review_from "$TMP/resumed.jsonl"; }
-before=$(log_count "review-done .*approved=False")
+before=$(log_count "review-done .*reviewed=False")
 resumed '{"message":{"role":"user","content":"もう一度レビューして"}}'
 check "記録に以前の承認があっても、今回の依頼の後に判定が無ければレビュー済みにしない" block "$(stop)"
-expect "そのときも review-done のログが 1 行残る（記録に想定外の行があっても落ちない）" [ "$(log_count "review-done .*approved=False")" = "$((before + 1))" ]
+expect "そのときも review-done のログが 1 行残る（記録に想定外の行があっても落ちない）" [ "$(log_count "review-done .*reviewed=False")" = "$((before + 1))" ]
 resumed '{"message":{"role":"user","content":[{"type":"text","text":"もう一度レビューして"}]}}'
 check "新しい依頼がブロック形式（content がリスト）でも同じ" block "$(stop)"
 resumed ''
@@ -180,7 +180,7 @@ printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"tool_use","nam
 check "reviewer が途中で実行したコマンドの中の判定行は、報告として読まない" block "$(stop)"
 review reviewer
 check "テスト・検証・受け入れ・レビュー承認がそろえば通す" pass "$(stop)"
-expect "review-done は承認の可否を 1 行でログに残す" grep -q "review-done .*approved=True" "$XDG_STATE_HOME/harness/log"
+expect "review-done は承認の可否を 1 行でログに残す" grep -q "review-done .*reviewed=True" "$XDG_STATE_HOME/harness/log"
 write src/app.py code2
 check "その後に再編集すれば検証・受け入れ・レビューは無効になり差し戻す" block "$(stop)"
 bash_ "uv run pytest -q"; accept; review reviewer
@@ -236,6 +236,21 @@ write src/app.py ac3; bash_ "uv run pytest -q"; accept; review reviewer "$OKA"
 check "acceptor の報告の形で reviewer が終わってもレビュー済みにしない" block "$(stop)"
 review reviewer
 check "（前提）reviewer の報告なら通す" pass "$(stop)"
+# 受け入れは要件の写しの受け入れ条件の番号（行頭か箇条書きの後の「AC<n>:」）と突き合わせる: 写しの番号がすべて、節の中に「合格」で出ていること
+reqs '要件\nAC1: 振る舞い\n- AC2: 境界\n- **AC3**: 出力'; write src/app.py ac4; bash_ "uv run pytest -q"; review reviewer
+accept "$C- [AC1] 合格 — x\n- [AC2] 合格 — y\n## 判定\n受け入れ: 合格"
+check "写しの受け入れ条件（AC3）が報告に無ければ受け入れ済みにしない" block "$(stop)"
+expect "review-done は、報告に合格で出ていない写しの番号をログに残す" grep -q "review-done .*accepted=False.*AC3" "$XDG_STATE_HOME/harness/log"
+accept "$C- [AC1] 合格 — x\n- [AC2] 合格 — y\n## 検査スクリプト\n- [AC3] 合格 — z\n## 判定\n受け入れ: 合格"
+check "写しの番号が節の外にしか無ければ受け入れ済みにしない" block "$(stop)"
+accept "$C- [AC1] 合格 — x\n- [AC2] 合格 — y\n- [AC3] 合格 — z\n- [AC4] 合格 — 写しに無い番号\n## 判定\n受け入れ: 合格"
+check "写しの番号（行頭・箇条書き・強調の AC<n>:）がすべて合格なら受け入れ済みにする（写しに無い番号が報告にあるのは構わない）" pass "$(stop)"
+reqs '要件と受け入れ条件\n- 番号の無い条件（AC1 の形でない）'; write src/app.py ac5; bash_ "uv run pytest -q"; review reviewer; accept; r=$(stop)
+check "写しに AC 番号が 1 つも無ければ受け入れ済みにしない" block "$r"
+expect "理由に、受け入れ条件に番号を付けることが含まれる" [ -n "$(printf '%s' "$r" | grep -F '受け入れ条件に AC1, AC2 … の番号を付ける')" ]
+$G add -A
+expect "同じく、pre-commit の理由にも含まれる" [ -n "$(precommit 2>&1 | grep -F '受け入れ条件に AC1, AC2 … の番号を付ける' || true)" ]
+reqs
 
 # 検証として認める／認めないコマンドの形: 証拠になるのは、宣言したコマンド（ここでは .harness-verify の uv run pytest -q）の成功だけ
 # 証拠は内容の指紋で持つので、ケースごとに内容を変える（同じ内容だと前のケースの「検証済み」が一致してしまう）
@@ -293,6 +308,10 @@ expect "（切り詰めるのは古い側）" sh -c "grep -qx '  new-entry' '$RE
 { printf '2026-01-01 00:00:00 tree=old\n  '; head -c 200000 /dev/zero | tr '\0' x; echo; } > "$RED"
 bash_fail "uv run pytest -q" "new-entry"
 expect "100KB を超える分も古い側から切り詰める" sh -c "[ \$(wc -c < '$RED') -le 100000 ] && grep -qx '  new-entry' '$RED'"
+for c in "deno test" "mocha" "npx mocha" "playwright test" "npx playwright test" "rake test" "rake spec" "bundle exec rake" "bats tests" "ctest"; do
+  bash_fail "$c 2>&1 | tail -3" "red: $c"
+  expect "テストランナーの失敗も RED として記録する: $c" grep -qx "  red: $c" "$RED"
+done
 
 # 宣言した検証コマンド（リポジトリのトップの .harness-verify）: 書かれたコマンドがすべて同じ内容で成功したときだけ検証済み
 fresh; printf '# 宣言した検証コマンド\nsh tests/run.sh\n\n./ci.sh\n' > "$REPO/.harness-verify"; write src/app.py hv1; accept; review reviewer
@@ -312,11 +331,18 @@ bash_fail "./ci.sh"
 check "宣言したコマンドの失敗でも、検証済みは消える" block "$(stop)"
 expect "宣言したコマンド（検証コマンドの形でなくても）の失敗も RED として記録する" grep -qx '  $ ./ci.sh' "$RED"
 # 自分だけの宣言（<git-common-dir>/harness-verify）もあれば、共有の宣言と合わせた行がすべて要る
-fresh; write src/app.py hv3; accept; review reviewer; echo 'sh tests/run.sh' > "$REPO/.git/harness-verify"
+fresh; echo 'sh tests/run.sh' > "$REPO/.git/harness-verify"; write src/app.py hv3; accept; review reviewer
 bash_ "uv run pytest -q"
 check "共有と自分だけの宣言が両方あれば、共有の行だけの成功では差し戻す" block "$(stop)"
 bash_ "sh tests/run.sh"
 check "（前提）両方の行が成功すれば通す" pass "$(stop)"
+# 自分だけの宣言も、要件の写しと同じく指紋に入る（リポジトリの外なので、作業ツリーとインデックスで同じ値）
+printf '# 書き換えた\nsh tests/run.sh\n' > "$REPO/.git/harness-verify"
+check "自分だけの宣言を書き換えると（宣言した行が同じでも）、検証・受け入れ・レビューの証拠はすべて無効になる" block "$(stop | grep /verify | grep /accept | grep /review)"
+$G add -A
+checkx "同じく、ステージ済みの内容でも pre-commit は拒否する" 1 precommit
+echo 'sh tests/run.sh' > "$REPO/.git/harness-verify"
+checkx "宣言を元に戻せば、以前の証拠が有効（作業ツリーとインデックスで同じ指紋）" 0 precommit
 rm "$REPO/.git/harness-verify"
 
 # 承認済みの要件の写し（<git-dir>/harness-requirements/<ブランチ名>.md）の置き場所
@@ -336,14 +362,14 @@ expect "（同じく）前の内容が残る" [ "$(cat "$REQ")" = "$(printf '承
 fresh; rm "$REQ"; write src/app.py rq1; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
 check "要件の写しが無ければ、ほかの証拠がそろっていても差し戻す" block "$r"
 expect "理由に、要件の写しの保存のしかた・場所と /issue が含まれる" [ -n "$(printf '%s' "$r" | grep -F "承認済みの要件と受け入れ条件の写しを \`harness-hook requirements-save\` に標準入力で渡して保存する（場所: $REQ。S は依頼の原文と受け入れ条件 1 行）→ /issue")" ]
-expect "（前提）足りないのは要件だけ（/verify・/accept・/review は理由に無い）" [ -z "$(printf '%s' "$r" | grep -e /verify -e /accept -e /review)" ]
+expect "（前提）足りないのは要件と、その受け入れ条件の番号だけ（/verify・/review は理由に無い。受け入れは写しの番号と突き合わせる）" [ -z "$(printf '%s' "$r" | grep -e /verify -e /review)" ]
 $G add -A
 checkx "同じく、pre-commit も拒否する" 1 precommit
 : > "$REQ"; bash_ "uv run pytest -q"; accept; review reviewer
 check "要件の写しが空でも差し戻す" block "$(stop | grep -F "場所: $REQ")"
 reqs; bash_ "uv run pytest -q"; accept; review reviewer
 check "（前提）要件の写しを書いて証拠をそろえれば通す" pass "$(stop)"
-reqs "書き換えた要件"
+reqs "AC1: 書き換えた要件"
 check "要件の写しを書き換えると、検証・受け入れ・レビューの証拠はすべて無効になる" block "$(stop | grep /verify | grep /accept | grep /review)"
 checkx "同じく、ステージ済みの内容でも pre-commit は拒否する" 1 precommit
 reqs
@@ -379,6 +405,15 @@ for f in pyproject.toml package.json compose.yaml .github/workflows/ci.yml tox.i
   Dockerfile sub/Makefile justfile; do
   fresh; write "$f" x
   check "設定ファイル・ビルド定義だけの変更も差し戻す: $f" block "$(stop)"
+done
+# マークアップ・スタイル・IaC・R なども対象（拡張子の大文字小文字は区別しない）。Markdown・.txt・画像は対象外のまま
+for f in pom.xml main.tf style.css analysis.R build.gradle.kts; do
+  fresh; write "$f" x
+  check "コードとして差し戻す: $f" block "$(stop)"
+done
+for f in README.md notes.txt logo.png; do
+  fresh; write "$f" x
+  check "文書・画像だけの変更は通す: $f" pass "$(stop)"
 done
 # リポジトリのトップの .harness-code（1 行 1 パターン、fnmatch の * は / にも当たる）に当たるパスもコード
 fresh; printf '# 関門の対象に加えるパス\nconfig/claude/*\n\n' > "$REPO/.harness-code"
@@ -424,7 +459,7 @@ check "宣言が無ければ、検証・受け入れ・レビューがそろっ�
 expect "差し戻しの理由に、宣言の置き場所（共有・自分だけ）が出る" [ -n "$(printf '%s' "$r" | grep -F "$DECL")" ]
 expect "pre-commit も拒否し、理由に宣言の置き場所が出る" [ -n "$(cd "$OTHER" && "$HOOK" pre-commit 2>&1 | grep -F "$DECL" || true)" ]
 echo 'uv run pytest -q' > "$OTHER/.git/harness-verify"   # 自分だけの宣言（リポジトリに置けないとき）
-CWD="$OTHER"; bash_ "uv run pytest -q"; CWD=""
+CWD="$OTHER"; bash_ "uv run pytest -q"; accept; review reviewer; CWD=""   # 自分だけの宣言は指紋に入るので、書いた後に取り直す
 checkx "自分だけの宣言でも、そのリポジトリを cwd にして宣言したコマンドを成功させ、受け入れ・レビューすればコミットできる" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 BROKEN="$TMP/broken"; git init -q -b feat "$BROKEN"; CWD="$BROKEN"; turn; CWD=""; echo junk > "$BROKEN/.git/index"
 checkx "判定できないとき（git が失敗する等）はコミットを止める" 1 sh -c "cd '$BROKEN' && '$HOOK' pre-commit"
@@ -512,10 +547,87 @@ for c in "git commit --no-verify -m x" "git commit --no-veri -m x" "git commit -
   "env GIT_CONFIG_GLOBAL=/dev/null git commit -m x" "git commit-tree abc" "cp ~/.local/state/harness/repo/x/verified ~/.local/state/harness/repo/x/reviewed"; do
   checkd "拒否する: $c" deny "$(guardb "$c")"
 done
-# 迂回にならない形は通す: --no-verbose、小文字の git_config、環境変数を読むだけ
-for c in "git add -A && git commit -m x" "git log --oneline -n 5" "git status" "git commit --no-verbose -m x" "grep -n git_config file" \
-  "grep -n GIT_CONFIG bin/harness-hook" 'echo $CLAUDECODE' "printenv CLAUDECODE"; do
+# メッセージの値を除くのは -n の検出だけ。値の外の -n、sh -c・bash -c・eval の引数、ヒアドキュメントの本文、コマンド置換は検査する
+# （JSON に入れるので、" は \" と書く。\n は改行）
+for c in 'git commit -m \"x\" --no-verify' 'git commit --no-verify -m \"x\"' 'git commit -m \"x\" -n' "git commit -m 'x' -n" "git commit -Cm -n" \
+  'sh -c \"git commit --no-verify\"' 'sh -c \"git commit -n -m x\"' 'git commit -m \"$(git commit -n -m y)\"' 'sh <<E\ngit commit -n -m x\nE' \
+  "git -C /tmp commit-tree abc" "bash -c 'git --no-pager commit-tree abc'" "eval 'commit-tree abc'" "true && commit-tree abc" \
+  '$(git --exec-path)/git-commit-tree abc' "git config alias.ct commit-tree" \
+  "git config core.hooksPath /tmp/h" "git config --global --unset core.hooksPath" "git --config-env=core.hooksPath=H commit -m x" \
+  "sed -i '' '/hooksPath/d' ~/.config/git/config" "sed -i.bak 's/x/y/' ~/.gitconfig" "echo x >> .git/config" "tee -a ~/.gitconfig" \
+  "perl -pi -e 's/x//' ~/.config/git/config" \
+  "grep -v hooksPath ~/.config/git/config > /tmp/c && mv /tmp/c ~/.config/git/config" "cp /tmp/c ~/.gitconfig" \
+  "install -m 644 /tmp/c .git/config" "ln -sf /tmp/c ~/.config/git/config" \
+  'git commit --author \"a -m\" -n \"x\"' "git commit --author 'a -m' -n 'x'" "git -c alias.c=commit c -n"; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+# コマンドの区切りはクォートの外の ; & | 改行だけ（>& のリダイレクト、コマンド置換の中、ヒアドキュメントの本文でも読み違えない）。
+# sh -c・bash -c・eval の引数も 1 つのコマンド行として同じく見る
+for c in 'git commit -m \"a; b\" -n' "git commit -m 'a && b' -n" 'git commit -m \"a | b\" -n' "git commit -m x 2>&1 -n" \
+  'git commit -m \"\" -n' 'git commit -m x \\\n -n' 'git commit -m \"$(printf \"a; b\")\" -n' \
+  "git commit -m \\\"\$(cat <<'EOF'\\nIt's a fix\\nEOF\\n)\\\" -n" "cat <<'E'\\ndon't\\nE\\ngit commit -n -m x\\ncat <<'E'\\nit's\\nE" \
+  "git commit -m \$'\\\\'' -n ''" "bash -c 'git commit -m x -n'" "eval 'git commit -n -m x'" 'zsh -c \"git commit -anm x\"' \
+  "bash -c 'cp /tmp/c ~/.gitconfig'" "cp /tmp/config ~/.config/git/" "mv /tmp/config ~/.config/git" "cp config .git/" \
+  "cp -t ~/.config/git /tmp/config" "cp --target-directory=.git config" "cp /tmp/.gitconfig ~/" "cp /tmp/x ~/.config/git/hooks/pre-commit" \
+  "(rm -rf ~/.config/git/hooks)" "(mv /tmp/c .git/config)" 'echo $(cp /tmp/c ~/.gitconfig)'; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+# git の字句はクォートを外して見る: サブコマンドの commit-tree、-c・--config-env・git config での core.hooksPath の設定、
+# 迂回になる alias の定義（値を git のコマンドとして見る。! のシェルの alias も）
+for c in 'git \"commit-tree\" abc' "git 'commit-tree' abc" 'git -c core.\"hooksPath\"=/x commit -m x' 'git -c \"core.hooksPath\"=/x commit -m x' \
+  'git --config-env=\"core.hooksPath\"=H commit -m x' "git config core.'hooksPath' /x" "git config alias.c 'commit -n'" \
+  'git config --global alias.c \"commit -n\"' "git -c alias.c='commit -n' c -m x" 'git -c \"alias.c=commit -n\" c -m x' \
+  "git config alias.t '!git commit-tree x'" "git config alias.t commit-tree"; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+# 文字列で見る形（BYPASS）も、クォートを外したコマンドに当てる（クォートで語を割る形）。別の設定ファイルを読ませる include.path、
+# rsync での上書きも拒否する
+for c in 'git commit --\"no-verify\" -m x' 'git commit --no-\"verify\" -m x' 'env -u \"CLAUDECODE\" git commit -m x' "unset 'CLAUDECODE'" \
+  "git config --global include.path /tmp/evil" "git -c include.path=/tmp/evil commit -m x" \
+  'git config --global includeIf.\"gitdir:~/\".path /tmp/evil' "rsync -a /tmp/c/ ~/.config/git/" "rsync /tmp/x ~/.config/git/hooks/pre-commit"; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+for c in "git config alias.st status" "git config alias.ci commit" "git -c alias.lg='log --oneline -n 5' lg" "git grep -n commit-tree" \
+  "rsync -a src/ /tmp/dest/"; do
   checkd "通す: $c" allow "$(guardb "$c")"
+done
+# hooksPath を含む行で書き込む（リダイレクト・mv・cp・rsync・sponge・tee・sed -i など）形は、行き先を問わず拒否する（cd の後の相対パスでも）
+for c in "cd ~/.config/git && grep -v hooksPath config > /tmp/c && mv /tmp/c config" \
+  "grep -v hooksPath ~/.config/git/config > /tmp/c && rsync /tmp/c ~/.config/git/config" \
+  "grep -v hooksPath ~/.config/git/config | sponge ~/.config/git/config"; do
+  checkd "拒否する: $c" deny "$(guardb "$c")"
+done
+# hook（~/.config/git/hooks・.git/hooks とその下、~/.local/bin/harness-hook、~/.local/libexec/uv）を消す・動かす・権限を変える・
+# 差し替える・書き換える形は拒否する。読むだけと、hook を元にした cp（写しを作る）は通す
+for c in "rm ~/.config/git/hooks/pre-commit" "rm -rf ~/.config/git/hooks" 'unlink $HOME/.config/git/hooks/run-hook' \
+  'shred -u ${XDG_CONFIG_HOME}/git/hooks/pre-commit' "truncate -s 0 ~/.local/bin/harness-hook" "rm .git/hooks/pre-commit" \
+  "mv ~/.config/git/hooks /tmp/h" "mv /tmp/x ~/.config/git/hooks/pre-commit" "mv ~/.config/git ~/.config/git.bak" \
+  "chmod -x ~/.config/git/hooks/run-hook" "chmod 000 ~/.local/libexec/uv" "chattr +i .git/hooks/pre-commit" \
+  "chflags uchg ~/.config/git/hooks/pre-commit" "ln -sf /tmp/x ~/.config/git/hooks/pre-commit" "ln -s /tmp/x ~/.local/bin/harness-hook" \
+  "cp /tmp/x ~/.config/git/hooks/pre-commit" "install -m 755 /tmp/x .git/hooks/pre-commit" "cp -r /tmp/hooks ~/.config/git/" \
+  "echo 'exit 0' > ~/.config/git/hooks/pre-commit" "printf x >> ~/.local/bin/harness-hook" "echo x >~/.config/git/hooks/pre-commit" \
+  "echo x | tee ~/.config/git/hooks/pre-commit" "sed -i '' 's/1/0/' ~/.config/git/hooks/run-hook" \
+  "bash -c 'rm ~/.config/git/hooks/pre-commit'" "rm ~/.config/git/config" "mv ~/.gitconfig /tmp/"; do
+  checkd "拒否する: $c" deny "$(guardb "$c")"
+done
+for c in "cat ~/.config/git/hooks/run-hook" "ls -l ~/.config/git/hooks" "grep -n exit ~/.config/git/hooks/run-hook" \
+  "head ~/.local/bin/harness-hook" "file ~/.local/libexec/uv" "sh -n ~/.config/git/hooks/run-hook" "test -x .git/hooks/pre-commit" \
+  "cp ~/.config/git/hooks/run-hook /tmp/run-hook.copy" "cp -r .git /tmp/backup" "mv /tmp/f ~" "rm -rf /tmp/x" "chmod +x tests/x.sh"; do
+  checkd "通す: $c" allow "$(guardb "$c")"
+done
+for c in "sh -c \\\"git commit -m 'remove -n'\\\"" "bash -c 'git commit -m \\\"drop -n\\\"'" "eval 'git commit -m \\\"use -n\\\"'" \
+  'git commit -m \"a; b\" && git log -n 3' "cp -t /tmp ~/.gitconfig" "cp ~/.gitconfig /tmp/.gitconfig" \
+  "git commit -m \\\"\$(cat <<'EOF'\\nIt's about -n\\nEOF\\n)\\\""; do
+  checkd "通す: $(printf '%s' "$c" | tr '\\' ' ')" allow "$(guardb "$c")"
+done
+# 迂回にならない形は通す: --no-verbose、小文字の git_config、環境変数を読むだけ、メッセージの中の -n、commit-tree・hooksPath を探すだけ
+for c in "git add -A && git commit -m x" "git log --oneline -n 5" "git status" "git commit --no-verbose -m x" "grep -n git_config file" \
+  "grep -n GIT_CONFIG bin/harness-hook" 'echo $CLAUDECODE' "printenv CLAUDECODE" \
+  'git commit -m \"remove -n option\"' "git commit -m 'handle -inf values'" 'git commit --message=\"use -n\"' 'git commit -am \"drop -n\"' \
+  "git log --grep=commit-tree" "grep -rn hooksPath file" "grep -n core.hooksPath README.md" \
+  "cat ~/.config/git/config" "grep -n hooksPath ~/.gitconfig" "sed -n 1,5p .git/config" "cat ~/.gitconfig > /tmp/copy" \
+  "cp ~/.gitconfig /tmp/backup" "cp ~/.gitconfig ~/.gitconfig.bak" "grep -rn hooksPath . 2>/dev/null" "(cd /tmp && ls)" 'echo $(date)'; do
+  checkd "通す: $(printf '%s' "$c" | tr '\\' ' ')" allow "$(guardb "$c")"
 done
 expect "拒否の理由に、一致した語を含める" [ -n "$(guardb "git commit --no-verify" | grep -- "--no-v")" ]
 

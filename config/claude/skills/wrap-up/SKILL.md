@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: M / L の作業をコミットし、統合を決めた後に使う（/clear の前）。このセッションで得た情報を、Linear・CLAUDE.md・README・tinymemory のどこに残すかを決めて保存する
+description: M / L の作業をコミットした後、統合（マージ）の前に、作業ブランチの上で使う。このセッションで得た情報を、Linear・CLAUDE.md・README・tinymemory のどこに残すかを決めて保存する
 allowed-tools: Bash(tinymemory:*), Bash(git status:*), Bash(git log:*)
 argument-hint: "[ARK-nn]"
 ---
@@ -8,7 +8,9 @@ argument-hint: "[ARK-nn]"
 タスクの締め。順に行う。補足: $ARGUMENTS
 
 ## 1. 前提の確認
+- 作業ブランチの上で、統合（マージ）の前に行う（main の上では CLAUDE.md・README を編集できない。ここでの変更は作業ブランチの別コミットにして、一緒に統合する）
 - `git status --porcelain` でコード変更が残っていないこと（残っていれば先にコミットを終える。hook が拒否する場合は証拠が足りないので戻る）
+- 状態（Done）と session の「現在の状態」は統合の後に決まる。統合の後に Linear を Done にし、必要なら session を 1 行直す
 - S 規模だった場合: 起点の issue があればコメント 1 つで終わり（無ければコミットメッセージが記録）。記憶は残さない
 
 ## 2. 情報の振り分け（置き場所はここで判断する）
