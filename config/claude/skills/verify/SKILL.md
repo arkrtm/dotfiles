@@ -10,11 +10,14 @@ description: 変更後の検証手順。プロジェクトのテスト・型チ�
    - `package.json` → `scripts` の `test` / `lint` / `typecheck` / `build`
    - `Cargo.toml` → `cargo test`、`cargo clippy`
    - `go.mod` → `go test ./...`、`go vet ./...`
-   - `Makefile` / `justfile` → `test` / `check` ターゲット
-   - シェルスクリプト → `sh -n` / `bash -n`、あれば `shellcheck`
-   - dotfiles → `sh tests/*.sh`
+   - `Makefile` / `justfile` → `make test` / `just test`（`check`、`lint` も可）
+   - Gradle / Maven / Swift / PHP → `./gradlew test`、`mvn test`、`swift test`、`phpunit`
+   - シェルスクリプト → `shellcheck`、または `tests/` 配下の検査スクリプト（`sh -n` のような構文チェックだけでは証拠にならない）
+   - dotfiles → `sh tests/harness-hook.sh`、`sh tests/install.sh`
 2. 変更に関係するテストを先に、次に全体を実行する。失敗したら直してから再実行する（テストを弱めて通さない）
-3. テスト基盤が無い場合: 壊れたら落ちる最小の検査を 1 つ書いて実行する（assert で動く小さなスクリプトか、テストファイル 1 つ。フレームワークは入れない）
+   - **検証コマンドは単独で実行する**: パイプ（`| tail`）、`;`、`||`、`>/dev/null`、バックグラウンド実行を付けない（`cd dir && cmd` は可）。付けると終了コードが証拠にならず、hook が「検証済み」にしない。出力を減らしたいときは `-q` などのオプションを使う
+   - `--collect-only` や `--version`、構文チェックだけ（`sh -n`）は検証にならない
+3. テスト基盤が無い場合: 壊れたら落ちる最小の検査を `tests/` に 1 つ書き、`sh tests/<名前>.sh`（または既にあるテストランナー）で実行する（フレームワークは入れない。`tests/` の外に置いたスクリプトを `python check.py` のように実行しても、hook は検証と認識しない）
 4. 報告は「実行したコマンド」と「結果（通過数・失敗数、または末尾数行）」だけ。長い出力は貼らない
 
-検証できない理由がある場合（環境が無い、実行に本番資源が要る等）は、最終回答に「検証不要: 理由」ではなく「未検証: 理由と、代わりに確認したこと」を書く。
+検証できない理由がある場合（環境が無い、実行に本番資源が要る等）は、コミットせずに、理由と代わりに確認したことをユーザーに伝えて相談する。

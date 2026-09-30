@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""Claude Code hooks: コードを変えたターンは TDD・検証・レビューの証拠がそろうまで完了させない。
+"""Claude Code の自作ハーネス: コードを変えたら検証とレビュー（TDD を含む）の証拠がそろうまでコミットも完了もさせない。
 
-  harness-hook turn         UserPromptSubmit  ターン開始。このターンの活動記録を消す
-  harness-hook guard-branch PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
-  harness-hook guard-commit PreToolUse        Bash。git commit なのに証拠が足りなければ拒否（未検証コードをリポジトリに入れない）
-  harness-hook edit         PostToolUse       Edit/Write。活動あり
-  harness-hook bash         PostToolUse       Bash。活動あり。検証コマンドが成功したら、その時点の差分に対して「検証済み」
-  harness-hook review-done  SubagentStop      reviewer が終了したら、その時点の差分に対して「レビュー済み」
-  harness-hook stop         Stop              このターンに活動があり、git 上にコード変更があるのに証拠が足りなければ 1 回だけ差し戻す
+これは「うっかり・手抜きを止めるガードレール」であり、セキュリティ境界ではない。Bash を使えるエージェントが
+意図的に迂回すること（commit-tree、git 設定の差し替え、証拠ファイルの書き換え等）は原理的に防ぎ切れない。
+代表的な迂回語は拒否するが、最終的には CLAUDE.md の規則（迂回しない）に依る。
 
-判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・レビューは「どの差分に対して行ったか」を
-ハッシュで覚え、あとから編集すれば自動で無効になる。状態は ~/.local/state/harness/<session_id>/。
-依存なし、失敗しても常に exit 0。
+Claude Code の hooks から:
+  harness-hook turn          UserPromptSubmit  ターン開始。開始時点の作業ツリーの指紋を記録する
+  harness-hook guard-branch  PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
+  harness-hook guard-bash    PreToolUse        Bash。関門を迂回する語（--no-verify 等）を含めば拒否
+  harness-hook bash          PostToolUse       Bash。検証コマンドが単独で成功したら、その時点の作業ツリーに「検証済み」
+  harness-hook review-done   SubagentStop      reviewer が 3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」
+  harness-hook stop          Stop              このターンにコードが変わり、証拠が足りなければ 1 回だけ差し戻す
+  （turn / bash / review-done / stop は、cwd のリポジトリを関門の対象に登録する）
+git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）:
+  harness-hook pre-commit    Claude Code からのコミット（環境変数 CLAUDECODE あり）で、対象に登録済みのリポジトリのとき、
+                             ステージ済みの内容に証拠が足りなければ exit 1。人の手動コミットや、テストが作る一時リポジトリは対象外
+
+判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・レビューは「どの内容に対して行ったか」を
+変更ファイルの blob ID の指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば無効になる）。
+証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態はセッション単位で持つ。
+依存なし。hook としては失敗しても常に exit 0（pre-commit だけが exit 1 を返す）。
 """
 import hashlib
 import json
@@ -21,24 +30,89 @@ import subprocess
 import sys
 import time
 
+# 「コード」とみなす拡張子（これ以外で拡張子が無いものは shebang で判定）。ここに無い種類のファイルは関門の対象外
 CODE_EXT = {
-    ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".rs", ".go", ".rb", ".java", ".kt",
-    ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php", ".lua", ".sh", ".zsh", ".sql",
+    ".py", ".ipynb", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte", ".rs", ".go", ".rb", ".java",
+    ".kt", ".scala", ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php", ".lua", ".ex", ".exs", ".dart",
+    ".sh", ".zsh", ".sql",
 }
-TEST_PATH = re.compile(r"(^|/)(tests?|spec|__tests__)/|(^|/)(test_[^/]+|[^/]+_test\.[^/]+|[^/]+\.(test|spec)\.[^/]+|[^/]+_spec\.[^/]+)$")
-# 「証拠」とみなす検証コマンド。ls tests のような閲覧は含めない
+# テストとみなすパス（テストだけの変更は関門の対象外にする。指紋には含める）
+TEST_PATH = re.compile(
+    r"(^|/)(?i:tests?|spec|__tests__)/|(^|/)[^/]*\.(?i:tests?)/"  # tests/、Tests/、Foo.Tests/
+    r"|(^|/)(test_[^/]+|[^/]+_test\.[^/]+|[^/]+\.(test|spec)\.[^/]+|[^/]+_spec\.[^/]+|[^/]*[a-z0-9]Tests?\.[^/]+)$"  # FooTest.java 等
+)
+# コマンド位置: 行頭か && の直後。その後に command/exec/sudo/time/nice/env/timeout N の前置と VAR=val の前置を許す
+CMD_POS = r"(?:^|&&\s*)(?:(?:command|exec|sudo|time|nice|env|timeout \S+)\s+)*(?:\w+=\S*\s+)*"
+# 「証拠」とみなす検証コマンド
 VERIFY_CMD = re.compile(
-    r"(^|[;&|]\s*)("
-    r"(uv run |poetry run |pdm run |npx |pnpm |yarn |bun |bunx |python3? -m |\.venv/bin/python -m )?"
-    r"(pytest|unittest|ruff|mypy|pyright|jest|vitest|eslint|tsc|prettier --check|shellcheck)\b"
-    r"|cargo (test|check|clippy|build)\b|go (test|vet|build)\b"
-    r"|(npm|pnpm|yarn|bun) (test|run (test|lint|typecheck|check|build))\b"
-    r"|make (test|check|lint)\b|dotnet test\b|rspec\b|(sh|bash|zsh) -n\b"
-    r"|(sh|bash) \S*tests?/|nvim --headless\b"
+    CMD_POS + r"(?:\S*/)?(?:"
+    r"(?:uv run (?:--?\S+ (?:[^-\s]\S* )?)*|uvx |poetry run |pdm run |bundle exec |npx |pnpm |yarn |bun |bunx )?"
+    r"(?:python3?(?:\.\d+)? -m )?"
+    r"(?:pytest|unittest|tox|ruff check|mypy|pyright|jest|vitest|eslint|tsc|prettier --check|shellcheck|phpunit|rspec)\b"
+    r"|cargo (?:test|check|clippy|build)\b|go (?:test|vet|build)\b|swift test\b|dotnet test\b|node --test\b"
+    r"|mix test\b|dart test\b|flutter test\b|sbt (?:\S+ )*test\b"
+    r"|(?:npm|pnpm|yarn|bun) (?:test|lint|run (?:test|lint|typecheck|check|build))\b"
+    r"|(?:make|just) (?:-C \S+ )?(?:test|check|lint)\b|gradlew? (?:\S+ )*(?:test|check)\b|mvn (?:\S+ )*(?:test|verify)\b"
+    r"|(?:(?:sh|bash) (?:-[eux]+ )?)?[^\s=]*tests?/[^\s=]+"  # tests/ 配下のスクリプトの実行（sh -n は構文チェックなので不可）
     r")"
 )
+# 検証の証拠にならない形: パイプ・; ・|| ・単独の & ・複数行（検証コマンド自体の終了コードが分からなくなる）、情報表示、出力の破棄。
+# 失敗したコマンドは PostToolUseFailure になるので、この形でなければ「PostToolUse に来た = 検証コマンドが成功した」と言える
+NOT_VERIFY = re.compile(r"[|;\n]|(?<![>&])&(?!&)|--(?:version|help|collect-only|co)\b|>\s*/dev/null")
+# Bash で関門を迂回する代表的な語（シェル構文は解釈せず部分文字列で見る。誤検知は許容。網羅はできない）
+BYPASS = re.compile(
+    r"--no-v|\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*\s-[a-z]*n[a-z]*\b|commit-tree|hookspath|GIT_CONFIG|CLAUDECODE|state/harness",
+    re.I,
+)
 REVIEWER = "reviewer"
+# reviewer の出力の判定行「<軸>: <判定>」（行頭。箇条書き記号と強調記号は許す）
+AXES = ("仕様適合", "テスト", "品質・保守性")
+VERDICT_LINE = re.compile(r"^[\s\-*]*(" + "|".join(AXES) + r")\**[:：](.*)$", re.M)
 PROTECTED = {"main", "master"}
+
+
+def reviewer_report(data):
+    """reviewer の最終報告の本文。通常は SubagentStop の last_assistant_message。
+    報告をツール呼び出し（ハンドバック）で返す環境ではそこに判定文が入らないので、その場合は
+    サブエージェント自身の記録（agent_transcript_path）から、今回の依頼より後で判定行を含む最後の出力を探す"""
+    text = data.get("last_assistant_message") or ""
+    if VERDICT_LINE.search(text):
+        return text
+    try:
+        with open(data.get("agent_transcript_path") or "") as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)["message"]
+                    role, blocks = msg["role"], msg["content"]
+                except (ValueError, KeyError, TypeError):
+                    continue
+                blocks = [b for b in blocks if isinstance(b, dict)] if isinstance(blocks, list) else []
+                if role == "user":
+                    # 新しい依頼（ツール結果ではない user）より前の判定は今回の報告ではない（再開した reviewer の古い承認を拾わない）
+                    if not blocks or any(b.get("type") != "tool_result" for b in blocks):
+                        text = ""
+                    continue
+                for block in blocks if role == "assistant" else []:
+                    if block.get("type") == "text":
+                        out = block.get("text") or ""
+                    elif block.get("type") == "tool_use":  # 例: SubagentHandback の message
+                        out = "\n".join(v for v in (block.get("input") or {}).values() if isinstance(v, str))
+                    else:
+                        continue
+                    if VERDICT_LINE.search(out):
+                        text = out
+    except OSError:
+        pass
+    return text
+
+
+def approved(text):
+    """reviewer の出力が 3 軸とも承認か。fail-closed: 各軸の判定行が 1 行以上あり、そのすべてが「承認」だけであること。
+    （「承認できない」、ひな型の「承認 | 修正が必要」、複数ブロックのうち 1 つでも「修正が必要」があれば不承認）"""
+    verdicts = {axis: [] for axis in AXES}
+    for axis, value in VERDICT_LINE.findall(text):
+        verdicts[axis].append(value.strip(" \t\r*"))
+    return all(v and all(x == "承認" for x in v) for v in verdicts.values())
 
 
 # ---- 状態 -------------------------------------------------------------------
@@ -48,10 +122,22 @@ def state_base():
     return os.path.join(base, "harness")
 
 
-def state_dir(session):
-    d = os.path.join(state_base(), re.sub(r"[^A-Za-z0-9_.-]", "_", session or "nosession"))
+def state_dir(*parts):
+    d = os.path.join(state_base(), *[re.sub(r"[^A-Za-z0-9_.-]", "_", p or "none") for p in parts])
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def repo_state(top):
+    """キーごとの状態の置き場所。キーは作業ツリーの top（検証済み・レビュー済み）か、tracked_state の登録用キー"""
+    return state_dir("repo", hashlib.sha1(top.encode()).hexdigest()[:16])
+
+
+def tracked_state(top):
+    """関門の対象かどうかの登録先。リポジトリ単位（worktree は本体と同じ）なので、
+    セッションを開いたリポジトリから後で作った worktree も対象になる"""
+    common = git(top, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return repo_state("common:" + (common.strip() if common else top))
 
 
 def put(d, name, value=""):
@@ -67,18 +153,11 @@ def get(d, name):
         return None
 
 
-def unmark(d, name):
-    try:
-        os.remove(os.path.join(d, name))
-    except FileNotFoundError:
-        pass
-
-
 def log(cmd, data, note=""):
     """呼び出しごとに 1 行。動作確認とデバッグ用（~/.local/state/harness/log）"""
     try:
         ti = data.get("tool_input") or {}
-        what = ti.get("file_path") or (ti.get("command") or "")[:60] or data.get("agent_type") or ""
+        what = (ti.get("file_path") or (ti.get("command") or "")[:60] or data.get("agent_type") or "").replace("\n", " ")
         with open(os.path.join(state_base(), "log"), "a") as f:
             f.write(f"{time.strftime('%H:%M:%S')} {(data.get('session_id') or '')[:8]} {cmd:<12} "
                     f"{data.get('tool_name') or data.get('hook_event_name') or ''} {what} {note}\n")
@@ -86,179 +165,279 @@ def log(cmd, data, note=""):
         pass
 
 
-def prune(base_days=7):
+def prune(days=7):
+    """古いセッションの状態とログを消す（リポジトリ単位の状態は残す）"""
     base = state_base()
-    cutoff = time.time() - base_days * 86400
-    for name in os.listdir(base):
-        p = os.path.join(base, name)
+    cutoff = time.time() - days * 86400
+    try:
+        if os.path.getsize(os.path.join(base, "log")) > 1_000_000:
+            os.remove(os.path.join(base, "log"))
+    except OSError:
+        pass
+    sessions = os.path.join(base, "session")
+    for name in os.listdir(sessions) if os.path.isdir(sessions) else []:
+        d = os.path.join(sessions, name)
+        start = os.path.join(d, "start")  # ターンごとに書き直すファイルで見る（無ければディレクトリ自体）
         try:
-            if name == "log":
-                if os.path.getsize(p) > 1_000_000:
-                    os.remove(p)
-            elif os.path.getmtime(p) < cutoff:
-                for f in os.listdir(p):
-                    os.remove(os.path.join(p, f))
-                os.rmdir(p)
+            if os.path.getmtime(start if os.path.exists(start) else d) < cutoff:
+                for f in os.listdir(d):
+                    os.remove(os.path.join(d, f))
+                os.rmdir(d)
         except OSError:
             pass
 
 
 # ---- git ---------------------------------------------------------------------
 
-def git(cwd, *args):
+def git(cwd, *args, stdin=None):
+    """git の標準出力。失敗・タイムアウトは None"""
     try:
-        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, timeout=10)
-        return r.stdout if r.returncode == 0 else None
+        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, input=stdin, timeout=10)
+        return r.stdout.decode("utf-8", "surrogateescape") if r.returncode == 0 else None
     except Exception:
         return None
 
 
-def is_test(path):
-    return bool(TEST_PATH.search(path.replace(os.sep, "/")))
+def must(out, what):
+    """指紋の材料になる git の結果。取れなければ例外（証拠を記録しない／コミットを止める側に倒す）"""
+    if out is None:
+        raise RuntimeError(f"{what} に失敗")
+    return out
 
 
-def is_code(path):
-    return os.path.splitext(path)[1].lower() in CODE_EXT
-
-
-def current_branch(path):
-    """path を含む git リポジトリのブランチ名。リポジトリ外・detached なら None。
-    まだ存在しないディレクトリへの新規ファイルもあるので、存在する最も近い親から探す"""
+def toplevel(path):
+    """path を含む git リポジトリのトップレベル。まだ存在しないパスは存在する最も近い親から探す。git 外なら None"""
     while path and not os.path.isdir(path):
         path = os.path.dirname(path)
-    out = git(path or ".", "symbolic-ref", "--short", "-q", "HEAD")
+    out = git(path or ".", "rev-parse", "--show-toplevel")
     return out.strip() if out else None
 
 
-def working_changes(cwd):
-    """未コミットの変更（変更・追加・未追跡）のパス一覧。git 外なら空"""
-    out = git(cwd, "status", "--porcelain", "--untracked-files=all")
-    if not out:
-        return []
-    return [line[3:].strip().split(" -> ")[-1] for line in out.splitlines() if len(line) > 3]
+def has_ref(top, ref):
+    return git(top, "rev-parse", "-q", "--verify", ref) is not None
 
 
-def branch_changes(cwd):
-    """main/master から分岐して以降にコミットした変更のパス一覧（テストを先にコミットした場合用）"""
-    for base in ("main", "master"):
-        out = git(cwd, "diff", "--name-only", f"{base}...HEAD")
-        if out is not None:
-            return out.split()
-    return []
+def protected_branch(top):
+    """作業してはいけないブランチ（main/master）にいればその名前。最初のコミット前（git init 直後）は対象外"""
+    out = git(top, "symbolic-ref", "--short", "-q", "HEAD")
+    branch = out.strip() if out else None
+    return branch if branch in PROTECTED and has_ref(top, "HEAD") else None
 
 
-def diff_hash(cwd):
-    """作業ツリーの状態の指紋。検証・レビューが「どの状態に対して」行われたかを覚える"""
+# rename 検出は切る（作業ツリー側は「削除 + 未追跡」、インデックス側は「rename」と見え方が変わり、指紋がずれるため）
+
+def working_changes(top):
+    """未コミットの変更 [(XY, トップレベル相対パス)]。未追跡は '??'、削除は 'D' を含む"""
+    out = must(git(top, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames"), "git status")
+    return [(f[:2], f[3:]) for f in out.split("\0") if len(f) > 3]
+
+
+def staged_changes(top):
+    """ステージ済み（これからコミットされる）変更 [(状態, パス)]"""
+    out = must(git(top, "diff", "--cached", "--name-status", "-z", "--no-renames"), "git diff --cached")
+    fields = [x for x in out.split("\0") if x]
+    return list(zip((s[0] for s in fields[0::2]), fields[1::2]))
+
+
+# ---- 内容の読み方（作業ツリー / インデックス）-------------------------------------
+
+def head_bytes(top, rel, staged, n=2):
+    """ファイル先頭の n バイト。シンボリックリンクはリンクそのもの（git が記録する内容）として扱う"""
+    if staged:
+        out = git(top, "show", f":{rel}")
+        return out.encode("utf-8", "surrogateescape")[:n] if out is not None else b""
+    full = os.path.join(top, rel)
+    if os.path.islink(full):
+        return os.readlink(full).encode()[:n]
+    try:
+        with open(full, "rb") as f:
+            return f.read(n)
+    except OSError:
+        return b""
+
+
+def is_test(rel):
+    return bool(TEST_PATH.search(rel.replace(os.sep, "/")))
+
+
+def is_code(top, rel, staged=False):
+    """拡張子で判定。拡張子が無いファイルは先頭の shebang（#!）でスクリプトとみなす。
+    削除や shebang の書き換えも検出できるよう、変更後だけでなく HEAD 側の内容も見る"""
+    _, ext = os.path.splitext(rel)
+    if ext:
+        return ext.lower() in CODE_EXT
+    if head_bytes(top, rel, staged) == b"#!":
+        return True
+    before = git(top, "show", f"HEAD:{rel}")
+    return before is not None and before[:2] == "#!"
+
+
+def blob_ids(top, rels, staged):
+    """{パス: git の blob ID}。作業ツリー側も git hash-object で求めるので、改行変換などの filter を通した
+    「コミットされる内容」同士の比較になる。シンボリックリンクはリンク文字列、無いものは 'gone'"""
+    ids = {rel: "gone" for rel in rels}
+    if staged:
+        for entry in must(git(top, "ls-files", "-s", "-z"), "git ls-files").split("\0"):
+            meta, _, path = entry.partition("\t")
+            if path in ids:
+                ids[path] = meta.split()[1]
+        return ids
+    files = []
+    for rel in rels:
+        full = os.path.join(top, rel)
+        if os.path.islink(full):
+            ids[rel] = must(git(top, "hash-object", "--stdin", stdin=os.readlink(full).encode()), "git hash-object").strip()
+        elif os.path.isfile(full):
+            files.append(rel)
+    if files:
+        out = must(git(top, "hash-object", "--stdin-paths", stdin="\n".join(files).encode("utf-8", "surrogateescape")), "git hash-object")
+        blobs = out.split()
+        if len(blobs) != len(files):
+            raise RuntimeError("git hash-object の結果が足りない")
+        ids.update(zip(files, blobs))
+    return ids
+
+
+def tree_hash(top, changes, staged=False):
+    """変更されたコード・テストの内容で決まる指紋。作業ツリー（検証・レビュー時）とインデックス（コミット時）で、
+    同じ内容なら同じ値になる。あとから編集すれば変わる。HEAD は含めない（ドキュメントだけ先にコミットしても証拠は有効）"""
+    rels = sorted({rel for _, rel in changes if is_code(top, rel, staged) or is_test(rel)})
+    ids = blob_ids(top, rels, staged)
     h = hashlib.sha1()
-    h.update((git(cwd, "diff", "HEAD") or "").encode())
-    for p in working_changes(cwd):
-        full = os.path.join(cwd, p)
-        try:
-            st = os.stat(full)
-            h.update(f"{p}:{st.st_size}:{st.st_mtime_ns}\n".encode())
-        except OSError:
-            h.update(f"{p}:gone\n".encode())
+    for rel in rels:
+        h.update(f"\0{rel}\0{ids[rel]}".encode("utf-8", "surrogateescape"))
     return h.hexdigest()
 
 
 # ---- 証拠の判定 --------------------------------------------------------------
 
-def evidence(d, cwd):
-    """(コード変更があるか, 足りない証拠の一覧, main/master 上か)"""
-    changed = working_changes(cwd)
-    if not any(is_code(p) and not is_test(p) for p in changed):
-        return False, [], False
-    now = diff_hash(cwd)
-    ok = {
-        "tests": any(is_test(p) for p in changed + branch_changes(cwd)),
-        "verified": get(d, "verified") == now,
-        "reviewed": get(d, "reviewed") == now,
-    }
-    return True, [k for k, v in ok.items() if not v], current_branch(cwd) in PROTECTED
-
-
 TEXT = {
-    "tests": "テストが追加・変更されていない（TDD: 先にテストを書く）",
-    "verified": "変更後に検証コマンド（テスト・型チェック・ビルド）を成功させていない → /verify",
-    "reviewed": "変更後に reviewer の敵対的レビューを通していない → /review",
+    "verified": "この内容に対して検証コマンド（テスト・型チェック・ビルド）を単独で成功させていない → /verify",
+    "reviewed": "この内容に対して reviewer の敵対的レビューで 3 軸（仕様適合・テスト・品質・保守性）とも承認されていない → /review",
 }
+
+
+def evidence(top, staged=False):
+    """(コード変更があるか, 足りない証拠の一覧, main/master 上か)。
+    staged=True はコミット時: これからコミットされる内容（インデックス）で判定する。
+    テストが十分か（TDD）は reviewer が内容を読んで判定する。ここではファイル名から推測しない"""
+    changed = staged_changes(top) if staged else working_changes(top)
+    if not any(is_code(top, p, staged) and not is_test(p) for _, p in changed):
+        return False, [], False
+    d = repo_state(top)
+    now = tree_hash(top, changed, staged)
+    ok = {"verified": get(d, "verified") == now, "reviewed": get(d, "reviewed") == now}
+    return True, [k for k, v in ok.items() if not v], bool(protected_branch(top))
 
 
 def reason_text(missing, on_main):
     parts = [TEXT[k] for k in missing]
     if on_main:
         parts.insert(0, "main/master 上で変更している → git switch -c <種別>/<名前> で作業ブランチに移す")
-    return "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから進める（省略はできない）。"
+    return "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから進める（省略しない）。"
 
 
-# git [-C dir] [-c k=v] commit …（サブコマンドの前に来るのはオプションだけ。git log --grep commit は対象外）
-COMMIT_CMD = re.compile(r"(^|[;&|]\s*)git\s+(-\S+\s+(\S+\s+)?)*commit\b")
+def deny(reason):
+    """PreToolUse でツールの実行を拒否する"""
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason,
+    }}, ensure_ascii=False))
 
 
 # ---- 本体 --------------------------------------------------------------------
 
-def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+def pre_commit():
+    """git の pre-commit hook から。exit 1 でコミットを止める"""
+    if not os.environ.get("CLAUDECODE"):
+        return 0  # 人の手動コミット、GUI クライアントなどは対象外
+    top = toplevel(os.getcwd())
+    if not top or get(tracked_state(top), "tracked") is None:
+        return 0  # Claude が作業していないリポジトリ（テストが作る一時リポジトリなど）は対象外
+    if any(has_ref(top, ref) for ref in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")):
+        return 0  # 競合解消の締めのコミットは対象外（取り込む側の差分全体に証拠を求めない）
+    changed, missing, on_main = evidence(top, staged=True)
+    if changed and (missing or on_main):
+        hint = "（レビューした内容と、ステージした内容が一致している必要がある。未ステージ・未追跡のコードやテストがあれば一致しない）"
+        sys.stderr.write("harness: コミットできない。" + reason_text(missing, on_main) + hint + "\n")
+        return 1
+    return 0
+
+
+def hook(cmd):
     try:
         data = json.load(sys.stdin)
     except Exception:
         return
-    d = state_dir(data.get("session_id"))
+    session = state_dir("session", data.get("session_id"))
     cwd = data.get("cwd") or "."
-    log(cmd, data)
+    if cmd not in ("review-done", "stop"):  # この 2 つは結果を添えて 1 行だけ書く
+        log(cmd, data)
+
+    # Claude が cwd にして作業しているリポジトリを関門の対象に登録する（ターン開始時だけでなく、途中で cd した場合も）
+    top = toplevel(cwd) if cmd in ("turn", "bash", "review-done", "stop") else None
+    if top:
+        put(tracked_state(top), "tracked")
 
     if cmd == "turn":
-        unmark(d, "active")
+        put(session, "start", tree_hash(top, working_changes(top)) if top else "")
         prune()
     elif cmd == "guard-branch":
-        path = (data.get("tool_input") or {}).get("file_path") or ""
-        branch = current_branch(os.path.dirname(path) or cwd)
-        if branch in PROTECTED:
-            print(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": (
-                        f"{branch} 上では編集しない。作業別のブランチを切ってから編集する: "
-                        "git switch -c <種別>/<短い名前>（大きな作業は claude -w / cw で worktree）"
-                    ),
-                }
-            }, ensure_ascii=False))
-    elif cmd == "guard-commit":
-        command = (data.get("tool_input") or {}).get("command") or ""
-        if COMMIT_CMD.search(command):
-            changed, missing, on_main = evidence(d, cwd)
-            log(cmd, data, f"missing={missing} on_main={on_main}")
-            if changed and (missing or on_main):
-                print(json.dumps({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": "deny",
-                        "permissionDecisionReason": "コミットできない。" + reason_text(missing, on_main),
-                    }
-                }, ensure_ascii=False))
-    elif cmd == "edit":
-        put(d, "active")
+        ti = data.get("tool_input") or {}
+        top = toplevel(os.path.realpath(ti.get("file_path") or ti.get("notebook_path") or cwd))  # リンク先の実体で判定する
+        branch = top and protected_branch(top)
+        if branch:
+            deny(f"{branch} 上では編集しない。作業別のブランチを切ってから編集する: "
+                 "git switch -c <種別>/<短い名前>（大きな作業は claude -w / cw で worktree）")
+    elif cmd == "guard-bash":
+        m = BYPASS.search((data.get("tool_input") or {}).get("command") or "")
+        if m:
+            deny(f"コミットの関門を迂回しうる語（一致: {m.group(0)!r}）を含むコマンドは実行しない。"
+                 "証拠（/verify の成功と /review の承認）をそろえてからコミットする。閲覧目的なら語を含まない形に言い換える"
+                 "（harness のログは Read ツールで読む）")
     elif cmd == "bash":
-        put(d, "active")
-        command = (data.get("tool_input") or {}).get("command") or ""
-        code = (data.get("tool_response") or {}).get("exit_code", 0)
-        if VERIFY_CMD.search(command) and code in (0, None):
-            put(d, "verified", diff_hash(cwd))
+        ti = data.get("tool_input") or {}
+        command = ti.get("command") or ""
+        resp = data.get("tool_response") or {}
+        # 実際の tool_response は {stdout, stderr, interrupted, …} で exit_code は無い（2.1.285 で確認）。
+        # 失敗したコマンドは PostToolUseFailure になるので、パイプ等の無い単独実行なら、ここに来た時点で検証は成功している
+        if (top and VERIFY_CMD.search(command) and not NOT_VERIFY.search(command)
+                and not ti.get("run_in_background") and not resp.get("backgroundTaskId") and not resp.get("interrupted")):
+            put(repo_state(top), "verified", tree_hash(top, working_changes(top)))
     elif cmd == "review-done":
-        if data.get("agent_type") == REVIEWER:
-            put(d, "reviewed", diff_hash(cwd))
+        verdict = reviewer_report(data)
+        # fail-closed: 3 軸の判定行がすべて「承認」のときだけ（空・中断・質問で終わった場合は記録しない）
+        ok = bool(top) and data.get("agent_type") == REVIEWER and approved(verdict)
+        log(cmd, data, f"approved={ok} report_chars={len(verdict)}")  # 承認が記録されない時の切り分け用
+        if ok:
+            put(repo_state(top), "reviewed", tree_hash(top, working_changes(top)))
     elif cmd == "stop":
-        if data.get("stop_hook_active") or get(d, "active") is None:
+        if data.get("stop_hook_active") or not top:
+            log(cmd, data, "skip")
             return
-        changed, missing, on_main = evidence(d, cwd)
+        try:
+            # このターンでコード・テストの未コミット変更が変わっていなければ何もしない（以前からの変更で差し戻さない）
+            if get(session, "start") == tree_hash(top, working_changes(top)):
+                log(cmd, data, "unchanged")
+                return
+            changed, missing, on_main = evidence(top)
+            reason = reason_text(missing, on_main) if changed and (missing or on_main) else None
+        except RuntimeError as e:  # 指紋を作れない（読めないファイル等）。証拠を確認できないので一度差し戻す
+            missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify と /review をやり直す。"
         log(cmd, data, f"missing={missing} on_main={on_main}")
-        if changed and (missing or on_main):
-            print(json.dumps({"decision": "block", "reason": reason_text(missing, on_main)}, ensure_ascii=False))
+        if reason:
+            print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+
 
 if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "pre-commit":
+        try:
+            sys.exit(pre_commit())
+        except Exception as e:  # 判定できない時は止める側に倒す
+            sys.stderr.write(f"harness: 判定できないのでコミットを止めた（{e}）\n")
+            sys.exit(1)
     try:
-        main()
+        hook(cmd)
     except Exception:
         pass
     sys.exit(0)

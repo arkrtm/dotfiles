@@ -14,6 +14,7 @@ config/mise/config.toml  .config/mise/config.toml
 config/starship.toml     .config/starship.toml
 config/bat/config        .config/bat/config
 config/git/config        .config/git/config
+config/git/hooks         .config/git/hooks
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
@@ -22,6 +23,7 @@ config/claude/agents/reviewer.md  .claude/agents/reviewer.md
 config/claude/skills/verify  .claude/skills/verify
 config/claude/skills/review  .claude/skills/review
 config/claude/skills/issue   .claude/skills/issue
+config/claude/skills/wrap-up .claude/skills/wrap-up
 bin/harness-hook         .local/bin/harness-hook
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync
@@ -52,6 +54,9 @@ link() {
 echo "$LINKS" | while read -r src dst; do
   if [ -n "$src" ]; then link "$src" "$dst"; fi
 done
+
+# リンク配置だけを検査したい時（tests/install.sh）はここで終わる
+[ -n "${DOTFILES_LINKS_ONLY:-}" ] && exit 0
 
 # ssh は設定ファイルが他ユーザー書き込み可だと拒否するため権限を絞る
 chmod 700 "$HOME/.ssh"

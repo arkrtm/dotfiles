@@ -1,0 +1,22 @@
+#!/bin/sh
+# 全リポジトリ共通の git hooks（core.hooksPath = ~/.config/git/hooks）。各 hook 名はこのファイルへのシンボリックリンク。
+# 1. pre-commit のときだけ、ハーネスの関門（証拠の無いコード変更のコミットを止める）
+# 2. そのリポジトリ自身の同名 hook（.git/hooks/<name>）があれば、引数と標準入力をそのまま渡して実行する
+# 注意: リポジトリ側で core.hooksPath を設定していると（husky 等）このファイルは呼ばれず、関門も効かない
+# reference-transaction は全ての参照更新で呼ばれる（git init の途中でも）ため、リンクを置いていない
+name=$(basename "$0")
+# 関門の対象は Claude Code からのコミットだけ（人の手動コミットでは harness-hook を起動しない）
+if [ "$name" = pre-commit ] && [ -n "${CLAUDECODE:-}" ]; then
+  gate="$HOME/.local/bin/harness-hook"
+  if [ -x "$gate" ]; then
+    "$gate" pre-commit || exit 1
+  else
+    echo "harness: $gate が無いため関門を通さずに続行する（dotfiles の install.sh を実行すること）" >&2
+  fi
+fi
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+repo_hook="$common_dir/hooks/$name"
+if [ -x "$repo_hook" ]; then
+  exec "$repo_hook" "$@"
+fi
+exit 0

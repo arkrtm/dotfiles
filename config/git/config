@@ -3,3 +3,7 @@
 	email = arkrithm@gmail.com
 [init]
 	defaultBranch = main
+[core]
+	# 全リポジトリ共通の hooks（run-hook: pre-commit でハーネスの関門を通し、各 hook 名をリポジトリ自身の
+	# .git/hooks に委譲する）。リポジトリ側で hooksPath を設定しているとそちらが優先され、関門は効かない
+	hooksPath = ~/.config/git/hooks

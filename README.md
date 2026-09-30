@@ -48,9 +48,10 @@ OS 側で別途必要なもの（sudo / GUI）:
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
 | `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory プラグイン、hooks（状態表示 + ハーネス）、ログ 365 日 |
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、作業の進め方（S/M/L、TDD、検証、レビュー、ブランチ）、Linear の使い方、スクショの場所 |
-| `config/claude/skills/{verify,review,issue}` | `~/.claude/skills/…` | `/verify` 検証手順、`/review` reviewer による敵対的レビュー（fork）、`/issue ARK-nn` Linear 起点の作業 |
+| `config/claude/skills/{verify,review,issue,wrap-up}` | `~/.claude/skills/…` | `/verify` 検証手順、`/review` reviewer による敵対的レビュー（fork）、`/issue ARK-nn` Linear 起点の作業、`/wrap-up` M/L 完了時の締め（Linear 記録 → 知識の振り分け → tinymemory 保存） |
 | `config/claude/agents/reviewer.md` | `~/.claude/agents/reviewer.md` | 読み取り専用・effort high の敵対的レビュアー |
-| `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
+| `config/git/config` | `~/.config/git/config` | user / defaultBranch / `core.hooksPath`。端末固有設定は `~/.gitconfig`（リポジトリ外） |
+| `config/git/hooks/` | `~/.config/git/hooks/` | 全リポジトリ共通の git hooks。`run-hook` 1 本に各 hook 名のリンク。pre-commit でハーネスの関門、続けてリポジトリ自身の `.git/hooks/<name>` に委譲。リポジトリ側で `core.hooksPath` を設定していると呼ばれない（関門も効かない） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale |
@@ -63,15 +64,26 @@ OS 側で別途必要なもの（sudo / GUI）:
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png` に改名して送信先の `~/screenshots/` へ `scp -O`（7 日で削除）
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
-- `harness-hook` — Claude Code の自作ハーネス（ARK-30）。PreToolUse で main/master 上の編集を拒否し、証拠（テスト変更・変更後の検証成功・変更後の reviewer レビュー）が無い `git commit` を拒否。Stop でも足りなければ 1 回差し戻す。判定は git の状態に基づく（Edit でも `sed -i` でも同じ）。状態とログは `~/.local/state/harness/`。テスト: `sh tests/harness-hook.sh`
+- `harness-hook` — Claude Code の自作ハーネス（ARK-30）。git の pre-commit（`config/git/hooks/run-hook`、`core.hooksPath` で全リポジトリ共通）として、ステージした内容に証拠（検証成功と、reviewer の 3 軸 = 仕様適合・テスト・品質・保守性の承認）が無いコード変更のコミットを止める。Claude Code の hooks としては、main/master 上の編集と代表的な迂回（`--no-verify` 等）を拒否し、Stop でも 1 回差し戻す。証拠は内容（blob ID）の指紋で作業ツリー単位に `~/.local/state/harness/repo/` へ、ログは `~/.local/state/harness/log`。対象は Claude Code から行うコミットだけ（人の手動コミットは止めない）。テスト: `sh tests/harness-hook.sh`、`sh tests/install.sh`
 
 ## Claude Code ハーネス（superpowers の代替）
 
 常時読み込むのは CLAUDE.md だけ（約 2,500 トークン）。手順は skill、強制は hook。
 
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
-- コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様 + 保守性の 2 軸。M/L は `/review branch` も）。証拠が無い `git commit` は hook が拒否する。逃げ道はない
+- コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸。M/L は `/review branch` も）。証拠が無いコード変更は git の pre-commit が止める
+- 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）で、Claude が cwd にして作業したことのあるリポジトリ（その worktree を含む）。人の手動コミット、GUI クライアント、テストが作る一時リポジトリ、セッションの cwd 以外のリポジトリは対象外。検証とレビューの証拠は、セッションの cwd の作業ツリーに対して記録される
+- 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイルと、拡張子の無い shebang 付きスクリプト。それ以外（Markdown、JSON、YAML など）の変更は関門を通る
+- 限界（ガードレールであって、セキュリティ境界ではない）:
+  - 意図的な迂回は防ぎ切れない（`git commit-tree`、git 設定や環境変数の差し替え、証拠ファイルの書き換えなど。代表的な語は Bash hook が拒否し、CLAUDE.md で禁止している。閲覧目的のコマンドでも語を含めば拒否される）
+  - pre-commit を通らない操作（`cherry-pick`、`rebase`、競合の無い `merge`）、競合解消の締めのコミット、テストコードだけのコミットは対象外
+  - リポジトリ側で `core.hooksPath` を設定している場合（husky 等）は関門が呼ばれない
+  - 共通 hooks にリンクを置いていない hook 名（`reference-transaction`、`post-index-change`、`pre-auto-gc`、`p4-*`。高頻度で呼ばれるため）は、リポジトリ自身に同名の hook があっても実行されない
+  - グローバルな `core.hooksPath` との非互換: `pre-commit install`（pre-commit フレームワーク）は hooksPath が設定されていると拒否する。`git lfs install` は hooks を `~/.config/git/hooks`（= この dotfiles）に書こうとする。必要なリポジトリでは、そのリポジトリの設定で hooksPath を `.git/hooks` に向ける（その場合、そのリポジトリでは関門は効かない）
+  - TDD（テストが十分か）は reviewer が内容を読んで判定する。hook はテストファイルの有無を見ない
+  - 検証は「認識できる検証コマンドを単独で実行して成功した」ことしか見ない（何を検証したかは reviewer が見る）
 - 計画は plan mode、L のレビュー補助は同梱 `/code-review`。自作しない
+- 記憶: M/L の完了時に `/wrap-up` が「プロジェクトの CLAUDE.md / グローバルの CLAUDE.md / tinymemory fact / session」に振り分けて保存する（表は skill 内）。S は残さない。読み込みと整理（`/dream`）は tinymemory 側の仕組み
 - 常時コストを増やさない: 新しい規則は CLAUDE.md に足す前に skill にできないか考える
 
 ## 端末ごとの注意
