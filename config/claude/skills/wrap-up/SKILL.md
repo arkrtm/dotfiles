@@ -25,6 +25,7 @@ argument-hint: "[ARK-nn]"
 
 昇格・降格・更新:
 - 既存の fact を `tinymemory search` で確認し、**同じ話題があれば同じタイトルで保存し直す**（supersede）。間違いになったものは `tinymemory delete <id>`
+- 以前の session（`tinymemory list`）の「次の手順」を今回ですべて終え、状態も古くなったなら、`tinymemory archive <id>` で recall から外す（未完了や判断待ちの状態が次のセッションに残らないように。ARK-35 の試用で判明）
 - fact が 2 セッション以上続けて必要だったなら、プロジェクトの CLAUDE.md に移して fact は削除する
 - CLAUDE.md の記述が状況依存になっていたら、fact に降格する
 
