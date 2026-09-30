@@ -1,8 +1,10 @@
 #!/bin/sh
 # bin/harness-hook と config/git/hooks/run-hook の検査。
 # 隔離した HOME と一時リポジトリで、実際の git と、実物と同じ形の hook 入力を使って判定を確認する
-#   sh tests/harness-hook.sh
+#   sh tests/harness-hook.sh      失敗した項目と要約 1 行だけを出す（実行のたびにコンテキストを食わないように）
+#   sh tests/harness-hook.sh -v   通った項目も出す
 set -eu
+VERBOSE=; [ "${1:-}" != -v ] || VERBOSE=1
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$DOTFILES/bin/harness-hook"
 HOOKS="$DOTFILES/config/git/hooks"
@@ -27,22 +29,24 @@ $G add -A; $G commit -q -m init
 $G switch -q -c feat/x
 SID="test-$$"
 
-fail=0
+passed=0; fail=0
+ok() { passed=$((passed + 1)); [ -z "$VERBOSE" ] || echo "ok   $1"; }
+ng() { fail=$((fail + 1)); echo "FAIL $1"; }
 EXPECTED_ERRORS=0   # hook が例外で終わることを意図したテストの数（最後に突き合わせる）
 judge() { # judge <説明> <期待> <肯定側の印> <肯定名> <否定名> <実際の出力>
   case "$6" in *"$3"*) got=$4 ;; *) got=$5 ;; esac
-  if [ "$got" = "$2" ]; then echo "ok   $1"; else echo "FAIL $1 (expected $2, got $got): $6"; fail=1; fi
+  if [ "$got" = "$2" ]; then ok "$1"; else ng "$1 (expected $2, got $got): $6"; fi
 }
 check() { judge "$1" "$2" '"decision": "block"' block pass "$3"; }             # Stop: block|pass
 checkd() { judge "$1" "$2" '"permissionDecision": "deny"' deny allow "$3"; }  # PreToolUse: deny|allow
 checkx() { # checkx <説明> <期待する終了コード 0|1> <コマンド…>
   desc=$1; want=$2; shift 2
   if "$@" >/dev/null 2>&1; then got=0; else got=1; fi
-  if [ "$got" = "$want" ]; then echo "ok   $desc"; else echo "FAIL $desc (expected exit $want, got $got)"; fail=1; fi
+  if [ "$got" = "$want" ]; then ok "$desc"; else ng "$desc (expected exit $want, got $got)"; fi
 }
 expect() { # expect <説明> <test の条件…>
   desc=$1; shift
-  if "$@"; then echo "ok   $desc"; else echo "FAIL $desc"; fail=1; fi
+  if "$@"; then ok "$desc"; else ng "$desc"; fi
 }
 # hook 入力（実物と同じ形: Bash の tool_response に exit_code は無い）
 common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"%s"' "$SID" "${CWD:-$REPO}" "${TRANSCRIPT:-/dev/null}"; }
@@ -308,7 +312,7 @@ for h in pre-commit commit-msg prepare-commit-msg pre-push post-checkout post-me
 done
 expect "git init / clone で雑音を出さない" [ -z "$(git -c core.hooksPath="$HOOKS" clone -q "$REPO" "$TMP/clone" 2>&1; git -c core.hooksPath="$HOOKS" init -q "$TMP/newrepo" 2>&1)" ]
 fresh; write src/app.py nogate; $G add -A
-if env HOME="$TMP/nohome" $GH commit -q -m code > "$TMP/nohome.out" 2>&1; then echo "ok   harness-hook が未インストールの端末では、コード変更のコミットも止めない"; else echo "FAIL 未インストールの端末でコミットが止まった"; fail=1; fi
+if env HOME="$TMP/nohome" $GH commit -q -m code > "$TMP/nohome.out" 2>&1; then ok "harness-hook が未インストールの端末では、コード変更のコミットも止めない"; else ng "未インストールの端末でコミットが止まった"; fi
 expect "その場合は警告を出す" grep -q "関門を通さずに続行" "$TMP/nohome.out"
 
 # ---- Bash の迂回防止（代表的な語を部分文字列で拒否。網羅はできない）----
@@ -403,4 +407,5 @@ expect "そのとき原因をセッション付きでログに 1 行残す" [ "$
 [ "$errors" = "$EXPECTED_ERRORS" ] || grep " error=" "$XDG_STATE_HOME/harness/log" || true
 expect "ここまでのテストで、意図せず例外で終わった hook は無い（あると pass / allow 側に見えてしまう）" [ "$errors" = "$EXPECTED_ERRORS" ]
 
-exit $fail
+echo "harness-hook: ok $passed, FAIL $fail"
+[ "$fail" = 0 ]
