@@ -8,7 +8,8 @@ exec "$HOME/.local/libexec/uv" run --script --quiet "$0" "$@"
 # /// script
 # requires-python = ">=3.9"
 # ///
-"""Claude Code の自作ハーネス: コードを変えたら検証・受け入れ・レビュー（TDD を含む）の証拠がそろうまでコミットも完了もさせない。
+"""Claude Code の自作ハーネス: コードを変えたら、承認済みの要件の写しと、検証・受け入れ・レビュー（TDD を含む）の証拠がそろうまで
+コミットも完了もさせない。
 あわせて、コンテキストが溜まったら区切りで tinymemory に session を保存させる（compact や clear で流れが落ちないように）。
 
 これは「うっかり・手抜きを止めるガードレール」であり、セキュリティ境界ではない。Bash を使えるエージェントが
@@ -19,11 +20,13 @@ Claude Code の hooks から:
   harness-hook turn          UserPromptSubmit  ターン開始。開始時点の作業ツリーの指紋と HEAD を記録する
   harness-hook guard-branch  PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
   harness-hook guard-bash    PreToolUse        Bash。関門を迂回する語（--no-verify 等）を含めば拒否
-  harness-hook bash          PostToolUse       Bash。検証コマンドが単独で成功したら、その時点の作業ツリーに「検証済み」
-                                               （.harness-verify があれば、そこに書いたコマンドがすべて同じ内容で成功したときだけ。
-                                               サブエージェント内の実行は記録しない）。
+  harness-hook bash          PostToolUse       Bash。宣言した検証コマンド（.harness-verify と <git-common-dir>/harness-verify の行）が
+                                               単独で成功したら、その時点の作業ツリーに「検証済み」（宣言した行がすべて同じ内容で成功した
+                                               ときだけ証拠になる。宣言が無ければ何を成功させても証拠にならない。サブエージェント内の実行は記録しない）。
                                                tinymemory に session を保存したら、その時点のコンテキストの使用量を「前回の保存」に
-  harness-hook bash-failed   PostToolUseFailure Bash。検証コマンドが失敗したら（パイプ等の形でも）、その作業ツリーの「検証済み」を消す
+  harness-hook bash-failed   PostToolUseFailure Bash。検証コマンド（VERIFY_CMD の形はパイプ等の形でも、宣言した行も）が失敗したら、
+                                               その作業ツリーの「検証済み」を消し、出力の先頭を <git-dir>/harness-red-log に残す
+                                               （サブエージェント内も。implementer の RED を観測できるように）
   harness-hook review-done   SubagentStop      reviewer / acceptor の報告を <git-dir>/harness-last-review / harness-last-accept に保存する（合否に関わらず）。
                                                reviewer が 3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」。
                                                acceptor が受け入れ条件（[AC<n>]）と判定のすべてを「合格」で終了したら「受け入れ済み」
@@ -33,11 +36,17 @@ Claude Code の hooks から:
 git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）:
   harness-hook pre-commit    Claude Code からのコミット（環境変数 CLAUDECODE あり）で、対象に登録済みのリポジトリのとき、
                              ステージ済みの内容に証拠が足りなければ exit 1。人の手動コミットや、テストが作る一時リポジトリは対象外
+skill・手元から:
+  harness-hook requirements-path  cwd のリポジトリの、承認済みの要件と受け入れ条件の写しの置き場所
+                             （<git-dir>/harness-requirements/<ブランチ名>.md）を出す。ディレクトリは作り、ファイルは作らない
+  harness-hook requirements-save  標準入力をその写しとして保存し、パスを出す（.git の下は Write ツールでは書けないため。
+                             空の入力では上書きしない）
 
 コードかどうかは拡張子・ファイル名・shebang と、リポジトリのトップの .harness-code（fnmatch のパターン）で決める
 （.harness-code と .harness-verify 自体もコード）。
 判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・受け入れ・レビューは「どの内容に対して行ったか」を
-変更ファイルの blob ID の指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば無効になる）。
+変更ファイルの blob ID と要件の写しの指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば、要件を書き換えても無効になる）。
+コードを変えているのに要件の写しが無い（空）か、検証コマンドの宣言が無ければ、それだけで証拠は足りない。
 証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態と前回の保存はセッション単位で持つ。
 依存は uv だけ（先頭の起動部が uv で Python を用意する。uv が無いと起動できず exit 127）。
 起動できれば、hook としては失敗しても常に exit 0（pre-commit だけが exit 1 を返す）。
@@ -62,8 +71,13 @@ CODE_EXT = {
 CODE_NAME = {"dockerfile", "makefile", "justfile"}
 # リポジトリのトップに置く関門の設定（1 行 1 項目。空行と # で始まる行は無視）。関門を黙って弱められないよう、これ自体もコード
 #   .harness-code    コードとみなすパスの fnmatch パターン（* は / にも当たる。例: config/claude/*）
-#   .harness-verify  検証コマンド。あれば、これがすべて同じ内容で成功したときだけ「検証済み」（宣言に無いコマンドは証拠にならない）
-CODE_FILE, VERIFY_FILE = ".harness-code", ".harness-verify"
+#   .harness-verify  検証コマンドの宣言（共有）。<git-common-dir>/harness-verify（自分だけ。リポジトリに置けないとき。書式は同じ）の行と
+#                    合わせて、すべてが同じ内容で成功したときだけ「検証済み」（宣言に無いコマンドは証拠にならない。宣言が無ければ検証済みにならない）
+CODE_FILE, VERIFY_FILE, PRIVATE_VERIFY = ".harness-code", ".harness-verify", "harness-verify"
+# <git-dir> の下に残す、失敗した検証コマンドの記録（RED の観測用）: 1 件の出力の行数、残す件数、全体の上限（バイト）
+RED_LOG, RED_LINES, RED_KEEP, RED_BYTES = "harness-red-log", 15, 50, 100_000
+# <git-dir> の下の、承認済みの要件と受け入れ条件の写しの置き場所（中に <ブランチ名>.md）
+REQUIREMENTS = "harness-requirements"
 # テストとみなすパス（テストだけの変更は関門の対象外にする。指紋には含める）
 TEST_PATH = re.compile(
     r"(^|/)(?i:tests?|spec|__tests__)/|(^|/)[^/]*\.(?i:tests?)/"  # tests/、Tests/、Foo.Tests/
@@ -71,7 +85,7 @@ TEST_PATH = re.compile(
 )
 # コマンド位置: 行頭か && の直後。その後に command/exec/sudo/time/nice/env/timeout N の前置と VAR=val の前置を許す
 CMD_POS = r"(?:^|&&\s*)(?:(?:command|exec|sudo|time|nice|env|timeout \S+)\s+)*(?:\w+=\S*\s+)*"
-# 「証拠」とみなす検証コマンド
+# 検証コマンドの形。失敗したら「検証済み」を消し、RED として記録する（成功は証拠にしない。証拠は宣言したコマンドの成功だけ）
 VERIFY_CMD = re.compile(
     CMD_POS + r"(?:\S*/)?(?:"
     r"(?:uv run (?:--?\S+ (?:[^-\s]\S* )?)*|uvx |poetry run |pdm run |bundle exec |npx |pnpm |yarn |bun |bunx )?"
@@ -84,14 +98,15 @@ VERIFY_CMD = re.compile(
     r"|(?:(?:sh|bash) (?:-[eux]+ )?)?[^\s=]*tests?/[^\s=]+"  # tests/ 配下のスクリプトの実行（sh -n は構文チェックなので不可）
     r")"
 )
-# 検証の証拠にならない形: パイプ・; ・|| ・単独の & ・複数行（検証コマンド自体の終了コードが分からなくなる）、情報表示、出力の破棄。
-# 失敗したコマンドは PostToolUseFailure になるので、この形でなければ「PostToolUse に来た = 検証コマンドが成功した」と言える
-NOT_VERIFY = re.compile(r"[|;\n]|(?<![>&])&(?!&)|--(?:version|help|collect-only|co)\b|>\s*/dev/null")
-# .harness-verify の行と比べる前に取り除く、先頭の「cd <引数> && 」（比べるのは残りと行の完全一致）
+# 宣言した検証コマンドの行と比べる前に取り除く、先頭の「cd <引数> && 」（比べるのは残りと行の完全一致。パイプ等を足した形は一致しない）
 CD_PREFIX = re.compile(r"^cd\b[^&;|\n]*&&\s*")
-# Bash で関門を迂回する代表的な語（シェル構文は解釈せず部分文字列で見る。誤検知は許容。網羅はできない）
+# Bash で関門を迂回する代表的な語（シェル構文は解釈せず部分文字列で見る。誤検知は許容。網羅はできない）。
+# --no-verify はその省略形も（--no-verbose は除く）。環境変数は大文字の名前だけ: GIT_CONFIG* は指定する形（VAR=、export、env）、
+# CLAUDECODE は消す・書き換える形（env -u、unset、export -n、CLAUDECODE=）だけを拒否する（読むだけの形は通す）
 BYPASS = re.compile(
-    r"--no-v|\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*\s-[a-z]*n[a-z]*\b|commit-tree|hookspath|GIT_CONFIG|CLAUDECODE|state/harness",
+    r"--no-v(?:e(?:r(?:i(?:fy?)?)?)?)?\b|\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*\s-[a-z]*n[a-z]*\b|commit-tree|hookspath|state/harness"
+    r"|(?-i:\bGIT_CONFIG\w*=|\b(?:export|env)\b[^|;&\n]*\bGIT_CONFIG"
+    r"|-u\s*CLAUDECODE\b|\b(?:unset|export\s+-n)\b[^|;&\n]*\bCLAUDECODE\b|\bCLAUDECODE=)",
     re.I,
 )
 REVIEWER, ACCEPTOR = "reviewer", "acceptor"
@@ -298,6 +313,12 @@ def toplevel(path):
     return out.strip() if out else None
 
 
+def git_dir(top, common=False):
+    """作業ツリーの git-dir（common=True は worktree で共通の git-common-dir）の絶対パス"""
+    flags = ("--path-format=absolute", "--git-common-dir") if common else ("--absolute-git-dir",)
+    return must(git(top, "rev-parse", *flags), "git rev-parse").strip()
+
+
 def has_ref(top, ref):
     return git(top, "rev-parse", "-q", "--verify", ref) is not None
 
@@ -353,10 +374,30 @@ def is_test(rel):
 
 @functools.lru_cache(maxsize=None)  # ファイルごとの is_code から呼ばれるので、1 回の起動で 1 回だけ読む
 def repo_lines(top, name, staged=False):
-    """リポジトリのトップの関門の設定（CODE_FILE / VERIFY_FILE）の行。空行と # で始まる行は除く。無ければ空。
-    staged=True はインデックスの内容（コミット時）"""
+    """リポジトリのトップの関門の設定（CODE_FILE / VERIFY_FILE。top に git-common-dir を渡せば PRIVATE_VERIFY）の行。
+    空行と # で始まる行は除く。無ければ空。staged=True はインデックスの内容（コミット時）"""
     text = (git(top, "show", f":{name}") if staged else get(top, name)) or ""
     return tuple(s for s in (line.strip() for line in text.splitlines()) if s and not s.startswith("#"))
+
+
+def requirements_path(top):
+    """承認済みの要件と受け入れ条件の写しのパス: <git-dir>/harness-requirements/<ブランチ名（/ は _。detached は HEAD）>.md"""
+    branch = (git(top, "symbolic-ref", "--short", "-q", "HEAD") or "HEAD").strip()
+    return os.path.join(git_dir(top), REQUIREMENTS, branch.replace("/", "_") + ".md")
+
+
+def requirements(top):
+    """要件の写しの内容（bytes）。無ければ None"""
+    try:
+        with open(requirements_path(top), "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def verify_lines(top, staged=False):
+    """宣言した検証コマンド: .harness-verify（共有。staged=True はインデックスの版）と <git-common-dir>/harness-verify（自分だけ）の行"""
+    return repo_lines(top, VERIFY_FILE, staged) + repo_lines(git_dir(top, common=True), PRIVATE_VERIFY)
 
 
 def is_code(top, rel, staged=False):
@@ -402,20 +443,27 @@ def blob_ids(top, rels, staged):
 
 
 def tree_hash(top, changes, staged=False):
-    """変更されたコード・テストの内容で決まる指紋。作業ツリー（検証・受け入れ・レビュー時）とインデックス（コミット時）で、
-    同じ内容なら同じ値になる。あとから編集すれば変わる。HEAD は含めない（ドキュメントだけ先にコミットしても証拠は有効）"""
+    """変更されたコード・テストの内容と、承認済みの要件の写しで決まる指紋。作業ツリー（検証・受け入れ・レビュー時）とインデックス（コミット時）で、
+    同じ内容なら同じ値になる（要件の写しは git の外にあるので、どちらでも同じファイルを読む）。あとから編集すれば、要件を書き換えても変わる。
+    HEAD は含めない（ドキュメントだけ先にコミットしても証拠は有効）"""
     rels = sorted({rel for _, rel in changes if is_code(top, rel, staged) or is_test(rel)})
     ids = blob_ids(top, rels, staged)
+    req = requirements(top)
     h = hashlib.sha1()
     for rel in rels:
         h.update(f"\0{rel}\0{ids[rel]}".encode("utf-8", "surrogateescape"))
+    h.update(f"\0\0{REQUIREMENTS}\0{hashlib.sha1(req).hexdigest() if req is not None else 'missing'}".encode())  # パスは空にならないので区別できる
     return h.hexdigest()
 
 
 # ---- 証拠の判定 --------------------------------------------------------------
 
-TEXT = {
-    "verified": "この内容に対して検証コマンド（テスト・型チェック・ビルド。.harness-verify があれば、そこに書かれたコマンドすべて）を単独で成功させていない → /verify",
+TEXT = {  # {private} は <git-common-dir>/harness-verify、{requirements} は要件の写しのパス
+    "requirements": "承認済みの要件の写しが無いか空 → 承認済みの要件と受け入れ条件の写しを `harness-hook requirements-save` に"
+                    "標準入力で渡して保存する（場所: {requirements}。S は依頼の原文と受け入れ条件 1 行）→ /issue",
+    "undeclared": "検証コマンドを宣言していない（宣言したコマンドの成功だけが検証の証拠になる）→ "
+                  "全体の検証コマンドを .harness-verify（共有）か {private}（自分だけ）に 1 行 1 つ書く → /verify",
+    "verified": "この内容に対して、宣言した検証コマンド（.harness-verify か {private} に書いたもの）のすべてを単独で成功させていない → /verify",
     "accepted": "この内容に対して受け入れ検証（acceptor が成果物を実際に動かし、受け入れ条件を確かめる）で合格していない → /accept",
     "reviewed": "この内容に対して reviewer の敵対的レビューで 3 軸（仕様適合・テスト・品質・保守性）とも承認されていない → /review",
 }
@@ -439,14 +487,39 @@ def evidence(top, staged=False):
         return False, [], False
     now = tree_hash(top, changed, staged)
     runs = verified_runs(top, now)
-    ok = {"verified": runs is not None and set(repo_lines(top, VERIFY_FILE, staged)) <= runs,
+    declared = set(verify_lines(top, staged))
+    # 宣言が無ければ、何を成功させても検証の証拠にならない（理由には宣言の置き場所を出す）
+    ok = {"requirements": bool((requirements(top) or b"").strip()),
+          ("verified" if declared else "undeclared"): bool(declared) and runs is not None and declared <= runs,
           "accepted": get(repo_state(top), "accepted") == now,
           "reviewed": get(repo_state(top), "reviewed") == now}
     return True, [k for k, v in ok.items() if not v], bool(protected_branch(top))
 
 
-def reason_text(missing, on_main):
-    parts = [TEXT[k] for k in missing]
+def red_log(top, data, command):
+    """失敗した検証コマンドを <git-dir>/harness-red-log に足す。1 件は見出しの行（時刻・その時点の指紋・サブエージェントなら agent_type）と、
+    字下げしたコマンドと出力（PostToolUseFailure の error。無ければ tool_response の中身）の先頭 RED_LINES 行。
+    直近 RED_KEEP 件・RED_BYTES バイトまでに、古い側から切り詰める"""
+    out = data.get("error")
+    if not out:
+        resp = data.get("tool_response")
+        out = "\n".join(v for v in resp.values() if isinstance(v, str)) if isinstance(resp, dict) else resp
+    header = f"{time.strftime('%Y-%m-%d %H:%M:%S')} tree={tree_hash(top, working_changes(top))}"
+    if data.get("agent_id"):
+        header += f" agent={data.get('agent_type')}"
+    lines = ("$ " + command).splitlines() + str(out or "").splitlines()[:RED_LINES]
+    entry = header + "".join(f"\n  {line}" for line in lines) + "\n"
+    d = git_dir(top)
+    # 見出しの行だけが字下げなしで始まるので、そこで件に分ける
+    entries = ([e for e in re.split(r"(?m)^(?=\S)", get(d, RED_LOG) or "") if e] + [entry])[-RED_KEEP:]
+    while len(entries) > 1 and len("".join(entries).encode()) > RED_BYTES:
+        entries.pop(0)
+    put(d, RED_LOG, "".join(entries))
+
+
+def reason_text(top, missing, on_main):
+    paths = {"private": os.path.join(git_dir(top, common=True), PRIVATE_VERIFY), "requirements": requirements_path(top)}
+    parts = [TEXT[k].format(**paths) for k in missing]
     if on_main:
         parts.insert(0, "main/master 上で変更している → git switch -c <種別>/<名前> で作業ブランチに移す")
     return "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから進める（省略しない）。"
@@ -460,7 +533,7 @@ def gate_reason(session, top):
             return None, "unchanged"
         changed, missing, on_main = evidence(top)
         # ターンを終えてよい場合の一文は Stop だけに付ける（pre-commit の拒否文には出さない）
-        reason = (reason_text(missing, on_main) + "ユーザーの判断を待つ（質問・裁定・相談）か、バックグラウンドのサブエージェントの"
+        reason = (reason_text(top, missing, on_main) + "ユーザーの判断を待つ（質問・裁定・相談）か、バックグラウンドのサブエージェントの"
                   "完了を待つなら、その旨を書いて終えてよい（コミットは pre-commit が止める）。") if changed and (missing or on_main) else None
     except RuntimeError as e:  # 指紋を作れない（読めないファイル等）。証拠を確認できないので一度差し戻す
         missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify・/accept・/review をやり直す。"
@@ -534,8 +607,36 @@ def pre_commit():
     changed, missing, on_main = evidence(top, staged=True)
     if changed and (missing or on_main):
         hint = "（レビューした内容と、ステージした内容が一致している必要がある。未ステージ・未追跡のコードやテストがあれば一致しない）"
-        sys.stderr.write("harness: コミットできない。" + reason_text(missing, on_main) + hint + "\n")
+        sys.stderr.write("harness: コミットできない。" + reason_text(top, missing, on_main) + hint + "\n")
         return 1
+    return 0
+
+
+def print_requirements_path():
+    """cwd のリポジトリの要件の写しのパスを出す（ディレクトリは作る。ファイルは作らない）。git 外なら exit 1"""
+    top = toplevel(os.getcwd())
+    if not top:
+        sys.stderr.write("harness: git リポジトリの中で実行する\n")
+        return 1
+    path = requirements_path(top)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    print(path)
+    return 0
+
+
+def save_requirements():
+    """標準入力を、cwd のリポジトリの要件の写しとして保存し、パスを出す。.git の下は Claude Code の Write ツールでは
+    書けない（保護される）ので、この口から書く。git 外か、入力が空なら何も書かずに exit 1（写しを空で上書きしない）"""
+    top = toplevel(os.getcwd())
+    text = sys.stdin.read()
+    if not top or not text.strip():
+        sys.stderr.write("harness: git リポジトリの中で、空でない要件を標準入力で渡す\n")
+        return 1
+    path = requirements_path(top)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    print(path)
     return 0
 
 
@@ -583,13 +684,12 @@ def handle(cmd, data):
         command = ti.get("command") or ""
         resp = data.get("tool_response") or {}
         # 実際の tool_response は {stdout, stderr, interrupted, …} で exit_code は無い（2.1.285 で確認）。
-        # 失敗したコマンドは PostToolUseFailure になるので、パイプ等の無い単独実行なら、ここに来た時点で検証は成功している。
-        # .harness-verify があれば、宣言した行との完全一致だけを成功として数える
+        # 失敗したコマンドは PostToolUseFailure になるので、ここに来た時点で成功している。
+        # 証拠として数えるのは、宣言した行との完全一致だけ（パイプ等を足した形は、終了コードが検証コマンドのものとは限らないので一致させない）
         run = CD_PREFIX.sub("", command.strip())
-        declared = repo_lines(top, VERIFY_FILE) if top else ()
-        passed = (run in declared) if declared else (VERIFY_CMD.search(command) and not NOT_VERIFY.search(command))
+        passed = top and run in verify_lines(top)
         # サブエージェント内（agent_id あり）の実行は記録しない（検証はセッション自身が行う）
-        if (top and passed and not data.get("agent_id")
+        if (passed and not data.get("agent_id")
                 and not ti.get("run_in_background") and not resp.get("backgroundTaskId") and not resp.get("interrupted")):
             now = tree_hash(top, working_changes(top))
             put(repo_state(top), "verified", "\n".join([now, *sorted((verified_runs(top, now) or set()) | {run})]))
@@ -597,10 +697,12 @@ def handle(cmd, data):
         if used:
             put(session, "saved", str(used))
     elif cmd == "bash-failed":
-        # 検証コマンド（パイプ等の形でも、宣言した行でも）が失敗したら、それまでの「検証済み」を消す（サブエージェント内でも）
+        # 検証コマンド（パイプ等の形でも、宣言した行でも）が失敗したら、それまでの「検証済み」を消し、RED として記録する
+        # （サブエージェント内でも。implementer の RED を観測できるように）
         command = (data.get("tool_input") or {}).get("command") or ""
-        if top and (VERIFY_CMD.search(command) or CD_PREFIX.sub("", command.strip()) in repo_lines(top, VERIFY_FILE)):
+        if top and (VERIFY_CMD.search(command) or CD_PREFIX.sub("", command.strip()) in verify_lines(top)):
             put(repo_state(top), "verified")
+            red_log(top, data, command)
     elif cmd == "review-done":
         # reviewer の報告はレビュー、acceptor の報告は受け入れの証拠。ほかの種類は（報告の形が合っていても）記録しない
         judge = JUDGES.get(data.get("agent_type"))
@@ -639,6 +741,10 @@ if __name__ == "__main__":
         except Exception as e:  # 判定できない時は止める側に倒す
             sys.stderr.write(f"harness: 判定できないのでコミットを止めた（{e}）\n")
             sys.exit(1)
+    if cmd == "requirements-path":
+        sys.exit(print_requirements_path())
+    if cmd == "requirements-save":
+        sys.exit(save_requirements())
     try:
         hook(cmd)
     except Exception:

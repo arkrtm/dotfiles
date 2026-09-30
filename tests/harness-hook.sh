@@ -25,6 +25,7 @@ G="git -C $REPO -c user.name=t -c user.email=t@t"
 GH="$G -c core.hooksPath=$HOOKS"              # 共通 hooks 経由（本番は ~/.config/git/config の設定で有効になる）
 $G init -q -b main
 echo base > "$REPO/tests/test_base.py"; echo lib > "$REPO/src/lib.py"; printf '#!/bin/sh\necho tool\n' > "$REPO/tool"
+echo 'uv run pytest -q' > "$REPO/.harness-verify"   # 検証コマンドの宣言（関門は、宣言したコマンドの成功だけを検証の証拠にする）
 $G add -A; $G commit -q -m init
 $G switch -q -c feat/x
 SID="test-$$"
@@ -68,7 +69,9 @@ guarde() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Edit","tool_i
 precommit() { (cd "$REPO" && "$HOOK" pre-commit); }
 write() { mkdir -p "$(dirname "$REPO/$1")"; echo "$2" > "$REPO/$1"; }
 fresh() { $G reset -q --hard; $G clean -qfd; turn; }                 # きれいな作業ツリーで新しいターンを始める
-ready() { write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; accept; review reviewer; }  # 証拠がそろった状態
+reqs() { echo "${1:-要件と受け入れ条件}" > "$(cd "${CWD:-$REPO}" && "$HOOK" requirements-path)"; }  # 承認済みの要件の写しを書く（今のブランチ）
+ready() { reqs; write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; accept; review reviewer; }  # 証拠がそろった状態
+reqs   # feat/x の要件の写し（関門は、コードを変えたら承認済みの要件の写しを求める）
 
 # ---- Stop（完了の差し戻し）----
 fresh
@@ -180,7 +183,7 @@ check "テスト・検証・受け入れ・レビュー承認がそろえば通�
 expect "review-done は承認の可否を 1 行でログに残す" grep -q "review-done .*approved=True" "$XDG_STATE_HOME/harness/log"
 write src/app.py code2
 check "その後に再編集すれば検証・受け入れ・レビューは無効になり差し戻す" block "$(stop)"
-bash_ "cargo test"; accept; review reviewer
+bash_ "uv run pytest -q"; accept; review reviewer
 check "再検証・再受け入れ・再レビューすれば通す" pass "$(stop)"
 # reviewer の報告は承認・不承認に関わらず <git-dir>/harness-last-review に保存する（次の /review fix で前回の報告として読む）
 review reviewer '仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
@@ -234,21 +237,19 @@ check "acceptor の報告の形で reviewer が終わってもレビュー済み
 review reviewer
 check "（前提）reviewer の報告なら通す" pass "$(stop)"
 
-# 検証として認める／認めないコマンドの形
+# 検証として認める／認めないコマンドの形: 証拠になるのは、宣言したコマンド（ここでは .harness-verify の uv run pytest -q）の成功だけ
 # 証拠は内容の指紋で持つので、ケースごとに内容を変える（同じ内容だと前のケースの「検証済み」が一致してしまう）
 n=0
 unverified() { n=$((n + 1)); fresh; write src/app.py "v$n"; write tests/test_app.py "v$n"; accept; review reviewer; }  # 検証だけが足りない状態
-for c in "uv run pytest -q" "time uv run pytest -q" "cd $REPO && uv run pytest -q" "just test" "./gradlew test" "mvn -q test" "sh tests/run.sh" "npm run lint" \
-  "uv run python -m pytest" "uv run --extra dev pytest -q" "timeout 60 pytest" "make -C sub test" "./tests/run.sh" "sh -x tests/run.sh" "node --test" "pytest -q 2>&1" \
-  "bundle exec rspec" "mix test" "python3.12 -m pytest" "pnpm lint" "uvx ruff check ."; do
+for c in "uv run pytest -q" "cd $REPO && uv run pytest -q" "cd src && uv run pytest -q"; do
   unverified; bash_ "$c"
-  check "検証として認める: $c" pass "$(stop)"
+  check "検証として認める（宣言したコマンド。先頭の cd … && は除いて比べる）: $c" pass "$(stop)"
 done
-for c in "uv run pytest -q 2>&1 | tail -3" "pytest -q || echo done" "pytest -q; echo done" "pytest --co" "pytest --version" \
-  "pytest -q >/dev/null" "nvim --headless +q" "sh -n src/app.py" "ls tests" "cd $REPO\\nuv run pytest -q" \
-  "pytest -q &" "echo time pytest" "grep -rn pytest ." "ruff format ." "cat tests/test_app.py" "sh -n tests/run.sh" "OUT=tests/out.txt ls"; do
+for c in "pytest -q" "uv run pytest -q tests/test_app.py" "cargo test" "sh tests/run.sh" "uv run ruff check ." "npm run lint" "uvx ruff check ." \
+  "uv run pytest -q 2>&1" "uv run pytest -q 2>&1 | tail -3" "uv run pytest -q || echo done" "uv run pytest -q; echo done" "uv run pytest -q &" \
+  "uv run pytest -q >/dev/null" "time uv run pytest -q" "cd $REPO\\nuv run pytest -q" "echo uv run pytest -q"; do
   unverified; bash_ "$c"
-  check "検証として認めない: $(printf '%s' "$c" | tr '\\' ' ')" block "$(stop)"
+  check "検証として認めない（宣言に無い・絞った・lint だけ・宣言にパイプ等を足した形）: $(printf '%s' "$c" | tr '\\' ' ')" block "$(stop)"
 done
 unverified; bash_ "uv run pytest -q" ',"run_in_background":true'
 check "バックグラウンド実行は検証として認めない" block "$(stop)"
@@ -262,13 +263,36 @@ unverified; bash_ "uv run pytest -q"; n_same=$n; fresh; write src/app.py "v$n_sa
 check "同じ内容に戻せば、以前の検証・レビューがそのまま有効（指紋は内容で決まる）" pass "$(stop)"
 
 # 検証コマンドの失敗（PostToolUseFailure）は、その作業ツリーの「検証済み」を消す
-bash_fail() { printf '{%s,"hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"%s"},"error":"Exit code 1","is_interrupt":false}' "$(common)" "$1" | "$HOOK" bash-failed; }
+bash_fail() { # bash_fail <command> [error（既定 Exit code 1）] [入力への追加 JSON]
+  printf '{%s%s,"hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"%s"},"error":"%s","is_interrupt":false}' "$(common)" "${3:-}" "$1" "${2:-Exit code 1}" | "$HOOK" bash-failed; }
 fresh; ready vf1; bash_fail "ls nothing"
 check "検証コマンドでないコマンドの失敗では、検証済みは消えない" pass "$(stop)"
 bash_fail "uv run pytest -q 2>&1 | tail -3"
 check "同じ内容で検証コマンドが失敗すれば（パイプ付きの形でも）、検証済みが消えて差し戻す" block "$(stop)"
 $G add -A
 checkx "同じく、pre-commit も失敗する" 1 precommit
+
+# 検証コマンドの失敗は、出力の先頭 15 行を <git-dir>/harness-red-log に残す（RED を観測できるように。サブエージェント内も）
+RED="$REPO/.git/harness-red-log"
+fresh; rm -f "$RED"; write src/app.py red1; bash_fail "ls nothing" "ls-output"
+expect "検証コマンドでないコマンドの失敗は記録しない" [ ! -e "$RED" ]
+bash_fail "uv run pytest -q" 'Exit code 1\nE   assert 1 == 2'
+expect "検証コマンドの失敗は、コマンドと出力を記録する" grep -qx '  E   assert 1 == 2' "$RED"
+fp=$(sed -n 's/.* tree=\([0-9a-f]*\).*/\1/p' "$RED" | tail -1); bash_ "uv run pytest -q"
+expect "記録の指紋は、その時点の内容の指紋（同じ内容で検証が成功したときと同じ）" grep -rqx "${fp:-none}" "$XDG_STATE_HOME/harness/repo"
+bash_fail "uv run pytest -q" 'E   sub failure' ',"agent_id":"a1","agent_type":"implementer"'
+expect "サブエージェント内の失敗も、agent_type とともに記録する" sh -c "tail -3 '$RED' | grep 'agent=implementer' >/dev/null && tail -1 '$RED' | grep -qx '  E   sub failure'"
+bash_fail "uv run pytest -q" "$(i=1; while [ $i -le 20 ]; do printf 'L%s\\n' $i; i=$((i + 1)); done)"
+expect "出力は先頭 15 行まで" sh -c "grep -qx '  L15' '$RED' && ! grep -qx '  L16' '$RED'"
+printf '{%s,"hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"resp-out","stderr":"resp-err"}}' "$(common)" | "$HOOK" bash-failed
+expect "error が無ければ tool_response の中身を記録する" sh -c "grep -qx '  resp-out' '$RED' && grep -qx '  resp-err' '$RED'"
+i=0; while [ $i -lt 60 ]; do printf '2026-01-01 00:00:00 tree=old\n  $ old %s\n' $i; i=$((i + 1)); done > "$RED"
+bash_fail "uv run pytest -q" "new-entry"
+expect "記録は直近 50 件に切り詰める" [ "$(grep -c '^[^ ]' "$RED")" = 50 ]
+expect "（切り詰めるのは古い側）" sh -c "grep -qx '  new-entry' '$RED' && grep -qx '  \$ old 11' '$RED' && ! grep -qx '  \$ old 10' '$RED'"
+{ printf '2026-01-01 00:00:00 tree=old\n  '; head -c 200000 /dev/zero | tr '\0' x; echo; } > "$RED"
+bash_fail "uv run pytest -q" "new-entry"
+expect "100KB を超える分も古い側から切り詰める" sh -c "[ \$(wc -c < '$RED') -le 100000 ] && grep -qx '  new-entry' '$RED'"
 
 # 宣言した検証コマンド（リポジトリのトップの .harness-verify）: 書かれたコマンドがすべて同じ内容で成功したときだけ検証済み
 fresh; printf '# 宣言した検証コマンド\nsh tests/run.sh\n\n./ci.sh\n' > "$REPO/.harness-verify"; write src/app.py hv1; accept; review reviewer
@@ -286,6 +310,45 @@ $G add -A
 checkx "同じく、宣言したコマンドがすべて成功した内容をステージすればコミットできる" 0 precommit
 bash_fail "./ci.sh"
 check "宣言したコマンドの失敗でも、検証済みは消える" block "$(stop)"
+expect "宣言したコマンド（検証コマンドの形でなくても）の失敗も RED として記録する" grep -qx '  $ ./ci.sh' "$RED"
+# 自分だけの宣言（<git-common-dir>/harness-verify）もあれば、共有の宣言と合わせた行がすべて要る
+fresh; write src/app.py hv3; accept; review reviewer; echo 'sh tests/run.sh' > "$REPO/.git/harness-verify"
+bash_ "uv run pytest -q"
+check "共有と自分だけの宣言が両方あれば、共有の行だけの成功では差し戻す" block "$(stop)"
+bash_ "sh tests/run.sh"
+check "（前提）両方の行が成功すれば通す" pass "$(stop)"
+rm "$REPO/.git/harness-verify"
+
+# 承認済みの要件の写し（<git-dir>/harness-requirements/<ブランチ名>.md）の置き場所
+REQ="$(cd "$REPO/src" && "$HOOK" requirements-path)"
+expect "requirements-path は、cwd のリポジトリの要件の写しの置き場所を出す（ブランチ名の / は _）" [ "$REQ" = "$(cd "$REPO" && pwd -P)/.git/harness-requirements/feat_x.md" ]
+expect "置き場所のディレクトリは作る" [ -d "$(cd "$REPO" && pwd -P)/.git/harness-requirements" ]
+$G switch -q --detach; P="$(cd "$REPO" && "$HOOK" requirements-path)"; $G switch -q feat/x
+expect "detached HEAD では HEAD.md" [ "$P" = "$(cd "$REPO" && pwd -P)/.git/harness-requirements/HEAD.md" ]
+expect "ファイルは作らない" [ ! -e "$P" ]
+# .git の下は Claude Code の Write ツールでは書けない（保護される）ので、標準入力から保存する口を持つ
+printf '承認済みの要件\n- AC1 x\n' | (cd "$REPO/src" && "$HOOK" requirements-save) > "$TMP/saved-path"
+expect "requirements-save は、標準入力を要件の写しとして保存し、そのパスを出す" [ "$(cat "$TMP/saved-path")" = "$REQ" ]
+expect "（同じく）内容がそのまま書かれる" [ "$(cat "$REQ")" = "$(printf '承認済みの要件\n- AC1 x')" ]
+checkx "空の入力では保存せず失敗する（写しを空で上書きしない）" 1 sh -c "printf '' | (cd '$REPO' && '$HOOK' requirements-save)"
+expect "（同じく）前の内容が残る" [ "$(cat "$REQ")" = "$(printf '承認済みの要件\n- AC1 x')" ]
+# 承認済みの要件の写しが無い・空なら差し戻す。書き換えれば、検証・受け入れ・レビューの証拠はすべて無効になる
+fresh; rm "$REQ"; write src/app.py rq1; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
+check "要件の写しが無ければ、ほかの証拠がそろっていても差し戻す" block "$r"
+expect "理由に、要件の写しの保存のしかた・場所と /issue が含まれる" [ -n "$(printf '%s' "$r" | grep -F "承認済みの要件と受け入れ条件の写しを \`harness-hook requirements-save\` に標準入力で渡して保存する（場所: $REQ。S は依頼の原文と受け入れ条件 1 行）→ /issue")" ]
+expect "（前提）足りないのは要件だけ（/verify・/accept・/review は理由に無い）" [ -z "$(printf '%s' "$r" | grep -e /verify -e /accept -e /review)" ]
+$G add -A
+checkx "同じく、pre-commit も拒否する" 1 precommit
+: > "$REQ"; bash_ "uv run pytest -q"; accept; review reviewer
+check "要件の写しが空でも差し戻す" block "$(stop | grep -F "場所: $REQ")"
+reqs; bash_ "uv run pytest -q"; accept; review reviewer
+check "（前提）要件の写しを書いて証拠をそろえれば通す" pass "$(stop)"
+reqs "書き換えた要件"
+check "要件の写しを書き換えると、検証・受け入れ・レビューの証拠はすべて無効になる" block "$(stop | grep /verify | grep /accept | grep /review)"
+checkx "同じく、ステージ済みの内容でも pre-commit は拒否する" 1 precommit
+reqs
+check "要件を元に戻せば、以前の証拠が有効（指紋は内容で決まる）" pass "$(stop)"
+checkx "同じく、コミットできる（要件の写しは、作業ツリーとインデックスで同じ指紋に入る）" 0 precommit
 
 # テストが十分か（TDD）は reviewer が判定する。hook はテストファイルの有無を見ない
 fresh; write src/app.py refactor-only; bash_ "uv run pytest -q"; accept; review reviewer
@@ -334,7 +397,7 @@ check ".harness-verify 自体の変更も差し戻す" block "$(stop)"
 $G rm -q .harness-code; $G commit -q -m rm-harness-code
 
 # cwd がサブディレクトリでも、判定はリポジトリのトップレベルで行う
-fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "pytest"; accept; review reviewer
+fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "uv run pytest -q"; accept; review reviewer
 check "cwd がサブディレクトリでも証拠を正しく突き合わせる" pass "$(stop)"
 write src/deep.py c2
 check "サブディレクトリ cwd で未追跡コードを書き換えると証拠は無効になる" block "$(stop)"
@@ -354,8 +417,15 @@ OTHER="$TMP/other"; git init -q -b feat "$OTHER"; echo c > "$OTHER/app.py"; git 
 checkx "Claude が作業していないリポジトリ（テストが作る一時リポジトリ等）は対象外" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 CWD="$OTHER"; bash_ "ls"; CWD=""
 checkx "ターンの途中で cd した先のリポジトリも、そこでコマンドを実行した時点から対象になる" 1 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
-CWD="$OTHER"; bash_ "uv run pytest -q"; accept; review reviewer; CWD=""
-checkx "そのリポジトリを cwd にして検証・受け入れ・レビューすれば、コミットできる" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
+# 検証コマンドの宣言（.harness-verify か <git-common-dir>/harness-verify）が無いリポジトリでは、何を成功させても検証の証拠にならない
+CWD="$OTHER"; reqs; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop); CWD=""
+DECL="全体の検証コマンドを .harness-verify（共有）か $(cd "$OTHER" && pwd -P)/.git/harness-verify（自分だけ）に 1 行 1 つ書く"
+check "宣言が無ければ、検証・受け入れ・レビューがそろっても差し戻す" block "$r"
+expect "差し戻しの理由に、宣言の置き場所（共有・自分だけ）が出る" [ -n "$(printf '%s' "$r" | grep -F "$DECL")" ]
+expect "pre-commit も拒否し、理由に宣言の置き場所が出る" [ -n "$(cd "$OTHER" && "$HOOK" pre-commit 2>&1 | grep -F "$DECL" || true)" ]
+echo 'uv run pytest -q' > "$OTHER/.git/harness-verify"   # 自分だけの宣言（リポジトリに置けないとき）
+CWD="$OTHER"; bash_ "uv run pytest -q"; CWD=""
+checkx "自分だけの宣言でも、そのリポジトリを cwd にして宣言したコマンドを成功させ、受け入れ・レビューすればコミットできる" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 BROKEN="$TMP/broken"; git init -q -b feat "$BROKEN"; CWD="$BROKEN"; turn; CWD=""; echo junk > "$BROKEN/.git/index"
 checkx "判定できないとき（git が失敗する等）はコミットを止める" 1 sh -c "cd '$BROKEN' && '$HOOK' pre-commit"
 fresh; ready h1; write README.md doc-first; $G add README.md; $G commit -q -m docs; $G add -A
@@ -376,9 +446,9 @@ $G add tests/test_app.py
 checkx "レビューした内容をすべてステージすれば通す" 0 precommit
 fresh; printf '#!/bin/sh\necho hi\n' > "$REPO/tool"; $G add tool; rm "$REPO/tool"
 checkx "ステージ後に作業ツリーから消しても、拡張子なしスクリプトはコードとして判定する" 1 precommit
-fresh; write src/app.py c; write tests/test_app.py t; ln -s app.py "$REPO/src/alias.py"; ln -s src/app.py "$REPO/runme"; bash_ "pytest"; accept; review reviewer; $G add -A
+fresh; write src/app.py c; write tests/test_app.py t; ln -s app.py "$REPO/src/alias.py"; ln -s src/app.py "$REPO/runme"; bash_ "uv run pytest -q"; accept; review reviewer; $G add -A
 checkx "シンボリックリンクを含む変更も、証拠がそろっていればコミットできる" 0 precommit
-fresh; $G config core.autocrlf true; printf 'a\r\nb\r\n' > "$REPO/src.py"; write tests/test_app.py t; bash_ "pytest"; accept; review reviewer; $G add -A 2>/dev/null
+fresh; $G config core.autocrlf true; printf 'a\r\nb\r\n' > "$REPO/src.py"; write tests/test_app.py t; bash_ "uv run pytest -q"; accept; review reviewer; $G add -A 2>/dev/null
 checkx "改行変換（core.autocrlf）があっても指紋が一致する" 0 precommit
 $G config --unset core.autocrlf
 # テスト実行が作る生成物（.gitignore の無い Python リポジトリの __pycache__）。検証の時点で既にある
@@ -401,7 +471,7 @@ checkx "その端末でも、人の手動コミットでは関門の実体を起
 WT="$TMP/wt"; $G worktree add -q -b feat/wt "$WT"; mkdir -p "$WT/src"; echo c > "$WT/src/w.py"; git -C "$WT" add -A
 GW="git -C $WT -c user.name=t -c user.email=t@t -c core.hooksPath=$HOOKS"
 checkx "セッションを開いたリポジトリから後で作った worktree でも、関門が効く" 1 $GW commit -q -m x
-CWD="$WT"; turn; write_wt() { echo "$2" > "$WT/$1"; }; write_wt src/w.py c2; bash_ "uv run pytest -q"; accept; review reviewer; CWD=""
+CWD="$WT"; turn; reqs; write_wt() { echo "$2" > "$WT/$1"; }; write_wt src/w.py c2; bash_ "uv run pytest -q"; accept; review reviewer; CWD=""
 git -C "$WT" add -A
 checkx "worktree でも、証拠がそろえばコミットできる" 0 $GW commit -q -m "wt"
 echo d > "$WT/README.md"; git -C "$WT" add README.md
@@ -435,12 +505,16 @@ if env HOME="$TMP/nohome" $GH commit -q -m code > "$TMP/nohome.out" 2>&1; then o
 expect "その場合は警告を出す" grep -q "関門を通さずに続行" "$TMP/nohome.out"
 
 # ---- Bash の迂回防止（代表的な語を部分文字列で拒否。網羅はできない）----
-for c in "git commit --no-verify -m x" "git commit --no-veri -m x" "git commit -n -m x" "git commit -anm x" \
+for c in "git commit --no-verify -m x" "git commit --no-veri -m x" "git commit --no-verif -m x" "git commit -n -m x" "git commit -anm x" \
   "git -c core.hooksPath=/dev/null commit -m x" "git -c core.hookspath=/dev/null commit -m x" "env -u CLAUDECODE git commit -m x" \
-  "GIT_CONFIG_GLOBAL=/dev/null git commit -m x" "git commit-tree abc" "cp ~/.local/state/harness/repo/x/verified ~/.local/state/harness/repo/x/reviewed"; do
+  "unset CLAUDECODE && git commit -m x" "CLAUDECODE= git commit -m x" "export -n CLAUDECODE" \
+  "GIT_CONFIG_GLOBAL=/dev/null git commit -m x" "GIT_CONFIG=/dev/null git commit -m x" "export GIT_CONFIG_GLOBAL=/dev/null" \
+  "env GIT_CONFIG_GLOBAL=/dev/null git commit -m x" "git commit-tree abc" "cp ~/.local/state/harness/repo/x/verified ~/.local/state/harness/repo/x/reviewed"; do
   checkd "拒否する: $c" deny "$(guardb "$c")"
 done
-for c in "git add -A && git commit -m x" "git log --oneline -n 5" "git status"; do
+# 迂回にならない形は通す: --no-verbose、小文字の git_config、環境変数を読むだけ
+for c in "git add -A && git commit -m x" "git log --oneline -n 5" "git status" "git commit --no-verbose -m x" "grep -n git_config file" \
+  "grep -n GIT_CONFIG bin/harness-hook" 'echo $CLAUDECODE' "printenv CLAUDECODE"; do
   checkd "通す: $c" allow "$(guardb "$c")"
 done
 expect "拒否の理由に、一致した語を含める" [ -n "$(guardb "git commit --no-verify" | grep -- "--no-v")" ]
@@ -450,7 +524,7 @@ checkd "作業ブランチ上の編集は許可する" allow "$(guarde "$REPO/sr
 checkd "git リポジトリ外の編集は許可する" allow "$(guarde "$TMP/note.md")"
 U="$TMP/unborn"; git init -q -b main "$U"
 checkd "git init 直後（最初のコミット前）は main でも編集できる" allow "$(guarde "$U/app.py")"
-CWD="$U"; turn; echo c > "$U/app.py"; bash_ "uv run pytest -q"; accept; review reviewer; git -C "$U" add -A
+CWD="$U"; turn; reqs; echo c > "$U/app.py"; echo 'uv run pytest -q' > "$U/.harness-verify"; bash_ "uv run pytest -q"; accept; review reviewer; git -C "$U" add -A
 checkx "最初のコミットは main に置ける（証拠がそろっていれば）" 0 sh -c "cd '$U' && '$HOOK' pre-commit"
 check "最初のコミット前の main では、Stop も『ブランチを切れ』と差し戻さない" pass "$(stop)"
 CWD=""

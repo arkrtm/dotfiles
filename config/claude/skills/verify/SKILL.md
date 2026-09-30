@@ -1,25 +1,35 @@
 ---
 name: verify
-description: 変更後の検証手順。/accept（受け入れ検証）の後に、受け入れ検査を含むテスト一式・型チェック・lint・ビルドを実行し、コマンドと結果をそのまま示す。コードを変えたら完了前に必ず実行する
+description: /accept（受け入れ検証）に合格した後、/review の前に必ず使う。完了・修正済み・通ったと言う前にも使う（結果を見ていないものを通ったと言わない）
 ---
 
-コードを変えた後、`/accept` で受け入れ検証に合格してから、完了を宣言する前に実行する。結果を見ていないものを「通った」と言わない。
+`/accept` に合格した後、完了を宣言する前に実行する。**結果を見ていないものを「通った」と言わない**。
 
-1. 受け入れ条件ごとの確認は `/accept`（acceptor が成果物を実際に動かす）が行い、検査スクリプトを tests/ に残している。/verify はそれを含むテスト一式を通す。受け入れ検証がまだなら、先に `/accept`
-2. 検証コマンドを見つける（既にあるものを使う。新しく入れない）。リポジトリのトップに `.harness-verify` があれば、そこに書かれたコマンドをすべて実行する（hook は、書かれたコマンドがすべて同じ内容に対して成功したときだけ検証済みとする）
-   - `pyproject.toml` / `setup.cfg` → `uv run pytest -q`、`uv run ruff check .`、`uv run mypy` or `pyright`（設定があるもの）
-   - `package.json` → `scripts` の `test` / `lint` / `typecheck` / `build`
-   - `Cargo.toml` → `cargo test`、`cargo clippy`
-   - `go.mod` → `go test ./...`、`go vet ./...`
-   - `Makefile` / `justfile` → `make test` / `just test`（`check`、`lint` も可）
-   - Gradle / Maven / Swift / PHP → `./gradlew test`、`mvn test`、`swift test`、`phpunit`
-   - シェルスクリプト → `shellcheck`、または `tests/` 配下の検査スクリプト（`sh -n` のような構文チェックだけでは証拠にならない）
-   - dotfiles → `.harness-verify` に書いたコマンドすべて。install.sh・shell 設定・mise の設定を変えたら `sh tests/install-nosudo.sh` も（docker が要る。mac からは `DOCKER='ssh nas docker' sh tests/install-nosudo.sh`）。`config/nvim` を変えたら `sh tests/nvim.sh` も
-3. 変更に関係するテストを先に、次に全体を実行する。全体の検証コマンドどうしが独立なら、1 回の応答でまとめて並列に実行する。失敗したら直してから再実行する（テストを弱めて通さない。検証コマンドが失敗すると、それまでの証拠は消える）
-   - **検証コマンドは単独で実行する**: パイプ（`| tail`）、`;`、`||`、`>/dev/null`、バックグラウンド実行を付けない（`cd dir && cmd` は可）。付けると終了コードが証拠にならず、hook が「検証済み」にしない。出力を減らしたいときは `-q` などのオプションを使う
-   - `--collect-only` や `--version`、構文チェックだけ（`sh -n`）は検証にならない
+1. 受け入れ条件ごとの確認は `/accept`（acceptor が成果物を実際に動かす）が済ませ、検査スクリプトを tests/ に残している。/verify はそれを含む全体の検証を通す。受け入れ検証がまだなら先に `/accept`
+2. 全体の検証コマンドの宣言を確かめる。hook が証拠として認めるのは、宣言したコマンドがすべて同じ内容に対して成功したときだけ（lint だけ、1 ファイルや `-k` に絞った実行は証拠にならない）
+   - 宣言の場所: リポジトリのトップの `.harness-verify`（共有。1 行 1 コマンド、`#` はコメント）。リポジトリに置けないときは `$(git rev-parse --git-common-dir)/harness-verify`（自分だけ）
+   - 無ければ最初に作る。そのリポジトリのテスト一式・型チェック・lint・ビルドを見つけて書く（既にあるものを使う。新しく入れない）:
+     - `pyproject.toml` / `setup.cfg` → `uv run pytest -q`、`uv run ruff check .`、`uv run mypy` か `pyright`（設定があるもの）
+     - `package.json` → `scripts` の `test` / `lint` / `typecheck` / `build`
+     - `Cargo.toml` → `cargo test`、`cargo clippy`。`go.mod` → `go test ./...`、`go vet ./...`
+     - `Makefile` / `justfile` → `make test` / `just test`（`check`・`lint` も）。Gradle / Maven / Swift / PHP → `./gradlew test`、`mvn test`、`swift test`、`phpunit`
+     - シェル → `shellcheck` か tests/ の検査スクリプト（`sh -n` のような構文チェックだけは不可）
+     - テスト基盤が無ければ、壊れたら落ちる最小の検査を tests/ に 1 つ書き、それを宣言する（フレームワークは入れない）
+   - dotfiles は宣言済み。install.sh・shell・mise の設定を変えたら `DOCKER='ssh nas docker' sh tests/install-nosudo.sh` も、`config/nvim` を変えたら `sh tests/nvim.sh` も（宣言の外の追加の確認）
+3. 変更に関係するテストを先に、次に宣言したコマンドをすべて実行する。互いに独立なら 1 回の応答でまとめて並列に
+   - **単独で実行する**: パイプ（`| tail`）、`;`、`||`、`>/dev/null`、バックグラウンド実行を付けない（`cd dir && cmd` は可）。付けると証拠にならない。出力を減らしたいときは `-q` などのオプションを使う
+   - 失敗したら直してから再実行する（テストを弱めて通さない）。検証コマンドが失敗すると、それまでの証拠は消える
    - サブエージェントの中で実行した検証は証拠にならない（hook が記録しない）。最後はメインの会話で実行する
-4. テスト基盤が無い場合: 壊れたら落ちる最小の検査を `tests/` に 1 つ書き、`sh tests/<名前>.sh`（または既にあるテストランナー）で実行する（フレームワークは入れない。`tests/` の外に置いたスクリプトを `python check.py` のように実行しても、hook は検証と認識しない）
-5. 報告: 「実行したコマンド → 結果（通過数・失敗数、または末尾数行）」。長い出力は貼らない。受け入れ条件ごとの観測値と成果物のサンプルは、`/accept` の報告から完了報告に載せる
+4. 報告: 「実行したコマンド → 結果（通過数・失敗数、または末尾数行）」。長い出力は貼らない。受け入れ条件ごとの観測値と成果物のサンプルは、`/accept` の報告から完了報告に載せる
 
 検証できない理由がある場合（環境が無い、実行に本番資源が要る等）は、コミットせずに、理由と代わりに確認したことをユーザーに伝えて相談する。
+
+## 言い訳と、それへの答え
+
+| 言い訳 | 答え |
+|---|---|
+| 関係するテストは通った | 全体を通していなければ、ほかを壊したかは分からない。宣言したコマンドをすべて通す |
+| さっき通ったから同じはず | その後に変えていれば別物。今の内容で実行する（hook も今の内容でしか認めない） |
+| 落ちたのは元からある失敗 | 着手時に記録した失敗と照らす。記録に無ければ自分の変更のせいとして扱う |
+| 型チェックだけで十分 | 型は振る舞いを確かめない。テストと受け入れ検証が要る |
+| 出力が長いので末尾だけ見た | パイプを付けると証拠にならない。`-q` で短くし、失敗の行を読む |

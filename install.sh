@@ -29,6 +29,8 @@ config/claude/skills/wrap-up .claude/skills/wrap-up
 config/claude/skills/implement .claude/skills/implement
 config/claude/skills/diagnose  .claude/skills/diagnose
 config/claude/skills/accept    .claude/skills/accept
+config/claude/skills/design    .claude/skills/design
+config/claude/skills/tdd       .claude/skills/tdd
 bin/harness-hook         .local/bin/harness-hook
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync

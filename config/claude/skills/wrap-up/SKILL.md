@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: M / L のタスク完了時の締め処理。このセッションで得た情報を「Linear / プロジェクトの CLAUDE.md / グローバルの CLAUDE.md / README / tinymemory の fact / session」のどこに残すか（残さないか）を判断して保存する。同じ内容は 1 か所だけ。コミット後・/clear の前に実行する
+description: M / L の作業をコミットし、統合を決めた後に使う（/clear の前）。このセッションで得た情報を、Linear・CLAUDE.md・README・tinymemory のどこに残すかを決めて保存する
 allowed-tools: Bash(tinymemory:*), Bash(git status:*), Bash(git log:*)
 argument-hint: "[ARK-nn]"
 ---

@@ -70,7 +70,9 @@ done
 
 # ---------- AC4 / AC5: hook ----------
 R="$TMP/repo"; G="git -C $R -c user.name=t -c user.email=t@t"
-mkdir -p "$R/tests"; $G init -q -b main; echo base > "$R/tests/test_a.py"; $G add -A; $G commit -q -m init; $G switch -q -c feat/x
+mkdir -p "$R/tests"; $G init -q -b main; echo base > "$R/tests/test_a.py"; echo 'uv run pytest -q' > "$R/.harness-verify"   # 検証コマンドの宣言
+$G add -A; $G commit -q -m init; $G switch -q -c feat/x
+echo 要件と受け入れ条件 > "$(cd "$R" && "$HOOK" requirements-path)"   # 承認済みの要件の写し（関門が求める）
 SID="acc-$$"
 common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"/dev/null"' "$SID" "$R"; }
 turn() { printf '{%s,"hook_event_name":"UserPromptSubmit","prompt":"x"}' "$(common)" | "$HOOK" turn; }
