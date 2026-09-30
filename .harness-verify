@@ -3,3 +3,4 @@
 sh tests/harness-hook.sh
 sh tests/install.sh
 sh tests/review-snapshot.sh
+sh tests/acceptance.sh

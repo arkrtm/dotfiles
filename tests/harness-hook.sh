@@ -54,10 +54,12 @@ turn() { printf '{%s,"hook_event_name":"UserPromptSubmit","prompt":"x"}' "$(comm
 bash_() { # bash_ <command> [tool_input への追加 JSON] [interrupted]
   printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"%s"%s},"tool_response":{"stdout":"","stderr":"","interrupted":%s}}' "$(common)" "$1" "${2:-}" "${3:-false}" | "$HOOK" bash; }
 OK3='## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'   # reviewer の出力（3 軸とも承認）。\n は JSON の改行
+OKA='受け入れ検証した版: 4b825dc\n## 条件ごとの結果\n- [AC1] 合格 — 確かめ方 → 観測値\n- [AC2] 合格 — 確かめ方 → 観測値\n## 判定\n受け入れ: 合格'   # acceptor の出力（条件と判定がすべて合格）
 review() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "${2-$OK3}" | "$HOOK" review-done; }
-review_handback() { # 報告をツール呼び出し（SubagentHandback）で返す環境: 最後のテキストに判定文は無く、サブエージェントの記録にある
+accept() { review acceptor "${1-$OKA}"; }
+review_handback() { # review_handback <報告> [agent_type（既定 reviewer）]。報告をツール呼び出し（SubagentHandback）で返す環境: 最後のテキストに判定文は無く、サブエージェントの記録にある
   printf '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"SubagentHandback","input":{"message":"%s"}}]}}\n{"message":{"role":"assistant","content":[{"type":"text","text":"報告を返しました"}]}}\n' "$1" > "$TMP/agent.jsonl"
-  printf '{%s,"hook_event_name":"SubagentStop","agent_type":"reviewer","last_assistant_message":"報告を返しました","agent_transcript_path":"%s"}' "$(common)" "$TMP/agent.jsonl" | "$HOOK" review-done; }
+  printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"報告を返しました","agent_transcript_path":"%s"}' "$(common)" "${2:-reviewer}" "$TMP/agent.jsonl" | "$HOOK" review-done; }
 review_from() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"reviewer","last_assistant_message":"","agent_transcript_path":"%s"}' "$(common)" "$1" | "$HOOK" review-done; }  # 判定は記録からだけ読める
 log_count() { grep -c "$1" "$XDG_STATE_HOME/harness/log" || true; }
 stop() { printf '{%s,"hook_event_name":"Stop","stop_hook_active":%s,"last_assistant_message":"%s"}' "$(common)" "${2:-false}" "${1:-done}" | "$HOOK" stop; }
@@ -66,7 +68,7 @@ guarde() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Edit","tool_i
 precommit() { (cd "$REPO" && "$HOOK" pre-commit); }
 write() { mkdir -p "$(dirname "$REPO/$1")"; echo "$2" > "$REPO/$1"; }
 fresh() { $G reset -q --hard; $G clean -qfd; turn; }                 # きれいな作業ツリーで新しいターンを始める
-ready() { write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; review reviewer; }  # 証拠がそろった状態
+ready() { write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; accept; review reviewer; }  # 証拠がそろった状態
 
 # ---- Stop（完了の差し戻し）----
 fresh
@@ -96,6 +98,7 @@ fresh; write src/app.py code
 check "コード変更のみ → 差し戻す" block "$(stop)"
 check "差し戻しの理由に、足りない証拠（/verify と /review）が含まれる" block "$(stop | grep /verify | grep /review)"
 check "差し戻しの理由に、ユーザーの判断を待つならその旨を書いて終えてよいことが含まれる" block "$(stop | grep 'ユーザーの判断を待つ')"
+check "バックグラウンドのサブエージェントの完了を待つときも、その旨を書いて終えてよいことが含まれる" block "$(stop | grep 'バックグラウンドのサブエージェントの完了を待つ')"
 check "stop_hook_active なら二度目は通す（ループ防止）" pass "$(stop done true)"
 check "『検証不要:』などの宣言では通さない" block "$(stop 'TDD不要: x。検証不要: x。レビュー不要: x')"
 $G add -A
@@ -107,14 +110,14 @@ check "以前からの未コミット変更があっても、このターンで�
 write README.md doc; $G add README.md; $G commit -q -m docs
 check "そのターンでドキュメントだけコミットしても（HEAD が動いても）差し戻さない" pass "$(stop)"
 if [ "$(id -u)" != 0 ]; then   # root は chmod 000 のファイルも読めるので、この検査は成り立たない
-  fresh; write src/app.py c; write tests/test_app.py t; write src/locked.py x; chmod 000 "$REPO/src/locked.py"; bash_ "uv run pytest -q"; review reviewer
+  fresh; write src/app.py c; write tests/test_app.py t; write src/locked.py x; chmod 000 "$REPO/src/locked.py"; bash_ "uv run pytest -q"; accept; review reviewer
   check "読めないファイルがあって指紋を作れないときは、証拠を記録せず差し戻す" block "$(stop)"
-  EXPECTED_ERRORS=$((EXPECTED_ERRORS + 2))   # 上の bash と review-done は指紋を作れず例外で終わる（だから証拠が記録されない）
+  EXPECTED_ERRORS=$((EXPECTED_ERRORS + 3))   # 上の bash と 2 つの review-done は指紋を作れず例外で終わる（だから証拠が記録されない）
   chmod 644 "$REPO/src/locked.py"
 fi
 
-fresh; write src/app.py code; write tests/test_app.py t; bash_ "uv run pytest -q"
-check "テスト・検証ありでもレビュー未実施 → 差し戻す" block "$(stop)"
+fresh; write src/app.py code; write tests/test_app.py t; bash_ "uv run pytest -q"; accept
+check "テスト・検証・受け入れありでもレビュー未実施 → 差し戻す" block "$(stop)"
 review general-purpose
 check "別種のサブエージェント終了ではレビュー扱いにしない" block "$(stop)"
 review reviewer '仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
@@ -140,18 +143,18 @@ check "以前の判定を行単位で引用していても、今回の判定が�
 review reviewer '## 指摘\n- [軽] 将来は修正が必要かもしれない\n## 判定\n- 仕様適合: **承認**\nテスト: 承認\n品質・保守性: 承認'
 check "3 軸とも承認なら、指摘文に『修正が必要』の語があってもレビュー済みにする（箇条書き・強調も可）" pass "$(stop)"
 # /review fix（範囲限定の再レビュー）の出力形式。reviewer.md は根拠の行を軸名で始めることを禁じている（判定と読まれるため）
-write src/app.py code1n; bash_ "uv run pytest -q"
+write src/app.py code1n; bash_ "uv run pytest -q"; accept
 review reviewer 'レビューした版: 4b825dc\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- テスト: sh tests/x.sh 成功\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 check "根拠の行を軸名で始めると判定と読まれ、承認にならない" block "$(stop)"
 review reviewer 'レビューした版: 4b825dc\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- [R1-3] 直っていない — のちに修正が必要 src/app.py:9\n\n## 修正による新しい問題\n- [R2-1] [軽] [テスト] tests/test_app.py:12 — 名前が曖昧\n\n## ユーザー判断で見送り\n- [R1-3] 裁定: 対象外の環境なので見送り\n\n## 範囲外\n- src/other.py:5 — 修正が必要になりそうな箇所\n\n未解決: なし\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 check "範囲限定の再レビューの出力形式（見送り・範囲外の節つき）は、3 軸とも承認なら承認として読む" pass "$(stop)"
-write src/app.py code1b; bash_ "uv run pytest -q"
+write src/app.py code1b; bash_ "uv run pytest -q"; accept
 check "（再編集後）レビューが無効になっている" block "$(stop)"
 review_handback '## 判定\n仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
 check "報告がハンドバック経由で『修正が必要』ならレビュー済みにしない" block "$(stop)"
 review_handback '## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 check "報告がハンドバック経由（最後のテキストに判定文が無い）でも、記録から判定を読んでレビュー済みにする" pass "$(stop)"
-write src/app.py code1c; bash_ "uv run pytest -q"
+write src/app.py code1c; bash_ "uv run pytest -q"; accept
 # 再開された reviewer: 前回は承認、今回の依頼の後は判定を出さずに終わった（想定外の形の行も混ぜる）
 resumed() { # resumed <新しい依頼の行（空なら入れない）>
   { printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"text","text":"仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認"}]}}'
@@ -169,47 +172,93 @@ resumed '{"message":{"role":"user","content":[{"type":"text","text":"もう一�
 check "新しい依頼がブロック形式（content がリスト）でも同じ" block "$(stop)"
 resumed ''
 check "（前提）同じ記録でも、新しい依頼の行が無ければ承認として読める" pass "$(stop)"
-write src/app.py code1d; bash_ "uv run pytest -q"
+write src/app.py code1d; bash_ "uv run pytest -q"; accept
 printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"cat <<E\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認\nE"}}]}}' > "$TMP/quoted.jsonl"; review_from "$TMP/quoted.jsonl"
 check "reviewer が途中で実行したコマンドの中の判定行は、報告として読まない" block "$(stop)"
 review reviewer
-check "テスト・検証・レビュー承認がそろえば通す" pass "$(stop)"
+check "テスト・検証・受け入れ・レビュー承認がそろえば通す" pass "$(stop)"
 expect "review-done は承認の可否を 1 行でログに残す" grep -q "review-done .*approved=True" "$XDG_STATE_HOME/harness/log"
 write src/app.py code2
-check "その後に再編集すれば検証・レビューは無効になり差し戻す" block "$(stop)"
-bash_ "cargo test"; review reviewer
-check "再検証・再レビューすれば通す" pass "$(stop)"
+check "その後に再編集すれば検証・受け入れ・レビューは無効になり差し戻す" block "$(stop)"
+bash_ "cargo test"; accept; review reviewer
+check "再検証・再受け入れ・再レビューすれば通す" pass "$(stop)"
 # reviewer の報告は承認・不承認に関わらず <git-dir>/harness-last-review に保存する（次の /review fix で前回の報告として読む）
 review reviewer '仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
 expect "review-done は reviewer の報告を .git/harness-last-review に保存する（不承認でも）" grep -q "仕様適合: 修正が必要" "$REPO/.git/harness-last-review"
 review reviewer
 expect "次の review-done で上書きされる" [ "$(cat "$REPO/.git/harness-last-review")" = "$(printf "$OK3")" ]
 
+# 受け入れ（acceptor の報告）: 条件の行「[AC<n>] <状態>」と判定行「受け入れ: <値>」がそれぞれ 1 行以上あり、すべて「合格」のときだけ受け入れ済み
+fresh; write src/app.py ac1; write tests/test_app.py ac1; bash_ "uv run pytest -q"; review reviewer
+check "検証とレビューがあっても、受け入れが無ければ差し戻す" block "$(stop)"
+check "差し戻しの理由に、足りない証拠（/accept）が含まれる" block "$(stop | grep /accept)"
+$G add -A
+expect "同じ内容をステージすると、pre-commit も /accept を理由に拒否する" [ -n "$(precommit 2>&1 | grep /accept || true)" ]
+review acceptor
+check "reviewer の報告の形で acceptor が終わっても受け入れ済みにしない" block "$(stop)"
+C='## 条件ごとの結果\n'   # 条件の行は、この節の中だけを読む
+accept "受け入れ検証した版: 4b825dc\n$C- [AC1] 合格 — x → y\n## 判定\n受け入れ: 不合格"
+check "判定行が『不合格』なら受け入れ済みにしない" block "$(stop)"
+accept "$C- [AC1] 合格 — x → y\n- [AC2] 不合格 — 期待 / 実際\n受け入れ: 合格"
+check "判定行が合格でも、条件の行に『不合格』があれば受け入れ済みにしない" block "$(stop)"
+accept "$C- [AC1] 合格 — x → y\n- [AC2] 未確認 — 理由\n受け入れ: 合格"
+check "判定行が合格でも、条件の行に『未確認』があれば受け入れ済みにしない" block "$(stop)"
+accept "受け入れ検証した版: 4b825dc\n$C- [AC1] 合格 — x → y"
+check "判定行が無ければ受け入れ済みにしない（『受け入れ検証した版:』は判定行ではない）" block "$(stop)"
+accept "$C## 判定\n受け入れ: 合格"
+check "条件の行が無ければ受け入れ済みにしない" block "$(stop)"
+accept '- [AC1] 合格 — x → y\n## 判定\n受け入れ: 合格'
+check "条件の行が『条件ごとの結果』の節の外にしか無ければ受け入れ済みにしない" block "$(stop)"
+accept "$C- [AC1] 合格 — x\n### 補足\n- [AC2] 不合格 — a\n## 判定\n受け入れ: 合格"
+check "節の中の小見出しの下にある『不合格』も数える（小見出しで節を終えない）" block "$(stop)"
+accept "$C- [AC1] 合格 — x\n## 検査スクリプト\n- s\n$C- [AC2] 不合格 — a\n## 判定\n受け入れ: 合格"
+check "『条件ごとの結果』の節が 2 つあれば、2 つ目の『不合格』も数える" block "$(stop)"
+accept "$C- [AC1] 合格 — x → y\n受け入れ: 合格\n受け入れ: 不合格"
+check "判定行が複数あり、1 つでも『不合格』なら受け入れ済みにしない" block "$(stop)"
+expect "review-done は acceptor の報告を .git/harness-last-accept に保存する（不合格でも）" grep -q "受け入れ: 不合格" "$REPO/.git/harness-last-accept"
+review_handback "$OKA" acceptor
+check "報告がハンドバック経由でも、記録から判定を読んで受け入れ済みにする" pass "$(stop)"
+expect "review-done は受け入れの可否を 1 行でログに残す" grep -q "review-done .*accepted=True" "$XDG_STATE_HOME/harness/log"
+expect "harness-last-accept は次の報告で上書きされる" [ "$(cat "$REPO/.git/harness-last-accept")" = "$(printf "$OKA")" ]
+$G add -A
+checkx "検証・受け入れ・レビューがそろった内容をステージすればコミットできる" 0 precommit
+write src/app.py ac2; bash_ "uv run pytest -q"; review reviewer
+check "受け入れの後に内容を変えると、受け入れは無効になり差し戻す" block "$(stop)"
+accept "$C- **[AC1]** **合格** — x → y\n- [AC2] 合格\n- **受け入れ**: **合格**"
+check "条件と判定がすべて合格なら受け入れ済みにする（箇条書き・強調も可）" pass "$(stop)"
+write src/app.py ac2b; bash_ "uv run pytest -q"; review reviewer
+accept "$C- [AC1] 合格 - 半角のハイフン\n- [AC2] 合格 – 別のダッシュ\n- [AC3] 合格—空白なし\n- [AC4] 合格―水平線\n- [AC5] 合格−マイナス\n- [AC6] 合格‐ハイフン\n## 検査スクリプト\n- [AC2] の検査は tests/acceptance/x.sh\n## 判定\n受け入れ: 合格"
+check "条件の状態はダッシュの種類に依らず読み、節の外の [AC で始まる行は条件として数えない" pass "$(stop)"
+write src/app.py ac3; bash_ "uv run pytest -q"; accept; review reviewer "$OKA"
+check "acceptor の報告の形で reviewer が終わってもレビュー済みにしない" block "$(stop)"
+review reviewer
+check "（前提）reviewer の報告なら通す" pass "$(stop)"
+
 # 検証として認める／認めないコマンドの形
 # 証拠は内容の指紋で持つので、ケースごとに内容を変える（同じ内容だと前のケースの「検証済み」が一致してしまう）
 n=0
-reviewed_only() { n=$((n + 1)); fresh; write src/app.py "v$n"; write tests/test_app.py "v$n"; review reviewer; }
+unverified() { n=$((n + 1)); fresh; write src/app.py "v$n"; write tests/test_app.py "v$n"; accept; review reviewer; }  # 検証だけが足りない状態
 for c in "uv run pytest -q" "time uv run pytest -q" "cd $REPO && uv run pytest -q" "just test" "./gradlew test" "mvn -q test" "sh tests/run.sh" "npm run lint" \
   "uv run python -m pytest" "uv run --extra dev pytest -q" "timeout 60 pytest" "make -C sub test" "./tests/run.sh" "sh -x tests/run.sh" "node --test" "pytest -q 2>&1" \
   "bundle exec rspec" "mix test" "python3.12 -m pytest" "pnpm lint" "uvx ruff check ."; do
-  reviewed_only; bash_ "$c"
+  unverified; bash_ "$c"
   check "検証として認める: $c" pass "$(stop)"
 done
 for c in "uv run pytest -q 2>&1 | tail -3" "pytest -q || echo done" "pytest -q; echo done" "pytest --co" "pytest --version" \
   "pytest -q >/dev/null" "nvim --headless +q" "sh -n src/app.py" "ls tests" "cd $REPO\\nuv run pytest -q" \
   "pytest -q &" "echo time pytest" "grep -rn pytest ." "ruff format ." "cat tests/test_app.py" "sh -n tests/run.sh" "OUT=tests/out.txt ls"; do
-  reviewed_only; bash_ "$c"
+  unverified; bash_ "$c"
   check "検証として認めない: $(printf '%s' "$c" | tr '\\' ' ')" block "$(stop)"
 done
-reviewed_only; bash_ "uv run pytest -q" ',"run_in_background":true'
+unverified; bash_ "uv run pytest -q" ',"run_in_background":true'
 check "バックグラウンド実行は検証として認めない" block "$(stop)"
-reviewed_only; printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"","stderr":"","interrupted":false,"backgroundTaskId":"b1"}}' "$(common)" | "$HOOK" bash
+unverified; printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"","stderr":"","interrupted":false,"backgroundTaskId":"b1"}}' "$(common)" | "$HOOK" bash
 check "実行中にバックグラウンドへ回された（終了前の）実行も検証として認めない" block "$(stop)"
-reviewed_only; bash_ "uv run pytest -q" "" true
+unverified; bash_ "uv run pytest -q" "" true
 check "中断された実行は検証として認めない" block "$(stop)"
-reviewed_only; printf '{%s,"agent_id":"a1","agent_type":"implementer","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$(common)" | "$HOOK" bash
+unverified; printf '{%s,"agent_id":"a1","agent_type":"implementer","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$(common)" | "$HOOK" bash
 check "サブエージェント内（agent_id あり）の検証の成功は記録しない" block "$(stop)"
-reviewed_only; bash_ "uv run pytest -q"; n_same=$n; fresh; write src/app.py "v$n_same"; write tests/test_app.py "v$n_same"
+unverified; bash_ "uv run pytest -q"; n_same=$n; fresh; write src/app.py "v$n_same"; write tests/test_app.py "v$n_same"
 check "同じ内容に戻せば、以前の検証・レビューがそのまま有効（指紋は内容で決まる）" pass "$(stop)"
 
 # 検証コマンドの失敗（PostToolUseFailure）は、その作業ツリーの「検証済み」を消す
@@ -222,14 +271,14 @@ $G add -A
 checkx "同じく、pre-commit も失敗する" 1 precommit
 
 # 宣言した検証コマンド（リポジトリのトップの .harness-verify）: 書かれたコマンドがすべて同じ内容で成功したときだけ検証済み
-fresh; printf '# 宣言した検証コマンド\nsh tests/run.sh\n\n./ci.sh\n' > "$REPO/.harness-verify"; write src/app.py hv1; review reviewer
+fresh; printf '# 宣言した検証コマンド\nsh tests/run.sh\n\n./ci.sh\n' > "$REPO/.harness-verify"; write src/app.py hv1; accept; review reviewer
 bash_ "uv run pytest -q"
 check "宣言があれば、宣言に無い検証コマンドの成功は証拠にならない" block "$(stop)"
 bash_ "sh tests/run.sh"
 check "宣言した 2 つのうち 1 つだけの成功では差し戻す" block "$(stop)"
 bash_ "cd $REPO && ./ci.sh"
 check "もう 1 つも成功すれば通す（先頭の cd … && を除いて比べる。検証コマンドの形でなくてよい）" pass "$(stop)"
-write src/app.py hv2; review reviewer; bash_ "./ci.sh"
+write src/app.py hv2; accept; review reviewer; bash_ "./ci.sh"
 check "その後に内容を変えると、両方やり直しになる" block "$(stop)"
 bash_ "sh tests/run.sh"
 check "（前提）両方をやり直せば通す" pass "$(stop)"
@@ -239,8 +288,8 @@ bash_fail "./ci.sh"
 check "宣言したコマンドの失敗でも、検証済みは消える" block "$(stop)"
 
 # テストが十分か（TDD）は reviewer が判定する。hook はテストファイルの有無を見ない
-fresh; write src/app.py refactor-only; bash_ "uv run pytest -q"; review reviewer
-check "コードだけの変更（リファクタ等）でも、検証と 3 軸の承認があれば通す" pass "$(stop)"
+fresh; write src/app.py refactor-only; bash_ "uv run pytest -q"; accept; review reviewer
+check "コードだけの変更（リファクタ等）でも、検証・受け入れと 3 軸の承認があれば通す" pass "$(stop)"
 $G add -A
 checkx "同じく、コードだけの変更でもコミットできる" 0 precommit
 # テストだけの変更は対象外
@@ -253,7 +302,7 @@ check "名前が test で終わるだけのコード（latest.js）はテスト�
 # 既存のテストの変更・削除はテストを弱めうるので、テスト以外のコードの変更が無くても証拠を求める（テストの追加だけなら対象外）
 fresh; echo weakened > "$REPO/tests/test_base.py"
 check "既存のテストの変更は差し戻す" block "$(stop)"
-bash_ "uv run pytest -q"; review reviewer
+bash_ "uv run pytest -q"; accept; review reviewer
 check "（前提）証拠がそろえば通す" pass "$(stop)"
 fresh; rm "$REPO/tests/test_base.py"
 check "既存のテストの削除は差し戻す" block "$(stop)"
@@ -285,7 +334,7 @@ check ".harness-verify 自体の変更も差し戻す" block "$(stop)"
 $G rm -q .harness-code; $G commit -q -m rm-harness-code
 
 # cwd がサブディレクトリでも、判定はリポジトリのトップレベルで行う
-fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "pytest"; review reviewer
+fresh; mkdir -p "$REPO/src"; CWD="$REPO/src"; turn; write src/deep.py c; write tests/test_deep.py t; bash_ "pytest"; accept; review reviewer
 check "cwd がサブディレクトリでも証拠を正しく突き合わせる" pass "$(stop)"
 write src/deep.py c2
 check "サブディレクトリ cwd で未追跡コードを書き換えると証拠は無効になる" block "$(stop)"
@@ -305,13 +354,13 @@ OTHER="$TMP/other"; git init -q -b feat "$OTHER"; echo c > "$OTHER/app.py"; git 
 checkx "Claude が作業していないリポジトリ（テストが作る一時リポジトリ等）は対象外" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 CWD="$OTHER"; bash_ "ls"; CWD=""
 checkx "ターンの途中で cd した先のリポジトリも、そこでコマンドを実行した時点から対象になる" 1 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
-CWD="$OTHER"; bash_ "uv run pytest -q"; review reviewer; CWD=""
-checkx "そのリポジトリを cwd にして検証・レビューすれば、コミットできる" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
+CWD="$OTHER"; bash_ "uv run pytest -q"; accept; review reviewer; CWD=""
+checkx "そのリポジトリを cwd にして検証・受け入れ・レビューすれば、コミットできる" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 BROKEN="$TMP/broken"; git init -q -b feat "$BROKEN"; CWD="$BROKEN"; turn; CWD=""; echo junk > "$BROKEN/.git/index"
 checkx "判定できないとき（git が失敗する等）はコミットを止める" 1 sh -c "cd '$BROKEN' && '$HOOK' pre-commit"
 fresh; ready h1; write README.md doc-first; $G add README.md; $G commit -q -m docs; $G add -A
 checkx "ドキュメントを先にコミットして HEAD が動いても、コードの証拠は有効なまま" 0 precommit
-fresh; mv "$REPO/src/lib.py" "$REPO/src/lib2.py"; write tests/test_app.py r; bash_ "uv run pytest -q"; review reviewer; $G add -A
+fresh; mv "$REPO/src/lib.py" "$REPO/src/lib2.py"; write tests/test_app.py r; bash_ "uv run pytest -q"; accept; review reviewer; $G add -A
 checkx "ファイルを mv した変更も、証拠がそろっていればコミットできる（rename 検出でずれない）" 0 precommit
 fresh; ready c7; $G add -A
 checkx "証拠がそろっていれば、ステージしても指紋は変わらず成功する" 0 precommit
@@ -327,9 +376,9 @@ $G add tests/test_app.py
 checkx "レビューした内容をすべてステージすれば通す" 0 precommit
 fresh; printf '#!/bin/sh\necho hi\n' > "$REPO/tool"; $G add tool; rm "$REPO/tool"
 checkx "ステージ後に作業ツリーから消しても、拡張子なしスクリプトはコードとして判定する" 1 precommit
-fresh; write src/app.py c; write tests/test_app.py t; ln -s app.py "$REPO/src/alias.py"; ln -s src/app.py "$REPO/runme"; bash_ "pytest"; review reviewer; $G add -A
+fresh; write src/app.py c; write tests/test_app.py t; ln -s app.py "$REPO/src/alias.py"; ln -s src/app.py "$REPO/runme"; bash_ "pytest"; accept; review reviewer; $G add -A
 checkx "シンボリックリンクを含む変更も、証拠がそろっていればコミットできる" 0 precommit
-fresh; $G config core.autocrlf true; printf 'a\r\nb\r\n' > "$REPO/src.py"; write tests/test_app.py t; bash_ "pytest"; review reviewer; $G add -A 2>/dev/null
+fresh; $G config core.autocrlf true; printf 'a\r\nb\r\n' > "$REPO/src.py"; write tests/test_app.py t; bash_ "pytest"; accept; review reviewer; $G add -A 2>/dev/null
 checkx "改行変換（core.autocrlf）があっても指紋が一致する" 0 precommit
 $G config --unset core.autocrlf
 # テスト実行が作る生成物（.gitignore の無い Python リポジトリの __pycache__）。検証の時点で既にある
@@ -352,7 +401,7 @@ checkx "その端末でも、人の手動コミットでは関門の実体を起
 WT="$TMP/wt"; $G worktree add -q -b feat/wt "$WT"; mkdir -p "$WT/src"; echo c > "$WT/src/w.py"; git -C "$WT" add -A
 GW="git -C $WT -c user.name=t -c user.email=t@t -c core.hooksPath=$HOOKS"
 checkx "セッションを開いたリポジトリから後で作った worktree でも、関門が効く" 1 $GW commit -q -m x
-CWD="$WT"; turn; write_wt() { echo "$2" > "$WT/$1"; }; write_wt src/w.py c2; bash_ "uv run pytest -q"; review reviewer; CWD=""
+CWD="$WT"; turn; write_wt() { echo "$2" > "$WT/$1"; }; write_wt src/w.py c2; bash_ "uv run pytest -q"; accept; review reviewer; CWD=""
 git -C "$WT" add -A
 checkx "worktree でも、証拠がそろえばコミットできる" 0 $GW commit -q -m "wt"
 echo d > "$WT/README.md"; git -C "$WT" add README.md
@@ -401,7 +450,7 @@ checkd "作業ブランチ上の編集は許可する" allow "$(guarde "$REPO/sr
 checkd "git リポジトリ外の編集は許可する" allow "$(guarde "$TMP/note.md")"
 U="$TMP/unborn"; git init -q -b main "$U"
 checkd "git init 直後（最初のコミット前）は main でも編集できる" allow "$(guarde "$U/app.py")"
-CWD="$U"; turn; echo c > "$U/app.py"; bash_ "uv run pytest -q"; review reviewer; git -C "$U" add -A
+CWD="$U"; turn; echo c > "$U/app.py"; bash_ "uv run pytest -q"; accept; review reviewer; git -C "$U" add -A
 checkx "最初のコミットは main に置ける（証拠がそろっていれば）" 0 sh -c "cd '$U' && '$HOOK' pre-commit"
 check "最初のコミット前の main では、Stop も『ブランチを切れ』と差し戻さない" pass "$(stop)"
 CWD=""
@@ -470,6 +519,7 @@ expect "7 日より古いセッションの状態は消える" [ ! -e "$S/old" ]
 expect "start が無い古いセッションも消える" [ ! -e "$S/old-nostart" ]
 expect "今のセッションの状態は消えない" [ -e "$S/$SID/start" ]
 expect "呼び出しログが残る" grep -q "stop .*missing=" "$XDG_STATE_HOME/harness/log"
+expect "settings.json の SubagentStop は、reviewer と acceptor の終了で review-done を呼ぶ" grep -q '"matcher": "reviewer|acceptor".*harness-hook review-done' "$DOTFILES/config/claude/settings.json"
 bash_ 'true\nuv run pytest'
 expect "ログは 1 呼び出し 1 行（コマンド中の改行を含めない）" [ "$(grep -c '^uv run pytest' "$XDG_STATE_HOME/harness/log")" = 0 ]
 expect "（前提）そのコマンドはログに残っている" grep -q "true uv run pytest" "$XDG_STATE_HOME/harness/log"

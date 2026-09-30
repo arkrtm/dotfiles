@@ -8,7 +8,7 @@ exec "$HOME/.local/libexec/uv" run --script --quiet "$0" "$@"
 # /// script
 # requires-python = ">=3.9"
 # ///
-"""Claude Code の自作ハーネス: コードを変えたら検証とレビュー（TDD を含む）の証拠がそろうまでコミットも完了もさせない。
+"""Claude Code の自作ハーネス: コードを変えたら検証・受け入れ・レビュー（TDD を含む）の証拠がそろうまでコミットも完了もさせない。
 あわせて、コンテキストが溜まったら区切りで tinymemory に session を保存させる（compact や clear で流れが落ちないように）。
 
 これは「うっかり・手抜きを止めるガードレール」であり、セキュリティ境界ではない。Bash を使えるエージェントが
@@ -24,8 +24,9 @@ Claude Code の hooks から:
                                                サブエージェント内の実行は記録しない）。
                                                tinymemory に session を保存したら、その時点のコンテキストの使用量を「前回の保存」に
   harness-hook bash-failed   PostToolUseFailure Bash。検証コマンドが失敗したら（パイプ等の形でも）、その作業ツリーの「検証済み」を消す
-  harness-hook review-done   SubagentStop      reviewer の報告を <git-dir>/harness-last-review に保存する（承認・不承認に関わらず）。
-                                               3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」
+  harness-hook review-done   SubagentStop      reviewer / acceptor の報告を <git-dir>/harness-last-review / harness-last-accept に保存する（合否に関わらず）。
+                                               reviewer が 3 軸（仕様適合・テスト・品質・保守性）とも「承認」で終了したら、その時点の作業ツリーに「レビュー済み」。
+                                               acceptor が受け入れ条件（[AC<n>]）と判定のすべてを「合格」で終了したら「受け入れ済み」
   harness-hook stop          Stop              このターンにコード（既存のテストの変更・削除を含む）が変わり、証拠が足りなければ 1 回だけ差し戻す。
                                                差し戻さないときは、前回の保存からコンテキストが溜まっていれば 1 回だけ差し戻して remember させる
   （turn / bash / bash-failed / review-done / stop は、cwd のリポジトリを関門の対象に登録する）
@@ -35,7 +36,7 @@ git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）
 
 コードかどうかは拡張子・ファイル名・shebang と、リポジトリのトップの .harness-code（fnmatch のパターン）で決める
 （.harness-code と .harness-verify 自体もコード）。
-判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・レビューは「どの内容に対して行ったか」を
+判定は git の状態に基づく（Edit ツールでも sed -i でも同じ）。検証・受け入れ・レビューは「どの内容に対して行ったか」を
 変更ファイルの blob ID の指紋で覚える（git add の前後や改行変換で変わらない。あとから編集すれば無効になる）。
 証拠は作業ツリー単位、対象の登録はリポジトリ単位（worktree は本体と共通）で ~/.local/state/harness/repo/<id>/ に、ターンの開始状態と前回の保存はセッション単位で持つ。
 依存は uv だけ（先頭の起動部が uv で Python を用意する。uv が無いと起動できず exit 127）。
@@ -93,11 +94,18 @@ BYPASS = re.compile(
     r"--no-v|\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*\s-[a-z]*n[a-z]*\b|commit-tree|hookspath|GIT_CONFIG|CLAUDECODE|state/harness",
     re.I,
 )
-REVIEWER = "reviewer"
+REVIEWER, ACCEPTOR = "reviewer", "acceptor"
 HANDBACK = "SubagentHandback"  # サブエージェントが最終報告を返すツール（デスクトップアプリ）
 # reviewer の出力の判定行「<軸>: <判定>」（行頭。箇条書き記号と強調記号は許す）
 AXES = ("仕様適合", "テスト", "品質・保守性")
 VERDICT_LINE = re.compile(r"^[\s\-*]*(" + "|".join(AXES) + r")\**[:：](.*)$", re.M)
+# acceptor の出力の判定行「受け入れ: <判定>」と条件の行「[AC<n>] <状態> — …」（行頭。箇条書き記号と強調記号は許す。
+# 「受け入れ検証した版:」の行は判定行ではない）
+ACCEPT_LINE = re.compile(r"^[\s\-*]*受け入れ\**[:：](.*)$", re.M)
+CRITERION_LINE = re.compile(r"^[\s\-*]*\[AC\d+\]\**(.*)$", re.M)
+CRITERIA_HEADING = "条件ごとの結果"  # acceptor の報告の、条件の行を置く節の見出し
+HEADING = re.compile(r"^(#+)\s*(.*?)\s*$")
+STATUS = re.compile(r"[^\s\-‐-―−]+")  # 条件の状態 = 空白かダッシュ類（- ‐ ‒ – — ― −）の手前まで
 PROTECTED = {"main", "master"}
 # テスト実行が作る生成物。名前は test_*.pyc でもテストではない（.gitignore が無いリポジトリで指紋に混ざらないようにする）
 ARTIFACT = re.compile(r"(^|/)__pycache__/|\.py[co]$")
@@ -108,13 +116,13 @@ REMEMBER_AT_COMMIT, REMEMBER_ANYWAY = 0.3, 0.6
 WINDOW = 1_000_000  # 既定のコンテキストウィンドウ（トークン）。環境変数 HARNESS_CONTEXT_WINDOW で変える
 
 
-def reviewer_report(data):
-    """reviewer の最終報告の本文。通常は SubagentStop の last_assistant_message。
+def subagent_report(data, verdict):
+    """reviewer・acceptor の最終報告の本文（verdict はその判定行の正規表現）。通常は SubagentStop の last_assistant_message。
     報告をツール呼び出し（ハンドバック）で返す環境ではそこに判定文が入らないので、その場合は
     サブエージェント自身の記録（agent_transcript_path）から、今回の依頼より後で判定行を含む最後の出力を探す。
     対象は本文とハンドバックだけ（調査中に実行したコマンドの文字列などに含まれる判定行は報告ではない）"""
     text = data.get("last_assistant_message") or ""
-    if VERDICT_LINE.search(text):
+    if verdict.search(text):
         return text
     try:
         with open(data.get("agent_transcript_path") or "") as f:
@@ -139,7 +147,7 @@ def reviewer_report(data):
                         out = "\n".join(v for v in (args.values() if isinstance(args, dict) else []) if isinstance(v, str))
                     else:
                         continue
-                    if VERDICT_LINE.search(out):
+                    if verdict.search(out):
                         text = out
     except OSError:
         pass
@@ -153,6 +161,42 @@ def approved(text):
     for axis, value in VERDICT_LINE.findall(text):
         verdicts[axis].append(value.strip(" \t\r*"))
     return all(v and all(x == "承認" for x in v) for v in verdicts.values())
+
+
+def accepted(text):
+    """acceptor の出力が合格か。fail-closed: 判定行と条件の行がそれぞれ 1 行以上あり、そのすべてが「合格」だけであること。
+    条件の行は「条件ごとの結果」の節の中だけを読み（ほかの節の [AC… の行は数えない）、状態は最初の語（空白・ダッシュまで）。
+    「不合格」「未確認」「合格ただし…」、複数の判定行のうち 1 つでも「不合格」があれば不合格"""
+    verdicts = [v.strip(" \t\r*") for v in ACCEPT_LINE.findall(text)]
+    criteria = []
+    for rest in criterion_rows(text):
+        m = STATUS.match(rest.strip(" \t\r*"))
+        criteria.append(m.group(0).strip("*") if m else "")
+    return all(v and all(x == "合格" for x in v) for v in (verdicts, criteria))
+
+
+def criterion_rows(text):
+    """「条件ごとの結果」の節（小見出しを含み、同じ深さ以上の見出しで終わる。複数あればすべて）にある、条件の行の [ACn] より後"""
+    rows, depth = [], None
+    for line in text.splitlines():
+        h = HEADING.match(line)
+        if h:
+            if depth is not None and len(h.group(1)) <= depth:
+                depth = None
+            if h.group(2) == CRITERIA_HEADING:
+                depth = len(h.group(1))
+            continue
+        m = CRITERION_LINE.match(line) if depth is not None else None
+        if m:
+            rows.append(m.group(1))
+    return rows
+
+
+# 証拠を記録するサブエージェントの種類: (報告の判定行, 合格の判定（ログには <関数名>=<結果>）, 記録するキー, git-dir に保存する報告)
+JUDGES = {
+    REVIEWER: (VERDICT_LINE, approved, "reviewed", "harness-last-review"),
+    ACCEPTOR: (ACCEPT_LINE, accepted, "accepted", "harness-last-accept"),
+}
 
 
 # ---- 状態 -------------------------------------------------------------------
@@ -169,7 +213,7 @@ def state_dir(*parts):
 
 
 def repo_state(top):
-    """キーごとの状態の置き場所。キーは作業ツリーの top（検証済み・レビュー済み）か、tracked_state の登録用キー"""
+    """キーごとの状態の置き場所。キーは作業ツリーの top（検証済み・受け入れ済み・レビュー済み）か、tracked_state の登録用キー"""
     return state_dir("repo", hashlib.sha1(top.encode()).hexdigest()[:16])
 
 
@@ -358,7 +402,7 @@ def blob_ids(top, rels, staged):
 
 
 def tree_hash(top, changes, staged=False):
-    """変更されたコード・テストの内容で決まる指紋。作業ツリー（検証・レビュー時）とインデックス（コミット時）で、
+    """変更されたコード・テストの内容で決まる指紋。作業ツリー（検証・受け入れ・レビュー時）とインデックス（コミット時）で、
     同じ内容なら同じ値になる。あとから編集すれば変わる。HEAD は含めない（ドキュメントだけ先にコミットしても証拠は有効）"""
     rels = sorted({rel for _, rel in changes if is_code(top, rel, staged) or is_test(rel)})
     ids = blob_ids(top, rels, staged)
@@ -372,6 +416,7 @@ def tree_hash(top, changes, staged=False):
 
 TEXT = {
     "verified": "この内容に対して検証コマンド（テスト・型チェック・ビルド。.harness-verify があれば、そこに書かれたコマンドすべて）を単独で成功させていない → /verify",
+    "accepted": "この内容に対して受け入れ検証（acceptor が成果物を実際に動かし、受け入れ条件を確かめる）で合格していない → /accept",
     "reviewed": "この内容に対して reviewer の敵対的レビューで 3 軸（仕様適合・テスト・品質・保守性）とも承認されていない → /review",
 }
 
@@ -395,6 +440,7 @@ def evidence(top, staged=False):
     now = tree_hash(top, changed, staged)
     runs = verified_runs(top, now)
     ok = {"verified": runs is not None and set(repo_lines(top, VERIFY_FILE, staged)) <= runs,
+          "accepted": get(repo_state(top), "accepted") == now,
           "reviewed": get(repo_state(top), "reviewed") == now}
     return True, [k for k, v in ok.items() if not v], bool(protected_branch(top))
 
@@ -414,10 +460,10 @@ def gate_reason(session, top):
             return None, "unchanged"
         changed, missing, on_main = evidence(top)
         # ターンを終えてよい場合の一文は Stop だけに付ける（pre-commit の拒否文には出さない）
-        reason = (reason_text(missing, on_main) + "ユーザーの判断を待つ（質問・裁定・相談）なら、その旨を書いて終えてよい"
-                  "（コミットは pre-commit が止める）。") if changed and (missing or on_main) else None
+        reason = (reason_text(missing, on_main) + "ユーザーの判断を待つ（質問・裁定・相談）か、バックグラウンドのサブエージェントの"
+                  "完了を待つなら、その旨を書いて終えてよい（コミットは pre-commit が止める）。") if changed and (missing or on_main) else None
     except RuntimeError as e:  # 指紋を作れない（読めないファイル等）。証拠を確認できないので一度差し戻す
-        missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify と /review をやり直す。"
+        missing, on_main, reason = ["?"], False, f"変更の証拠を確認できない（{e}）。読めないファイルなどを解消してから /verify・/accept・/review をやり直す。"
     return reason, f"missing={missing} on_main={on_main}"
 
 
@@ -530,7 +576,7 @@ def handle(cmd, data):
         m = BYPASS.search((data.get("tool_input") or {}).get("command") or "")
         if m:
             deny(f"コミットの関門を迂回しうる語（一致: {m.group(0)!r}）を含むコマンドは実行しない。"
-                 "証拠（/verify の成功と /review の承認）をそろえてからコミットする。閲覧目的なら語を含まない形に言い換える"
+                 "証拠（/verify の成功、/accept の合格、/review の承認）をそろえてからコミットする。閲覧目的なら語を含まない形に言い換える"
                  "（harness のログは Read ツールで読む）")
     elif cmd == "bash":
         ti = data.get("tool_input") or {}
@@ -556,17 +602,22 @@ def handle(cmd, data):
         if top and (VERIFY_CMD.search(command) or CD_PREFIX.sub("", command.strip()) in repo_lines(top, VERIFY_FILE)):
             put(repo_state(top), "verified")
     elif cmd == "review-done":
-        verdict = reviewer_report(data)
-        # fail-closed: 3 軸の判定行がすべて「承認」のときだけ（空・中断・質問で終わった場合は記録しない）
-        by_reviewer = bool(top) and data.get("agent_type") == REVIEWER
-        ok = by_reviewer and approved(verdict)
-        log(cmd, data, f"approved={ok} report_chars={len(verdict)}")  # 承認が記録されない時の切り分け用
-        # 報告は承認・不承認に関わらず、作業ツリーごとの git-dir に保存する（/review fix で前回の報告として読む）
-        gitdir = git(top, "rev-parse", "--absolute-git-dir") if by_reviewer and verdict else None
+        # reviewer の報告はレビュー、acceptor の報告は受け入れの証拠。ほかの種類は（報告の形が合っていても）記録しない
+        judge = JUDGES.get(data.get("agent_type"))
+        if not judge:
+            log(cmd, data, "skip")
+            return
+        verdict, passed, key, saved = judge
+        report = subagent_report(data, verdict)
+        # fail-closed: 判定行がすべて「承認」「合格」のときだけ（空・中断・質問で終わった場合は記録しない）
+        ok = bool(top) and passed(report)
+        log(cmd, data, f"{passed.__name__}={ok} report_chars={len(report)}")  # 記録されない時の切り分け用
+        # 報告は合否に関わらず、作業ツリーごとの git-dir に保存する（/review fix などで前回の報告として読む）
+        gitdir = git(top, "rev-parse", "--absolute-git-dir") if top and report else None
         if gitdir:
-            put(gitdir.strip(), "harness-last-review", verdict)
+            put(gitdir.strip(), saved, report)
         if ok:
-            put(repo_state(top), "reviewed", tree_hash(top, working_changes(top)))
+            put(repo_state(top), key, tree_hash(top, working_changes(top)))
     elif cmd == "stop":
         if data.get("stop_hook_active"):
             log(cmd, data, "skip")

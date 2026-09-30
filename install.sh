@@ -21,12 +21,14 @@ config/claude/settings.json  .claude/settings.json
 config/claude/CLAUDE.md  .claude/CLAUDE.md
 config/claude/agents/reviewer.md  .claude/agents/reviewer.md
 config/claude/agents/implementer.md  .claude/agents/implementer.md
+config/claude/agents/acceptor.md  .claude/agents/acceptor.md
 config/claude/skills/verify  .claude/skills/verify
 config/claude/skills/review  .claude/skills/review
 config/claude/skills/issue   .claude/skills/issue
 config/claude/skills/wrap-up .claude/skills/wrap-up
 config/claude/skills/implement .claude/skills/implement
 config/claude/skills/diagnose  .claude/skills/diagnose
+config/claude/skills/accept    .claude/skills/accept
 bin/harness-hook         .local/bin/harness-hook
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync

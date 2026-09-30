@@ -27,7 +27,7 @@
       { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook guard-bash", "timeout": 15 }] }
     ],
     "SubagentStop": [
-      { "matcher": "reviewer", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook review-done", "timeout": 15 }] }
+      { "matcher": "reviewer|acceptor", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook review-done", "timeout": 15 }] }
     ],
     "PermissionRequest": [
       { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] }
