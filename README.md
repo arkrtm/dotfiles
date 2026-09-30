@@ -50,7 +50,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
 | `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory プラグイン、hooks（状態表示 + ハーネス）、ログ 365 日 |
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、作業の進め方（S/M/L、TDD、検証、レビュー、ブランチ）、Linear の使い方、スクショの場所 |
-| `config/claude/skills/{verify,review,issue,wrap-up}` | `~/.claude/skills/…` | `/verify` 検証手順、`/review` reviewer による敵対的レビュー（fork）、`/issue ARK-nn` Linear 起点の作業、`/wrap-up` M/L 完了時の締め（Linear 記録 → 知識の振り分け → tinymemory 保存） |
+| `config/claude/skills/{verify,review,issue,wrap-up}` | `~/.claude/skills/…` | `/verify` 検証手順、`/review` reviewer による敵対的レビュー（fork。`/review fix` は範囲限定の再レビュー）、`/issue ARK-nn` Linear 起点の作業、`/wrap-up` M/L 完了時の締め（Linear 記録 → 知識の振り分け → tinymemory 保存） |
 | `config/claude/agents/reviewer.md` | `~/.claude/agents/reviewer.md` | 読み取り専用・effort high の敵対的レビュアー |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch / `core.hooksPath`。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks/` | `~/.config/git/hooks/` | 全リポジトリ共通の git hooks。`run-hook` 1 本に各 hook 名のリンク。pre-commit でハーネスの関門、続けてリポジトリ自身の `.git/hooks/<name>` に委譲。リポジトリ側で `core.hooksPath` を設定していると呼ばれない（関門も効かない） |
@@ -74,6 +74,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
 - コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸。M/L は `/review branch` も）。証拠が無いコード変更は git の pre-commit が止める
+- レビューの往復を抑える仕組み（ARK-41。superpowers の範囲限定の再レビューと ECC の報告前の関門を参考）: フルレビューは 1 回。直した後は `/review fix` が「前回の未解決の指摘」と「前回見た版からの修正差分」だけを見る（版は `skills/review/snapshot.sh` が作業ツリー全体の tree ID として記録）。重大・中は具体的な発生条件が書けるものだけで、軽と範囲外は判定に影響しない（issue に記録）。reviewer は検証を回し直さない。`/review fix` は 2 回まで、それでも残ればユーザーが指摘ごとに裁定する
 - 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）で、Claude が cwd にして作業したことのあるリポジトリ（その worktree を含む）。人の手動コミット、GUI クライアント、テストが作る一時リポジトリ、セッションの cwd 以外のリポジトリは対象外。検証とレビューの証拠は、セッションの cwd の作業ツリーに対して記録される
 - 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイルと、拡張子の無い shebang 付きスクリプト。それ以外（Markdown、JSON、YAML など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
 - 限界（ガードレールであって、セキュリティ境界ではない）:

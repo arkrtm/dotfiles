@@ -131,6 +131,12 @@ review reviewer '前回の判定:\n仕様適合: 承認\nテスト: 承認\n品�
 check "以前の判定を行単位で引用していても、今回の判定が『修正が必要』なら承認ではない" block "$(stop)"
 review reviewer '## 指摘\n- [軽] 将来は修正が必要かもしれない\n## 判定\n- 仕様適合: **承認**\nテスト: 承認\n品質・保守性: 承認'
 check "3 軸とも承認なら、指摘文に『修正が必要』の語があってもレビュー済みにする（箇条書き・強調も可）" pass "$(stop)"
+# /review fix（範囲限定の再レビュー）の出力形式。reviewer.md は根拠の行を軸名で始めることを禁じている（判定と読まれるため）
+write src/app.py code1n; bash_ "uv run pytest -q"
+review reviewer 'レビューした版: 4b825dc\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- テスト: sh tests/x.sh 成功\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
+check "根拠の行を軸名で始めると判定と読まれ、承認にならない" block "$(stop)"
+review reviewer 'レビューした版: 4b825dc\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- [R1-3] 直っていない — のちに修正が必要 src/app.py:9\n\n## 修正による新しい問題\n- [R2-1] [軽] [テスト] tests/test_app.py:12 — 名前が曖昧\n\n## ユーザー判断で見送り\n- [R1-3] 裁定: 対象外の環境なので見送り\n\n## 範囲外\n- src/other.py:5 — 修正が必要になりそうな箇所\n\n未解決: なし\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
+check "範囲限定の再レビューの出力形式（見送り・範囲外の節つき）は、3 軸とも承認なら承認として読む" pass "$(stop)"
 write src/app.py code1b; bash_ "uv run pytest -q"
 check "（再編集後）レビューが無効になっている" block "$(stop)"
 review_handback '## 判定\n仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
