@@ -73,7 +73,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 常時読み込むのは CLAUDE.md だけ（約 2,500 トークン）。手順は skill、強制は hook。
 
 - 規模判定 S / M / L で手順を変える（CLAUDE.md の表）
-- コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸。M/L は `/review branch` も）。証拠が無いコード変更は git の pre-commit が止める
+- コードを書くときの規則: 作業ブランチ、TDD（REFACTOR まで）、`/verify`、`/review`（仕様適合・テスト・品質・保守性の 3 軸。複数コミットのブランチは `/review branch` も）。証拠が無いコード変更は git の pre-commit が止める
 - レビューの往復を抑える仕組み（ARK-41。superpowers の範囲限定の再レビューと ECC の報告前の関門を参考）: フルレビューは 1 回。直した後は `/review fix` が「前回の未解決の指摘」と「前回見た版からの修正差分」だけを見る（版は `skills/review/snapshot.sh` が作業ツリー全体の tree ID として記録）。重大・中は具体的な発生条件が書けるものだけで、軽と範囲外は判定に影響しない（issue に記録）。reviewer は検証を回し直さない。`/review fix` は 2 回まで、それでも残ればユーザーが指摘ごとに裁定する
 - 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）で、Claude が cwd にして作業したことのあるリポジトリ（その worktree を含む）。人の手動コミット、GUI クライアント、テストが作る一時リポジトリ、セッションの cwd 以外のリポジトリは対象外。検証とレビューの証拠は、セッションの cwd の作業ツリーに対して記録される
 - 「コード」= `bin/harness-hook` の `CODE_EXT` にある拡張子のファイルと、拡張子の無い shebang 付きスクリプト。それ以外（Markdown、JSON、YAML など）の変更は関門を通る。テスト実行の生成物（`__pycache__/`、`.pyc`、`.pyo`）は、名前や置き場所がテストに見えてもテストとして数えない
