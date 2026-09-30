@@ -67,7 +67,16 @@ OS 側で別途必要なもの（sudo / GUI）:
 ### SSH 鍵
 
 端末ごとに別鍵（ed25519、パスフレーズなし、コメント `arkrithm@<端末名>`）。秘密鍵はリポジトリに入れない。
-NAS への登録は `ssh-copy-id nas`（NAS のパスワード認証は当面有効のまま）。
+**NAS はパスワード認証を無効化済み**（`/etc/ssh/sshd_config.d/10-no-password.conf`）なので `ssh-copy-id` は使えない。
+新しい端末の公開鍵（`cat ~/.ssh/id_ed25519.pub` の 1 行）を、**登録済みの端末から**追加する:
+
+```sh
+ssh nas 'cat >> ~/.ssh/authorized_keys' <<'EOF'
+ssh-ed25519 AAAA... arkrithm@<端末名>
+EOF
+```
+
+登録済みの端末が手元に無い時は、UGOS の SSH 設定でパスワード認証を戻す手段が無いため、上記ファイルを消す（要 sudo、UGOS の Web 端末等）。
 NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w`（ssh config で `HostKeyAlias nas`）。
 
 ### スクリーンショット → NAS の Claude Code
