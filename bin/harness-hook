@@ -18,12 +18,13 @@ exec "$HOME/.local/libexec/uv" run --script --quiet "$0" "$@"
 
 Claude Code の hooks から:
   harness-hook turn          UserPromptSubmit  ターン開始。開始時点の作業ツリーの指紋・HEAD とローカルブランチの先端・時刻・
-                                               未追跡のコード（写しの最初の保存が .baseline にする）を記録する
+                                               未ステージの手元の変更（写しの最初の保存が .baseline にする）を記録する
   harness-hook guard-branch  PreToolUse        Edit/Write。git の main/master 上なら編集を拒否（作業別ブランチの強制）
   harness-hook guard-bash    PreToolUse        Bash。関門を迂回する形（--no-verify 等、hook と git の設定を消す・書き換える形）を含めば拒否
                                                （コマンド行を字句に分けて見る。コミットメッセージの中の -n などは除く）。
                                                共通の pre-commit が呼ばれないリポジトリ（リポジトリ側の core.hooksPath）では
-                                               git commit の前に関門の判定をし、このターンに関門を通らないコミットがあれば git push を拒否
+                                               git commit の前に関門の判定をし、関門を通らないコミットが残っていれば git push と
+                                               main・master への git merge を拒否
   harness-hook bash          PostToolUse       Bash。宣言した検証コマンド（.harness-verify と <git-common-dir>/harness-verify の行）が
                                                リポジトリのトップで単独で成功したら、その時点の作業ツリーに「検証済み」（宣言した行がすべて
                                                同じ内容で成功したときだけ証拠になる。宣言が無ければ何を成功させても証拠にならない。
@@ -51,8 +52,9 @@ skill・手元から:
   harness-hook requirements-path  cwd のリポジトリの、承認済みの要件と受け入れ条件の写しの置き場所
                              （<git-dir>/harness-requirements/<ブランチ名>.md）を出す。ディレクトリは作り、ファイルは作らない
   harness-hook requirements-save  標準入力をその写しとして保存し、パスを出す（.git の下は Write ツールでは書けないため。
-                             空の入力や、main/master の上では保存しない）。保存した時の HEAD も記録し、その後にコード変更の
-                             コミットがあれば写しは古い（保存し直すまで証拠にならない）
+                             空の入力や、main/master の上では保存しない。同じ依頼の前の版にあった受け入れ条件の番号が無い版は、
+                             「## 変更の承認」の節が無ければ保存しない。版はすべて .history に残す）。保存した時の HEAD も記録し、
+                             その後にコード変更のコミットがあれば写しは古い（保存し直すまで証拠にならない）
 
 文書・画像など（DOC_EXT の拡張子・DOC_NAME の名前）以外のファイルはすべて「コード」（関門の対象）。
 文書でも、リポジトリのトップの .harness-code（fnmatch のパターン）に当たればコード（.harness-code と .harness-verify 自体もコード）。
@@ -74,6 +76,7 @@ import itertools
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -101,14 +104,21 @@ RED_LOG, RED_LINES, RED_KEEP, RED_BYTES = "harness-red-log", 15, 50, 100_000
 REQUIREMENTS = "harness-requirements"
 # 関門を通ってコミットされた内容（tree）の記録（リポジトリ単位）と、残す件数。関門を通した pre-commit の git の PID（post-commit が照合する）
 GATED, GATED_KEEP, PENDING = "gated", 500, "gated-pending"
+GATED_PATCH = "gated-patch"  # 関門を通ったコミットの patch-id（rebase・cherry-pick で付け替えたコミットを見分ける）
+# reflog の記録のうち、コミットを作る操作（取り込んだ他人のコミットと、自分で作ったコミットを見分ける。checkout・reset・fast-forward は作らない）
+CREATED = re.compile(r"^(?:commit|cherry-pick|revert|am)\b|^(?:rebase|pull)\b.*\((?:pick|reword|edit|squash|fixup|continue)\): |Merge made by")
 # Stop が見つけた、関門を通っていないコミット（リポジトリ単位。push の前に見る）と、Bash の前の判定が通したコミットの実行待ち（セッション単位）
 UNGATED, GUARD_PENDING = "ungated", "guard-pending"
 # Bash の前の判定が通したコミットを記録してよいコマンドの git のサブコマンド（コミットの内容を変えないもの）
 SIMPLE_GIT = {"add", "commit", "status", "log", "diff", "show"}
-# テストとみなすパス（テストだけの変更は関門の対象外にする。指紋には含める）
+MERGE_VALUE_OPTS = {"-m", "-F", "-s", "-X", "--file", "--strategy", "--strategy-option", "--into-name", "--cleanup"}  # 値を取る git merge のオプション
+# テストとみなすパス（新しいテストの追加は関門の対象外にする。指紋には含める）: リポジトリのトップの tests/・test/・spec/・__tests__/ の下と、
+# テストの名前の規則（test_*.py、*_test.*・*.test.*・*.spec.*・*_spec.*。データ・設定の拡張子は除く。JVM・Swift・C#・PHP・Scala・Groovy の
+# *Test.*・*Tests.*）。src/test/server.go・api/spec/openapi.yaml・SpeedTest.tsx のようなテストに見える名前のコードは含めない
 TEST_PATH = re.compile(
-    r"(^|/)(?i:tests?|spec|__tests__)/|(^|/)[^/]*\.(?i:tests?)/"  # tests/、Tests/、Foo.Tests/
-    r"|(^|/)(test_[^/]+|[^/]+_test\.[^/]+|[^/]+\.(test|spec)\.[^/]+|[^/]+_spec\.[^/]+|[^/]*[a-z0-9]Tests?\.[^/]+)$"  # FooTest.java 等
+    r"^(?i:tests?|spec|__tests__)/"
+    r"|(?:^|/)(?:test_[^/]*\.py|[^/]+(?:_test|\.test|\.spec|_spec)\.(?!(?:[^/]*\.)?(?i:json|ya?ml|toml|xml|ini|cfg|conf|properties|sql|tf|hcl)$)[^/]+"
+    r"|[^/]*[a-z0-9]Tests?\.(?:java|kt|kts|swift|cs|php|scala|groovy))$"
 )
 # コマンド位置: 行頭か && の直後。その後に command/exec/sudo/time/nice/env/timeout N の前置と VAR=val の前置を許す
 CMD_POS = r"(?:^|&&\s*)(?:(?:command|exec|sudo|time|nice|env|timeout \S+)\s+)*(?:\w+=\S*\s+)*"
@@ -145,8 +155,7 @@ ASSIGN_AT = (r"(?:" + CMD_AT + r"|[{!]\s*|\b(?:then|do|else|elif|if|while|until|
 # （名前の後の --get は、git が値として書き込む）
 CONFIG_READ = r"\s(?:--get(?:-all|-regexp)?|--list|-l)(?![\w-])"
 BYPASS = re.compile(
-    r"--no-v(?:e(?:r(?:i(?:fy?)?)?)?)?(?![\w-])"  # --no-verify-ssl など別のオプションは除く
-    r"|" + CMD_AT + r"commit-tree\b|\bgit(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+commit-tree\b|\bgit-commit-tree\b"
+    CMD_AT + r"commit-tree\b|\bgit(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+commit-tree\b|\bgit-commit-tree\b"
     r"|\balias\.[^|;&\n]*\bcommit-tree\b"
     # git config で core.hooksPath を設定する（名前の後に値がある）・消す（--unset などの書き換え）形。名前より前に --get・
     # --list などがある形と、config get・config list、値の無い git config core.hooksPath は読むだけ
@@ -157,24 +166,49 @@ BYPASS = re.compile(
     r"|state/harness"
     # git の設定ファイルを直接書き換える形（sed -i・perl -i・tee・リダイレクト）。読むだけ（cat・grep・sed -n）は通す
     r"|(?:\bsed\b[^|;&\n]*\s(?:-\w*i|--in-place)|\bperl\b[^|;&\n]*\s-\w*i|\btee\b|>)[^|;&\n]*(?:\.gitconfig\b|\bgit/config\b)"
-    # 環境を差し替えて git の hook を外す形（HOME・XDG_CONFIG_HOME の差し替え、env -i）
-    r"|\benv\b[^|;&\n]*?\s(?:-\w*i|--ignore-environment|-)(?![\w-])[^|;&\n]*\bgit\b"  # env - は env -i と同じ
-    r"|(?-i:\b(?:HOME|XDG_CONFIG_HOME)=\S*\s+(?:\w+=\S*\s+|(?:command|exec|nohup|time|nice|sudo|env)\s+)*(?:\S*/)?git\b)"
     r"|(?-i:\bGIT_CONFIG(?!_NOSYSTEM\b)\w*=|\b(?:export|env)\b[^|;&\n]*\bGIT_CONFIG(?!_NOSYSTEM\b)"
     r"|-u\s*CLAUDECODE\b|\b(?:unset|export\s+-n)\b[^|;&\n]*\bCLAUDECODE\b"
     r"|" + ASSIGN_AT + r"CLAUDECODE=|\b(?:export|env)\b[^|;&\n]*\bCLAUDECODE=)",  # 代入を置ける位置か export・env の後だけ（echo の引数は除く）
     re.I,
 )
+# --no-verify とその省略形（--no-verify-ssl・--no-verbose など別のオプションは除く）。検索の引数でも拒否する（検索は先頭の -- を付けずに書く）
+NO_VERIFY_LONG = re.compile(r"--no-v(?:e(?:r(?:i(?:fy?)?)?)?)?(?![\w-])", re.I)
+# 環境を差し替えて git の hook を外す形: HOME・XDG_CONFIG_HOME の代入・export・消去（unset・env -u）、env -i・env -。
+# 同じコマンド行に、コミットを作りうる git（GIT_MAY_COMMIT: コミットを作らないと分かっているサブコマンド ENV_SAFE_GIT 以外。
+# alias も作りうる側）があるときだけ拒否する（HOME=$PWD/tmp-home git init などは通す）
+ENV_SWAP = re.compile(
+    r"(?-i:" + ASSIGN_AT + r"(?:HOME|XDG_CONFIG_HOME)=|\b(?:export|env)\b[^|;&\n]*\b(?:HOME|XDG_CONFIG_HOME)="
+    r"|\b(?:unset|export\s+-n)\b[^|;&\n]*\b(?:HOME|XDG_CONFIG_HOME)\b|-u\s*(?:HOME|XDG_CONFIG_HOME)\b)"
+    r"|\benv\b[^|;&\n]*?\s(?:-\w*i|--ignore-environment|-)(?![\w-])", re.I)  # env - は env -i と同じ
+ENV_SAFE_GIT = ("init", "clone", "status", "log", "diff", "show", "config", "rev-parse", "ls-files", "version", "fetch", "remote", "branch")
+# git [全体オプション（値を取るものは値も）] <サブコマンド>と、ダッシュ形の git-<サブコマンド>（git-core の下のもの。パス付きも）。
+# 安全とみなすのは、ENV_SAFE_GIT の語がそのまま（空白・行末・区切りの前で終わる）書かれたときだけ。それ以外の始まり
+# （alias・展開・クォート・ブレース展開など）はすべて作りうる側
+SAFE_SUB = r"(?!(?:" + "|".join(ENV_SAFE_GIT) + r")(?=\s|$|[;&|)]))"
+GIT_MAY_COMMIT = re.compile(
+    r"\bgit\b(?:\s+(?:-[cC]|--git-dir|--work-tree|--namespace|--config-env)\s+\S+"
+    r"|\s+-(?!(?:[cC]|-git-dir|-work-tree|-namespace|-config-env)\s)\S+)*"
+    r"\s+" + SAFE_SUB + r"[^\s-]|(?:^|[\s;&|(`\"'])(?:[^\s:;&|]*/)?git-" + SAFE_SUB + r"\w", re.I)
 # 以下は shell_bypass で、コマンド行を字句に分けて見る形: git commit の -n（--no-verify の短縮。-anm のような連結も）、
 # git のクォートを外した字句（commit-tree・設定・alias）、cp・mv・install・ln・rsync で git の設定を行き先にする形、
 # hook を消す・差し替える形、hooksPath を含む行で書き込む形
 GIT_WORD, COMMIT_WORD = re.compile(r"\bgit\b"), re.compile(r"\bcommit\b", re.I)
-NO_VERIFY_SHORT = re.compile(r"-[a-z]*n[a-z]*\b", re.I)  # 字句の先頭の -n を含む短いオプションの束（$(… -n) の -n) にも当たる）
+# 字句の先頭の、-n を含む短いオプションの束: 値を取らないオプション（a・e・i・o・p・q・s・v・z）の後の n（-anm・-nm1 も。-mn は -m の値）
+NO_VERIFY_SHORT = re.compile(r"-[aeiopqsvz]*n")
 # 次の字句を値に取る -m・--message と、値を取らない短いオプションとの連結（-am など。-Cm は -C が m を値に取るので違う）
 MESSAGE_OPT = re.compile(r"-[aeinopqsvz]*m|--message")
+MESSAGE_ATTACHED = re.compile(r"-[aeinopqsvz]*m.|--message=")  # 値を連結した -m… と --message=…（字句ごと値）
 SUBSTITUTION = re.compile(r"\$\(|`")  # コマンド置換（字句にあれば実行されうる）
+BACKQUOTE_ESCAPE = re.compile(r"\\([$`\\])")  # `…` の中で意味のあるエスケープ（外した後が中のコマンド行）
 COMMAND_LIKE = re.compile(r"[\s;&|]")  # 空白や区切りを含む字句（sh -c・eval の引数など）は、1 つのコマンド行として見直す
-HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([^\s'\";&|<>()]+))")
+BRACE, BRACE_LIMIT = re.compile(r"\{([^{}\s]*,[^{}\s]*)\}"), 256  # ブレース展開 {a,b}（入れ子は内側から 1 段ずつ）と、展開する語数の上限
+# クォート・エスケープの中の { } , に付ける印（シェルはそこを展開しない。shell_commands の mark_quoted）と、印を外す表
+MARK, UNMARK = str.maketrans("{},", ""), str.maketrans("", "{},")
+BRACE_SEQ = re.compile(r"\{([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?\}")  # 文字の連番 {a..c}・{a..z..2}
+NUM_SEQ = re.compile(r"\{-?\d+\.\.-?\d+(?:\.\.-?\d+)?\}")  # 数の連番 {1..300}（展開せず、代表の 1 桁に置き換える）
+# ヒアドキュメントの始まり: <<（<<- も）と区切りの語（クォート・エスケープを含む 1 語。E"OF" のように一部だけのクォートも）
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*((?:'[^'\n]*'|\"[^\"\n]*\"|\\.|[^\s;&|<>()'\"\\])+)")
+DELIMITER_QUOTE = re.compile(r"'([^']*)'|\"([^\"]*)\"|\\(.)")  # 区切りの語のクォートとエスケープ（外して連結した語が区切り）
 GIT_VALUE_OPTS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--config-env"}  # 次の字句を値に取る git の全体オプション
 CONFIG_READ_WORDS = {"--get", "--get-all", "--get-regexp", "--list", "-l"}  # git config の読むだけのオプション（字句で見る側。名前より前だけ）
 # git config の書き換えのオプション（値が無くても設定を変える）
@@ -189,14 +223,16 @@ HOME = r"(?:~|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)"
 GIT_CONFIG_DEST = re.compile(
     r"^(?:" + HOME + r"/+|\./)?\.gitconfig$|(?:\bgit/config|(?:^|/)\.git|(?:^|/)\.config/git(?:/.*)?)/?$")
 HOME_OR_CONFIG_DIR = re.compile(r"^" + HOME + r"/?$|(?:^|/)\.config/?$")
-# hook: ~/.config/git/hooks（$XDG_CONFIG_HOME/git/hooks）・.git/hooks とその下、hook の本体 ~/.local/bin/harness-hook と ~/.local/libexec/uv
+# hook: ~/.config/git/hooks（$XDG_CONFIG_HOME/git/hooks）とその下、hook の本体 ~/.local/bin/harness-hook と ~/.local/libexec/uv。
+# プロジェクトの .git/hooks は、共通の pre-commit が関門を通した後に委譲する先なので含めない（hook の導入を止めない）
 GLOBAL_GIT = r"(?:(?:" + HOME + r"/)?\.config|\$\{?XDG_CONFIG_HOME\}?)/git"
-HOOK_PATH = re.compile(r"^" + GLOBAL_GIT + r"/hooks(?:/.*)?$|(?:^|/)\.git/hooks(?:/.*)?$"
-                       r"|^(?:" + HOME + r"/)?\.local/(?:bin/harness-hook|libexec/uv)$")
+HOOK_PATH = re.compile(r"^" + GLOBAL_GIT + r"/hooks(?:/.*)?$|^(?:" + HOME + r"/)?\.local/(?:bin/harness-hook|libexec/uv)$")
 # hook を含むディレクトリ（消す・動かすと hook も無くなる）: /、ホーム、~/.config、~/.config/git、~/.local とその bin・libexec、.git
 HOOK_ANCESTOR = re.compile(r"^(?:/|" + HOME + r"|" + GLOBAL_GIT + r"|(?:" + HOME + r"/)?\.config|\$\{?XDG_CONFIG_HOME\}?"
                            r"|(?:" + HOME + r"/)?\.local(?:/bin|/libexec)?)$")
 REPO_GIT_DIR = re.compile(r"(?:^|/)\.git$")
+# 要件の写しとその版の置き場所（requirements-save だけで書く。消す・動かす・上書きすると、承認なしに条件を減らせる）
+REQUIREMENTS_STORE = re.compile(r"(?:^|/)" + REQUIREMENTS + r"(?:/|$)|\brequirements-path\b")
 REMOVERS = {"rm", "unlink", "shred", "truncate", "rmdir", "chmod", "chattr", "chflags"}  # 消す・権限を変える
 WRITERS = {"tee", "sed", "perl", "find"}  # 書く（sed・perl は -i、find は -delete・-exec のときだけ）
 IN_PLACE = re.compile(r"-\w*i\S*|--in-place\S*")
@@ -215,6 +251,9 @@ GIT_SAFE_OPT = re.compile(r"-[aqFmAu]+|--(?:file|message|cleanup)(?:=.*)?|--(?:q
 GIT_SAFE_GLOBAL = re.compile(r"-C|--no-pager|--(?:git-dir|work-tree)=.*", re.S)
 # commit・tag・notes のメッセージの出どころ（無ければ git はエディタを起動し、エディタは本文を標準入力として受け継ぐ）
 MESSAGE_SOURCE = re.compile(r"-[aqAu]*[Fm][aqFmAu]*|--(?:file|message)(?:=.*)?", re.S)
+# メッセージ・本文の値として渡す $(cat <<'E' … E)（heredoc_value。本文を除いた後の形）と、その値を取るオプション（git の -m は MESSAGE_OPT）
+CAT_HEREDOC = re.compile(r"\$\(\s*cat\s+<<-?[ \t]*(?:'[^'\n]+'|\"[^\"\n]+\"|\\[^\s'\";&|<>()]+)\s*\)")
+VALUE_OPTS = {"--message", "-b", "--body", "-t", "--title", "-n", "--notes"}
 # gh のエディタを起動するオプション（-e・--editor。束と --ed などの省略形も）
 EDIT_OPT = re.compile(r"(?:--e(?:d(?:i(?:t(?:or)?)?)?)?|-[a-zA-Z]*e[a-zA-Z]*)(?:=.*)?", re.S)  # --editor=true などの値付きも
 # Claude Code と git から呼ばれる hook のサブコマンド（Bash から直接呼ぶのは拒否する）
@@ -226,7 +265,7 @@ LAUNCHERS = {"env", "command", "exec", "nohup", "sudo", "doas", "time", "nice", 
 CONFIG_TARGET = re.compile(r"(?:^|/)(?:config|\.gitconfig)$|(?:^|/)\.git(?:/|$)|git-(?:common-)?dir|git-path")
 DOUBLE_QUOTE_ESCAPE = re.compile(r'\\(?:\n|([\\"$`]))')  # " の中で意味のあるエスケープ（\ と改行は行の継続）
 # 字句に分けられないとき（クォートの閉じ忘れ等）に、文字列で保守的に見る語
-NO_VERIFY_LOOSE = re.compile(r"\s-[a-z]*n[a-z]*\b", re.I)
+NO_VERIFY_LOOSE = re.compile(r"\s-[aeiopqsvz]*n")
 COPY_WORD = re.compile(r"\b(?:cp|mv|install|ln|rsync)\b")
 GIT_CONFIG_LOOSE = re.compile(r"\.gitconfig|\bgit/config|\.config/git\b|(?:^|[\s/\"'=])\.git\b")
 REVIEWER, ACCEPTOR = "reviewer", "acceptor"
@@ -242,6 +281,8 @@ CRITERION_LINE = re.compile(r"^[\s\-*]*\[AC(\d+)\]\**(.*)$", re.M)
 REPORT_VERSION = re.compile(r"^[\s\-*]*(?:レビューした版|受け入れ検証した版)\**[:：]\s*`?([0-9a-f]{7,40})\b", re.M)
 # 要件の写しの受け入れ条件の番号「AC<n>:」（行頭。箇条書き記号と強調記号は許す）。acceptor の報告の条件の行と突き合わせる
 REQUIRED_AC = re.compile(r"^[\s\-*]*AC(\d+)\**[:：]", re.M)
+# 受け入れ条件を減らす版の、ユーザーの承認の節（見出し「変更の承認」の直後に、見出しでない中身の行がある）
+APPROVAL = re.compile(r"^#+[ \t]*変更の承認[ \t]*\n\s*[^#\s]", re.M)
 CRITERIA_HEADING = "条件ごとの結果"  # acceptor の報告の、条件の行を置く節の見出し
 HEADING = re.compile(r"^(#+)\s*(.*?)\s*$")
 STATUS = re.compile(r"[^\s\-‐-―−]+")  # 条件の状態 = 空白かダッシュ類（- ‐ ‒ – — ― −）の手前まで
@@ -279,18 +320,19 @@ def snapshot(top):
         return out.stdout.decode().strip() if out.returncode == 0 else None
 
 
-def same_version(top, report):
-    """報告の最後の版の行が、今の作業ツリー全体の版（snapshot）と同じか。違っても、差が証拠に関わらないファイル
-    （テスト実行の生成物・文書。is_code でも is_test でもないもの）だけなら同じとみなす（検査を走らせた後の __pycache__ など）"""
+def version_drift(top, report):
+    """報告の最後の版の行と、今の作業ツリー全体の版（snapshot）との差のうち、証拠に関わるファイル（is_code か is_test）のパス。
+    同じなら []（差がテスト実行の生成物・文書だけでも同じとみなす。検査を走らせた後の __pycache__ など）。
+    版の行が無いか、版を比べられなければ None"""
     versions = REPORT_VERSION.findall(report or "")
     now = snapshot(top) if versions else None
     if not now:
-        return False
+        return None
     if now.startswith(versions[-1]):
-        return True
+        return []
     then = git(top, "rev-parse", "--verify", "-q", versions[-1] + "^{tree}")
     out = then and git(top, "diff-tree", "-r", "--name-only", "--no-renames", "-z", then.strip(), now)
-    return out is not None and bool(then) and not any(is_code(top, p) or is_test(p) for p in out.split("\0") if p)
+    return None if out is None or not then else [p for p in out.split("\0") if p and (is_code(top, p) or is_test(p))]
 
 
 def subagent_report(data, verdict):
@@ -527,19 +569,29 @@ def working_changes(top):
     return name_status(must(git(top, "diff", "--name-status", "-z", "--no-renames", auto), "git diff")) + [c for c in changes if c[0] == "??"]
 
 
-def working_scope(top):
-    """証拠の対象にする作業ツリーの変更: working_changes から、そのブランチで最初に要件の写しを保存したターンの開始時に既にあった
-    未追跡のファイル（写しの横の .baseline。利用者の手元のファイル。Claude がそのターンに作ったものやステージ済みのものは入らない）
-    のうち、その後に変えていないものを除く（部分コミットを止めない）。コミット時（staged_changes）は除かないので、
-    そのファイルをコミットに含めるなら証拠が要る"""
-    changes = working_changes(top)
-    baseline = dict(line.split("\t", 1)[::-1] for line in (read_bytes(requirements_path(top) + ".baseline") or b"").decode(
+def unstaged_wip(top):
+    """未ステージの手元の変更 {パス: 作業ツリーの blob ID（無ければ 'gone'）}: 未追跡のファイルと、追跡済みのファイルの
+    インデックスに入れていない変更（コード・テストだけ）"""
+    rels = [p for s, p in working_changes(top) if s[0] in " ?" and (is_code(top, p) or is_test(p))]
+    return blob_ids(top, rels, staged=False)
+
+
+def baseline(top):
+    """そのブランチで最初に要件の写しを保存したターンの開始時に既にあった、未ステージの手元の変更（写しの横の .baseline。
+    利用者の作業中のファイル。Claude がそのターンに作ったもの・ステージ済みのものは入らない）{パス: blob ID}"""
+    return dict(line.split("\t", 1)[::-1] for line in (read_bytes(requirements_path(top) + ".baseline") or b"").decode(
         "utf-8", "surrogateescape").splitlines() if "\t" in line)
-    if not baseline:
+
+
+def working_scope(top):
+    """証拠の対象にする作業ツリーの変更: working_changes から、baseline のうち、未ステージのままその後に変えていないものを除く
+    （利用者の作業中の変更を残したまま、タスクのファイルだけを部分コミットできるように）。ステージしたら除かない
+    （コミット時の staged_changes も除かない）ので、そのファイルをコミットに含めるなら証拠が要る"""
+    changes, base = working_changes(top), baseline(top)
+    if not base:
         return changes
-    # 除くのは未ステージの未追跡（??）のまま変えていないものだけ（ステージしたら、コミットに含めるので証拠の対象）
-    ids = blob_ids(top, [p for s, p in changes if s == "??" and p in baseline], staged=False)
-    return [(s, p) for s, p in changes if s != "??" or p not in baseline or ids.get(p) != baseline[p]]
+    ids = blob_ids(top, [p for s, p in changes if s[0] in " ?" and p in base], staged=False)
+    return [(s, p) for s, p in changes if s[0] not in " ?" or p not in base or ids.get(p) != base[p]]
 
 
 def staged_changes(top):
@@ -620,7 +672,12 @@ def requirements_fresh(top):
 
 def required_criteria(top):
     """要件の写しの受け入れ条件の番号（AC<n>: の n）の集合。写しが無いか番号が無ければ空"""
-    return {int(n) for n in REQUIRED_AC.findall((requirements(top) or b"").decode("utf-8", "replace"))}
+    return criteria_numbers((requirements(top) or b"").decode("utf-8", "replace"))
+
+
+def criteria_numbers(text):
+    """要件の本文 text の受け入れ条件の番号（行頭の AC<n>: の n）の集合"""
+    return {int(n) for n in REQUIRED_AC.findall(text)}
 
 
 def verify_lines(top, staged=False):
@@ -773,10 +830,20 @@ def red_log(top, data, command):
 
 def reason_text(top, missing, on_main):
     paths = {"private": os.path.join(git_dir(top, common=True), PRIVATE_VERIFY), "requirements": requirements_path(top)}
-    parts = [TEXT[k].format(**paths) for k in missing]
+    parts = [TEXT[k].format(**paths) + drift_note(top, k) for k in missing]
     if on_main:
         parts.insert(0, "main/master 上で変更している → git switch -c <種別>/<名前> で作業ブランチに移す")
     return "コードを変更したが完了条件を満たしていない: " + "／".join(parts) + "。対応してから進める（省略しない）。"
+
+
+def drift_note(top, key):
+    """前回の合格の報告（key: accepted・reviewed）を、報告の版が合わずに記録しなかったときの注記（review-done が <key>-drift に残す）"""
+    drift = get(repo_state(top), key + "-drift") if key in ("accepted", "reviewed") else None
+    if not drift:
+        return ""
+    if drift == "?":
+        return "（前回の合格の報告は、版の行が無いか版を比べられなかったので記録しなかった → 報告に snapshot.sh の版を書かせる）"
+    return f"（前回の合格の報告は、報告の版の後に {drift} が変わっていたので記録しなかった → 変え終えてから、その内容でやり直す）"
 
 
 def gate_reason(session, top):
@@ -792,8 +859,8 @@ def gate_reason(session, top):
             return (f"このターンのコミット {short(unguarded)} は、コミットの関門（pre-commit）を通っていない（リポジトリ側の "
                     "core.hooksPath、HOME・XDG_CONFIG_HOME の差し替え、rebase・cherry-pick などで git の hook が呼ばれなかった）。"
                     f"証拠を確かめていないコード変更のコミットになっている → {undo}変更をステージに戻し、/accept → /verify → /review を"
-                    "通してからコミットし直す。戻せない（push 済みなど）か、関門を通った内容を rebase・cherry-pick しただけなら、"
-                    "その旨をユーザーに報告して終える。"), f"unguarded={unguarded}"
+                    "通してからコミットし直す（作業ツリーの内容が証拠を取った内容と同じなら、既存の証拠のままコミットし直せる。証拠は内容で決まる）。"
+                    "戻せない（push 済みなど）なら、その旨をユーザーに報告して終える。"), f"unguarded={unguarded}"
         # このターンでコード・テストの未コミット変更が変わっていなければ何もしない（以前からの変更で差し戻さない）
         if get(session, "start") == tree_hash(top, working_scope(top)):
             return None, "unchanged"
@@ -862,20 +929,26 @@ def bypass(command):
         return re.match(r".{0,60}", command, re.S)
 
 
+def string_bypass(text):
+    """文字列で見る迂回の一致（無ければ None）: BYPASS、--no-verify、コミットを作る git と同じ行での環境の差し替え"""
+    return BYPASS.search(text) or NO_VERIFY_LONG.search(text) or (GIT_MAY_COMMIT.search(text) and ENV_SWAP.search(text)) or None
+
+
 def shell_bypass(text):
-    """コマンド行 text の迂回の一致（無ければ None）: BYPASS（文字列で見る形）、コマンドごとの迂回（command_bypass）、
+    """コマンド行 text の迂回の一致（無ければ None）: string_bypass（文字列で見る形）、コマンドごとの迂回（command_bypass）、
     hooksPath を含む行での書き込み。ヒアドキュメントの本文は抜き出して、コマンド行にシェル等での実行があるときだけ別のコマンド行と
     して見る（split_heredocs。データの本文の語では拒否しない）。字句に分けられなければ（クォートの閉じ忘れ等）、文字列で保守的に見る"""
     main, bodies = split_heredocs(text)
     seen = "\n".join([main, *bodies])  # データの本文を除いた、実行されうる部分
-    m = BYPASS.search(seen)
+    m = string_bypass(seen)
     if m:
         return m
     try:
-        commands = shell_commands(main)
+        commands = shell_commands(main, mark_quoted=True)
     except (ValueError, IndexError):
         return fallback_bypass(seen)
-    for m in (command_bypass(words, text) or (writes(words) and hookspath_written(words, seen, text)) for words in commands):
+    for m in (command_bypass(words, text) or (writes(plain(words)) and hookspath_written(plain(words), seen, text))
+              for words in commands):
         if m:
             return m
     return next(filter(None, map(shell_bypass, bodies)), None)
@@ -898,7 +971,7 @@ def data_only(text):
         return False
     for words in commands:
         name = os.path.basename(words[0]) if words else ""
-        if name not in DATA_COMMANDS or any(map(SUBSTITUTION.search, words)):
+        if name not in DATA_COMMANDS or any(SUBSTITUTION.search(w) and not heredoc_value(words, i) for i, w in enumerate(words)):
             return False
         if name == "git":
             _, _, sub = git_parts(words)
@@ -913,30 +986,63 @@ def data_only(text):
     return True
 
 
+def heredoc_value(words, i):
+    """words[i]（本文を除いた後の字句）が、メッセージ・本文のオプション（VALUE_OPTS。--message= の形も）の値として渡す
+    $(cat <<'E' … E) か（区切りをクォートしたヒアドキュメントの本文は展開されず、そのまま値になるのでデータ）"""
+    opt, eq, value = words[i].partition("=")
+    if eq and opt.startswith("--"):
+        return opt in VALUE_OPTS and bool(CAT_HEREDOC.fullmatch(value))
+    return i > 0 and (words[i - 1] in VALUE_OPTS or bool(MESSAGE_OPT.fullmatch(words[i - 1]))) and bool(CAT_HEREDOC.fullmatch(words[i]))
+
+
 def split_heredocs(text):
     """(ヒアドキュメントの本文を除いたコマンド行, 実行されうる本文のリスト)。<< の後の区切りの語だけの行までが本文
-    （<<- は行頭のタブを除いて比べる）。本文を除いたコマンド行が、本文を実行しない既知のコマンドだけ（data_only。tinymemory save・
-    git commit -F -・cat > f など）なら本文はデータ。ほかのコマンド（sh <<E、cat <<E | sh、read、ファイルに書いて次の行で sh f・
-    ./f・make など）やコマンド置換があれば、すべての本文を実行されうるとみなす。クォートの中の << も本文の始まりとみなす"""
-    kept, bodies = [], []  # 本文と区切りの語だけの行は除く（区切りの語はコマンドではない）
+    （<<- は行頭のタブを除いて比べる。区切りの語はシェルと同じく、クォートとエスケープを外して連結した語）。本文を除いたコマンド行が、
+    本文を実行しない既知のコマンドだけ（data_only。tinymemory save・git commit -F -・cat > f など）なら本文はデータ。ほかのコマンド
+    （sh <<E、cat <<E | sh、read、ファイルに書いて次の行で sh f・./f・make など）やコマンド置換があれば、すべての本文を実行されうると
+    みなす。データでも、区切りの語をクォートしていない本文のコマンド置換はシェルが実行するので、その本文は実行されうるとみなす。
+    クォートの中の << も本文の始まりとみなす"""
+    kept, bodies, expanded = [], [], []  # 本文と区切りの語だけの行は除く（区切りの語はコマンドではない）
     lines = iter(text.split("\n"))
     for line in lines:
         kept.append(line)
         for m in HEREDOC.finditer(line):
-            delimiter, body = next(g for g in m.groups()[1:] if g), []
+            raw = m.group(2)
+            delimiter = DELIMITER_QUOTE.sub(lambda q: next(g for g in q.groups() if g is not None), raw)
+            body = []
             for b in lines:
                 if (b.lstrip("\t") if m.group(1) else b) == delimiter:
                     break
                 body.append(b)
             bodies.append("\n".join(body))
+            if not DELIMITER_QUOTE.search(raw):  # シェルが展開する本文: コマンド置換の中身だけがコマンド行（# はただの文字）
+                expanded += substitutions(bodies[-1])
     main = "\n".join(kept)
-    return main, [] if data_only(main) else bodies
+    return main, expanded if data_only(main) else bodies
 
 
-def shell_commands(text):
+def substitutions(text):
+    """text（展開される本文）の中のコマンド置換 $(…)・`…` の中身。`…` の中は \\` \\$ \\\\ のエスケープを外す（\\` は入れ子の置換）。
+    閉じていなければ、そこから後をそのまま返す（保守的に見る）"""
+    found, i = [], 0
+    while True:
+        m = SUBSTITUTION.search(text, i)
+        if not m:
+            return found
+        try:
+            end = substitution_end(text, m.start())
+        except (ValueError, IndexError):
+            return found + [text[m.start():]]
+        inner = text[m.start() + len(m.group(0)):end - 1]
+        found.append(BACKQUOTE_ESCAPE.sub(r"\1", inner) if m.group(0) == "`" else inner)
+        i = end
+
+
+def shell_commands(text, mark_quoted=False):
     """コマンド行を、コマンドごとの字句のリストに分ける。区切りはクォートの外の ; | & 改行と、サブシェルの ( )
     （>& <& &> の & はリダイレクト）。クォートとエスケープは外し（$'…' も）、コマンド置換 $(…)・`…` は中のクォート・入れ子を
-    含めてそのまま字句に残す。字句の始まりの # から行末まではコメント。クォートや括弧が閉じていなければ ValueError か IndexError"""
+    含めてそのまま字句に残す。字句の始まりの # から行末まではコメント。クォートや括弧が閉じていなければ ValueError か IndexError。
+    mark_quoted なら、クォート・エスケープの中の { } , に印（MARK）を付ける（ブレース展開されない部分。plain で外す）"""
     commands, words, word, i = [], [], None, 0
     while i < len(text):
         c = text[i]
@@ -970,6 +1076,8 @@ def shell_commands(text):
             piece = text[i:j]
         else:
             j, piece = i + 1, c
+        if mark_quoted and c in "\\'\"$" and not (c == "$" and text.startswith("$(", i)):
+            piece = piece.translate(MARK)
         word = word if word is not None else []  # 空のクォート（-m ""）も 1 字句
         word.append(piece)
         i = j
@@ -1023,10 +1131,25 @@ def substitution_end(text, i):
 def command_bypass(words, line):
     """1 つのコマンドの字句 words（line は元のコマンド行）の迂回の一致（無ければ None）:
     git commit の -n（git のサブコマンドが commit か、-c で commit にした alias のときの、その後。git-commit の後も。
-    -m・--message の値はメッセージなので見ない。ただしコマンド置換を含む値は除かない）、
+    -m・--message の値はメッセージなので見ない。ただしコマンド置換を含む値は除かない）と、その後の、メッセージの値でない
+    コマンド置換（出力が -n などのオプションに展開されうる）、
     空白や区切りを含む字句の中（sh -c・eval の引数、コマンド置換。1 つのコマンド行として同じく見る）、
-    クォートを外したコマンドへの BYPASS（--"no-verify" のようにクォートで語を割る形）、git_bypass、
-    git の設定を行き先にする cp・mv・install・ln・rsync、tampers_hooks、forges_evidence"""
+    クォートを外したコマンドへの string_bypass（--"no-verify" のようにクォートで語を割る形）、git_bypass、
+    git の設定を行き先にする cp・mv・install・ln・rsync、tampers_hooks、forges_evidence。
+    words は shell_commands(mark_quoted=True) の字句（クォートの中の { } , に印がある）。そのままと、クォートの外のブレースを展開した後
+    （git {commit,-n,-m,x}・-{n,m} のように、展開で -n やサブコマンドになる形）の両方で見て、どちらかで当たれば迂回とみなす"""
+    expanded = plain([x for w in words for x in brace_words(w)])
+    words = plain(words)
+    return words_bypass(words, line) or (expanded != words and words_bypass(expanded, line)) or None
+
+
+def plain(words):
+    """shell_commands(mark_quoted=True) の字句から、クォートの中の { } , の印を外す"""
+    return [w.translate(UNMARK) for w in words]
+
+
+def words_bypass(words, line):
+    """command_bypass の、字句の並び words 1 通りについての判定"""
     start, parts = len(words), git_parts(words)
     if parts:
         _, settings, sub = parts
@@ -1036,17 +1159,51 @@ def command_bypass(words, line):
     start = min(start, next((i + 1 for i, w in enumerate(words) if os.path.basename(w) == "git-commit"), start))
     is_value = False  # 直前の字句が -m・--message（この字句はメッセージ）
     for i, w in enumerate(words):
-        if is_value and not SUBSTITUTION.search(w):
-            is_value = False
+        # 値の字句（-m の次）は、それ自体が -m でも次の字句を値にしない（git commit -m -m -n の -n はオプション）
+        value = is_value
+        is_value = not value and i >= start and bool(MESSAGE_OPT.fullmatch(w))
+        if value and not SUBSTITUTION.search(w):
             continue
-        is_value = i >= start and bool(MESSAGE_OPT.fullmatch(w))
         inner = SUBSTITUTION.sub(";", w)
         m = ((i >= start and not w.startswith("--") and NO_VERIFY_SHORT.match(w))
-             or (inner != line and COMMAND_LIKE.search(inner) and shell_bypass(inner)))
+             or (i >= start and not value and not MESSAGE_ATTACHED.match(w) and SUBSTITUTION.search(w))
+             or (inner != line and COMMAND_LIKE.search(inner) and shell_bypass(inner))
+             # コマンド置換の中身（`…` はエスケープを外す。入れ子の置換も、中身をたどって見る）
+             or next(filter(None, map(shell_bypass, (s for s in substitutions(w) if s != line))), None))
         if m:
             return m
-    return (BYPASS.search(" ".join(words)) or git_bypass(words) or overwrites_git_config(words) or tampers_hooks(words)
+    return (string_bypass(" ".join(words)) or git_bypass(words) or overwrites_git_config(words) or tampers_hooks(words)
             or forges_evidence(words))
+
+
+def brace_words(word):
+    """字句 word のブレース展開（{a,b} と文字の連番 {a..c}・{a..z..2} を 1 段ずつ。数の連番は -n やサブコマンドの文字を作れないので
+    代表の 1 桁 0 に置き換える。外側のブレースは展開する）。空白や区切りを含む字句（クォートの中）は展開しない。展開が BRACE_LIMIT
+    語を超えるとき、字句に - が無ければオプションを作れないので展開せずに返し、あれば判定できないので RecursionError（bypass が
+    拒否側に倒す）"""
+    if COMMAND_LIKE.search(word):
+        return [word]
+    done, todo = [], [NUM_SEQ.sub("0", word)]
+    while todo:
+        w = todo.pop()
+        m = BRACE.search(w) or BRACE_SEQ.search(w)
+        if not m:
+            done.append(w)
+            continue
+        todo += [w[:m.start()] + part + w[m.end():] for part in reversed(brace_parts(m))]
+        if len(done) + len(todo) > BRACE_LIMIT:
+            if "-" not in word:
+                return [word]
+            raise RecursionError("ブレース展開が多すぎる")
+    return done
+
+
+def brace_parts(m):
+    """ブレース展開の一致 m（BRACE か BRACE_SEQ）の要素。連番は 1 文字の範囲（増分は絶対値）"""
+    if m.re is BRACE:
+        return m.group(1).split(",")
+    a, b, step = ord(m.group(1)), ord(m.group(2)), abs(int(m.group(3) or 1)) or 1
+    return [chr(x) for x in range(a, b + (1 if b >= a else -1), step if b >= a else -step)]
 
 
 def forges_evidence(words):
@@ -1142,7 +1299,8 @@ def tampers_hooks(words):
     読むだけ（cat・ls・grep・sh -n・test など）と、hook を元にした cp（写しを作る）は通す"""
     for i, w in enumerate(words):
         for m in REDIRECT.finditer(w):
-            hit = HOOK_PATH.search(os.path.normpath(w[m.end():] or (words[i + 1:] or [""])[0]))
+            target = os.path.normpath(w[m.end():] or (words[i + 1:] or [""])[0])
+            hit = HOOK_PATH.search(target) or REQUIREMENTS_STORE.search(target)
             if hit:
                 return hit
     at = next((i for i, w in enumerate(words) if os.path.basename(w) in REMOVERS | COPY_COMMANDS | WRITERS), None)
@@ -1160,8 +1318,8 @@ def tampers_hooks(words):
     elif (name == "tee" or (name == "find" and FIND_ACTIONS & set(words))
           or (name in ("sed", "perl") and any(map(IN_PLACE.fullmatch, words[at + 1:])))):
         written = operands
-    checks = ([(p, (HOOK_PATH, HOOK_ANCESTOR, REPO_GIT_DIR, GIT_CONFIG_DEST)) for p in removed]
-              + [(p, (HOOK_PATH,)) for p in written] + [(p, (HOOK_PATH, HOOK_ANCESTOR)) for p in into])
+    checks = ([(p, (HOOK_PATH, HOOK_ANCESTOR, REPO_GIT_DIR, GIT_CONFIG_DEST, REQUIREMENTS_STORE)) for p in removed]
+              + [(p, (HOOK_PATH, REQUIREMENTS_STORE)) for p in written] + [(p, (HOOK_PATH, HOOK_ANCESTOR, REQUIREMENTS_STORE)) for p in into])
     return next((m for p, patterns in checks for m in (r.search(os.path.normpath(p)) for r in patterns) if m), None)
 
 
@@ -1209,25 +1367,38 @@ def pre_commit():
     changed, missing, on_main = evidence(top, staged=True)
     if changed and (missing or on_main):
         hint = "（レビューした内容と、ステージした内容が一致している必要がある。未ステージ・未追跡のコードやテストがあれば一致しない）"
+        wip = sorted(p for _, p in staged_changes(top) if p in baseline(top))
+        if wip:
+            hint += (f"写しを保存する前からあった手元の変更 {', '.join(wip)} をステージしている → コミットに含めないなら "
+                     "`git restore --staged <ファイル>`。含めるなら、ステージしたまま /accept → /verify → /review をやり直す")
         sys.stderr.write("harness: コミットできない。" + reason_text(top, missing, on_main) + hint + "\n")
         return 1
-    # 関門を通した。コミットされる tree は post-commit で記録する（リポジトリ自身の pre-commit が、この後でインデックスを書き換えうる）
-    put(tracked_state(top), PENDING, os.environ.get("HARNESS_GIT_PID", ""))
+    # 関門を通した。コミットされる tree は post-commit で記録する（リポジトリ自身の pre-commit が、この後でインデックスを書き換えうる）。
+    # 判定した時の HEAD も渡す（--amend なら、できたコミットの親はそれと違う）
+    put(tracked_state(top), PENDING, f"{os.environ.get('HARNESS_GIT_PID', '')} {head(top).strip()}")
     return 0
 
 
 def post_commit():
     """git の post-commit hook から（Claude Code からのコミットだけ）。同じ git commit（HARNESS_GIT_PID）の pre-commit が関門を
-    通していれば、実際にコミットされた tree を記録する（Stop の突き合わせ用）。-n で pre-commit を飛ばしたコミットは記録しない"""
+    通していれば、実際にコミットされた内容を記録する（Stop の突き合わせ用）。-n で pre-commit を飛ばしたコミットは記録しない。
+    pre-commit が見たのは判定した時の HEAD との差なので、できたコミットの親がそれと違う（--amend）ときは、付け直したコミットが
+    関門を通っていたか、コミットの変更全体に証拠があるか、証拠が要らないときだけ記録する（関門を通っていないコミットを、
+    変更なしの --amend で関門を通ったことにしない）"""
     top, pid = toplevel(os.getcwd()), os.environ.get("HARNESS_GIT_PID")
     if not top or not pid:
         return 0
     d = tracked_state(top)
     with locked(d):
-        passed = get(d, PENDING) == pid
+        passed_pid, _, before = (get(d, PENDING) or "").partition(" ")
         put(d, PENDING, "")
-    if passed:
-        record_gated(top, (git(top, "rev-parse", "HEAD^{tree}") or "").strip())
+    if passed_pid != pid:
+        return 0
+    parent = (git(top, "rev-parse", "-q", "--verify", "HEAD^") or "").strip()
+    before_tree = (git(top, "rev-parse", "-q", "--verify", before + "^{tree}") or "").strip() if before else ""
+    if (parent == before or before_tree in set((get(d, GATED) or "").split())
+            or committed_with_evidence(top, "HEAD") or not needs_evidence(top, commit_changes(top, "HEAD"))):
+        record_gated(top)
     return 0
 
 
@@ -1238,7 +1409,8 @@ def commit_guard(session, cwd, command):
     SIMPLE_GIT（add・commit と読むだけのもの）だけなら、実行の後（PostToolUse の bash）にできたコミットを、内容が証拠と同じときだけ
     関門を通ったものとして記録する（GUARD_PENDING・record_guarded）。
     push: 関門を通っていないコード変更のコミット（このターンの unguarded_commits と、前のターンに Stop が見つけた UNGATED）が
-    リモートに無いまま残っていれば拒否する"""
+    リモートに無いまま残っていれば拒否する。merge: main・master の上で（同じコマンド行で前に switch・checkout で移った先も見る）、
+    取り込むブランチにそれがあれば拒否する（fast-forward も）"""
     put(session, GUARD_PENDING, "")
     try:
         commands = shell_commands(split_heredocs(command)[0])
@@ -1248,21 +1420,37 @@ def commit_guard(session, cwd, command):
                  for w in commands)
     cd = CD_TARGET.match(command.strip())
     base = os.path.join(cwd, os.path.expanduser((cd.group(1) or "~").strip().strip("'\""))) if cd else cwd
+    switched = {}  # {top: 同じコマンド行で前に switch・checkout で移った先のブランチ}（merge の取り込み先）
     for words in commands:
         parts = git_parts(words)
-        if not parts or parts[2] >= len(words) or words[parts[2]] not in ("commit", "push"):
+        if not parts or parts[2] >= len(words) or words[parts[2]] not in ("commit", "push", "merge", "switch", "checkout"):
             continue
         at, _, sub = parts
         where = next((os.path.join(base, os.path.expanduser(words[i + 1])) for i in range(at + 1, sub - 1) if words[i] == "-C"), base)
         top = toplevel(where)
         if not top:
             continue
-        if words[sub] == "push":
+        if words[sub] in ("switch", "checkout"):
+            target = switch_target(top, words[sub + 1:])
+            if target is not None:
+                switched[top] = target
+        elif words[sub] in ("push", "merge"):
             ungated = set(unguarded_commits(session, top)) | set((get(tracked_state(top), UNGATED) or "").split())
-            # どのローカルブランチ（と HEAD）の履歴に残っていても（git push --all・別のブランチから push する形も）
-            unpushed = [s for s in (git(top, "rev-list", "--branches", "HEAD", "--not", "--remotes") or "").split() if s in ungated]
-            if unpushed:
-                return (f"コミット {short(unpushed)} は、コミットの関門（pre-commit）を通っていないので push しない → "
+            into = switched.get(top, protected_branch(top))
+            if words[sub] == "push":  # どのローカルブランチ（と HEAD）の履歴に残っていても（git push --all・別のブランチから push する形も）
+                found = (git(top, "rev-list", "--branches", "HEAD", "--not", "--remotes") or "").split()
+            elif into in PROTECTED:  # 取り込む側（オプションとその値以外の引数）にあって、取り込み先に無いもの
+                revs = merge_sources(words[sub + 1:])
+                if top in switched and any("@{" in r for r in revs):
+                    # 移った後の @{-1}・HEAD@{n} は、移る前のこの時点では解決できない → どのブランチにあるものも見る
+                    revs = ["--branches", "--remotes", "HEAD"]
+                found = [s for rev in revs for s in (git(top, "rev-list", rev, "--not", into) or "").split()]
+            else:
+                continue
+            found = [s for s in dict.fromkeys(found) if s in ungated]
+            if found:
+                return (f"コミット {short(found)} は、コミットの関門（pre-commit）を通っていないので "
+                        f"{'push' if words[sub] == 'push' else into + ' に merge'} しない → "
                         "Stop の差し戻しの手順で戻して証拠をそろえ直すか、ユーザーに報告する")
         elif hooks_overridden(top):
             changed, missing, on_main = evidence(top)
@@ -1274,13 +1462,47 @@ def commit_guard(session, cwd, command):
     return None
 
 
+def merge_sources(args):
+    """git merge の引数のうち、取り込むコミットの指定（オプションと、値を取るオプションの値を除いたもの。- は直前のブランチ @{-1}）"""
+    revs, skip = [], False
+    for a in args:
+        if skip or a == "--":
+            skip = False
+            continue
+        if a in MERGE_VALUE_OPTS:
+            skip = True
+        elif a == "-":
+            revs.append("@{-1}")
+        elif not a.startswith("-"):
+            revs.append(a)
+    return revs
+
+
+def switch_target(top, args):
+    """git switch・checkout の引数 args で移る先のブランチ名: 作る形（-c・-b など）はその名前、--detach は ""（どのブランチでもない）、
+    - は直前のブランチ。ブランチを移らない形（-- の後のパス、既存のブランチでない引数）は None"""
+    if "--" in args:
+        return None
+    rest = iter(args)
+    for a in rest:
+        if a in ("-c", "-C", "-b", "-B", "--orphan"):
+            return next(rest, None)
+        if a in ("--detach", "-d"):
+            return ""
+        if a == "-":
+            return (git(top, "rev-parse", "--abbrev-ref", "@{-1}") or "").strip() or None
+        if not a.startswith("-"):
+            return a if git(top, "rev-parse", "--verify", "-q", f"refs/heads/{a}") else None
+    return None
+
+
 def record_guarded(session):
     """commit_guard が通した git commit の実行の後（PostToolUse）: HEAD が進んでいれば、そのコミットを関門を通ったものとして記録する"""
     pending = get(session, GUARD_PENDING) or ""
     put(session, GUARD_PENDING, "")
     top, _, before = pending.partition("\t")
     if top and head(top).strip() not in ("", before) and committed_with_evidence(top, "HEAD"):
-        record_gated(top, (git(top, "rev-parse", "HEAD^{tree}") or "").strip())
+        record_gated(top)
 
 
 def committed_with_evidence(top, rev):
@@ -1309,36 +1531,88 @@ def in_temp(path):
     return real == tmp or real.startswith(tmp + os.sep)
 
 
-def record_gated(top, tree):
-    """関門を通ってコミットされた tree を、リポジトリ単位で直近 GATED_KEEP 件まで覚える。
+def record_gated(top):
+    """関門を通ってコミットされた HEAD の tree と patch-id を、リポジトリ単位でそれぞれ直近 GATED_KEEP 件まで覚える。
     Stop が、このターンのコミットのうち関門を通らなかったもの（git の hook が呼ばれなかったもの）を見つけるため"""
-    if tree:
-        d = tracked_state(top)
-        with locked(d):
-            put(d, GATED, "\n".join(((get(d, GATED) or "").split() + [tree])[-GATED_KEEP:]))
+    d = tracked_state(top)
+    for name, value in ((GATED, (git(top, "rev-parse", "HEAD^{tree}") or "").strip()), (GATED_PATCH, patch_id(top, "HEAD"))):
+        if value:
+            with locked(d):
+                put(d, name, "\n".join(((get(d, name) or "").split() + [value])[-GATED_KEEP:]))
+
+
+def patch_id(top, rev):
+    """コミット rev の patch-id（git patch-id --verbatim。空白の違いも別の変更とみなす）。マージ・空の差分・求められなければ None。
+    rebase・cherry-pick で付け替えたコミットは、変更が同じなら同じ値になる"""
+    diff = git(top, "diff-tree", "-p", "--root", "--no-renames", "--full-index", rev)
+    out = diff and git(top, "patch-id", "--verbatim", stdin=diff.encode("utf-8", "surrogateescape"))
+    return out.split()[0] if out else None
 
 
 def unguarded_commits(session, top):
     """このターンに作られたコミット（どのブランチでも、ターン開始時の HEAD とローカルブランチの先端から届かず、コミット時刻が
-    ターン開始以降のもの。pull で取り込んだ他人のコミットは時刻で除く）のうち、関門を通ってコミットされた内容に無く、証拠を求める
-    変更を含むものの ID。マージコミットは、2 つの親の自動の結果（git merge-tree）との差を変更とみなす（自動の結果のままなら対象外）。
+    ターン開始以降のもの。fetch・pull で取り込んだ他人のコミットは、時刻と、取り込んだ先端（fetched_since）から届くもののうち
+    このリポジトリで作っていないもの（created_since）として除く）
+    のうち、関門を通ってコミットされた内容（tree）にも、
+    関門を通ったコミットの変更（patch-id。rebase・cherry-pick で付け替えたもの）にも無く、証拠を求める変更を含むものの ID。
+    マージコミットは、2 つの親の自動の結果（git merge-tree）との差を変更とみなす（自動の結果のままなら対象外）。
     3 つ以上の親のマージは自動の結果を求められないので、最初の親との差を変更とみなす（--no-commit の後に手を加えた形も見落とさない）"""
     since, tips = get(session, "since"), (get(session, "tips") or "").split()
-    out = since and git(top, "log", f"--max-age={since}", "--format=%H %T %P", "--branches", "HEAD", *(["--not", *tips] if tips else []))
+    not_tips = ["--not", *tips] if tips else []
+    out = since and git(top, "log", f"--max-age={since}", "--format=%H %T %P", "--branches", "HEAD", *not_tips)
     if not out:
         return []
-    gated, found = set((get(tracked_state(top), GATED) or "").split()), []
+    # 取り込んだ他人のコミット: ターンの間に fetch・pull で動いたリモート追跡ブランチから届くもののうち、このリポジトリで作っていないもの
+    fetched = fetched_since(top, int(since))
+    foreign = (set((git(top, "rev-list", f"--max-age={since}", *fetched, *not_tips) or "").split()) - created_since(top, int(since))
+               if fetched else set())
+    state, found = tracked_state(top), []
+    gated, patches = (set((get(state, name) or "").split()) for name in (GATED, GATED_PATCH))
     for sha, tree, *parents in (line.split() for line in out.splitlines()):
-        if tree in gated:
+        if tree in gated or sha in foreign:
             continue
         changes = None
         if len(parents) >= 2:  # マージ: 自動の結果を求められなければ（3 つ以上の親、merge-tree の無い古い git）最初の親との差
             auto = git(top, "merge-tree", "--write-tree", *parents, ok=(0, 1)) if len(parents) == 2 else None
             base = auto.split()[0] if auto else parents[0]
             changes = name_status(git(top, "diff-tree", "-r", "--name-status", "-z", "--no-renames", base, tree) or "")
-        if needs_evidence(top, commit_changes(top, sha) if changes is None else changes):
+        if needs_evidence(top, commit_changes(top, sha) if changes is None else changes) and (changes is not None or patch_id(top, sha) not in patches):
             found.append(sha)
     return found
+
+
+def fetched_since(top, since):
+    """時刻 since（UNIX 時刻）以降に取り込んだコミットの先端: push 以外（fetch・pull など）で動いたリモート追跡ブランチの値と、
+    その後に書かれた FETCH_HEAD の値（URL からの fetch・pull はリモート追跡ブランチを動かさない）"""
+    found = [sha for ref in (git(top, "for-each-ref", "--format=%(refname)", "refs/remotes") or "").split()
+             for sha, message in reflog_since(top, ref, since) if not message.startswith("update by push")]
+    path = (git(top, "rev-parse", "--path-format=absolute", "--git-path", "FETCH_HEAD") or "").strip()
+    with contextlib.suppress(OSError):
+        if path and os.path.getmtime(path) >= since:
+            with open(path) as f:
+                found += [line.split()[0] for line in f if line.strip()]
+    return found
+
+
+def created_since(top, since):
+    """時刻 since 以降にこのリポジトリで作ったコミット: すべての worktree の HEAD とローカルブランチの reflog のうち、コミットを作る
+    操作（CREATED。commit・amend・merge・rebase と pull --rebase の pick など・cherry-pick・revert・am）の記録の値"""
+    worktrees = [line[len("worktree "):] for line in (git(top, "worktree", "list", "--porcelain") or "").splitlines()
+                 if line.startswith("worktree ")] or [top]
+    logs = [(w, "HEAD") for w in worktrees] + [(top, ref) for ref in (git(top, "for-each-ref", "--format=%(refname)", "refs/heads") or "").split()]
+    return {sha for where, ref in logs for sha, message in reflog_since(where, ref, since) if CREATED.search(message)}
+
+
+def reflog_since(top, ref, since):
+    """ref の reflog のうち、時刻 since 以降の記録 [(値, メッセージ)]（新しい順）"""
+    entries = []
+    for line in (git(top, "reflog", "show", "--date=unix", "--format=%H %gd %gs", ref) or "").splitlines():
+        sha, selector, message = (line.split(" ", 2) + ["", ""])[:3]
+        when = selector.rpartition("@{")[2].rstrip("}")
+        if not when.isdigit() or int(when) < since:  # reflog は新しい順
+            break
+        entries.append((sha, message))
+    return entries
 
 
 def short(shas):
@@ -1367,6 +1641,9 @@ def save_requirements():
     """標準入力を、cwd のリポジトリの要件の写しとして保存し、パスを出す。.git の下は Claude Code の Write ツールでは
     書けない（保護される）ので、この口から書く。git 外か、入力が空なら何も書かずに exit 1（写しを空で上書きしない）。
     写しはブランチごとなので、main/master の上でも保存しない（ブランチを切った後に保存する）。
+    同じ依頼の前の版（.history の最後の版）にあった受け入れ条件の番号が無ければ、「## 変更の承認」の節（ユーザーの承認の引用）が
+    無いかぎり保存しない（条件を黙って減らさない）。保存した版はすべて写しの横の .history/<番号>.md に残す（reviewer が最初の版と比べる）。
+    前の写しが古い（その後にコード変更のコミットがある）なら新しい依頼とみなし、前の依頼の版は .history.prev に移す。
     保存した時の HEAD を写しの横（.head）に書く（コミットの後は写しが古いとみなす。requirements_fresh）"""
     top = toplevel(os.getcwd())
     text = sys.stdin.read()
@@ -1379,12 +1656,27 @@ def save_requirements():
                          "作業ブランチを切ってから保存する: git switch -c <種別>/<短い名前>\n")
         return 1
     path = requirements_path(top)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    history = path + ".history"
+    versions = sorted(os.listdir(history)) if os.path.isdir(history) else []
+    previous = read_bytes(os.path.join(history, versions[-1])) if versions else requirements(top)
+    if previous is not None and requirements_fresh(top):
+        removed = sorted(criteria_numbers(previous.decode("utf-8", "replace")) - criteria_numbers(text))
+        if removed and not APPROVAL.search(text):
+            sys.stderr.write(f"harness: 前の版にあった受け入れ条件 {', '.join(f'AC{n}' for n in removed)} が無いので保存しない。"
+                             "条件を減らす・緩めるにはユーザーの承認が要る → 承認を得て、本文に「## 変更の承認」の節を書き、"
+                             "ユーザーの承認の言葉を引用してから保存し直す（条件を足すだけなら要らない）\n")
+            return 1
+    elif os.path.isdir(history):
+        shutil.rmtree(history + ".prev", ignore_errors=True)
+        os.rename(history, history + ".prev")
+        versions = []
+    os.makedirs(history, exist_ok=True)
+    put(history, f"{len(versions) + 1:03d}.md", text)
     with open(path, "w") as f:
         f.write(text)
     put(os.path.dirname(path), os.path.basename(path) + ".head", head(top).strip())
-    if not os.path.exists(path + ".baseline"):  # 最初の保存のターンの開始時に既にあった未追跡のファイル（working_scope が除く）
-        put(os.path.dirname(path), os.path.basename(path) + ".baseline", get(repo_state(top), "turn-untracked") or "")
+    if not os.path.exists(path + ".baseline"):  # 最初の保存のターンの開始時に既にあった手元の変更（working_scope が除く）
+        put(os.path.dirname(path), os.path.basename(path) + ".baseline", get(repo_state(top), "turn-wip") or "")
     print(path)
     return 0
 
@@ -1413,10 +1705,8 @@ def handle(cmd, data):
 
     if cmd == "turn":
         put(session, "start", tree_hash(top, working_scope(top)) if top else "")
-        if top:  # ターンの開始時に既にある未追跡のコード（写しの最初の保存が .baseline にする。利用者の手元のファイル）
-            untracked = [p for s, p in working_changes(top) if s == "??" and (is_code(top, p) or is_test(p))]
-            put(repo_state(top), "turn-untracked",
-                "".join(f"{blob}\t{rel}\n" for rel, blob in blob_ids(top, untracked, staged=False).items() if blob != "gone"))
+        if top:  # ターンの開始時に既にある未ステージの手元の変更（写しの最初の保存が .baseline にする）
+            put(repo_state(top), "turn-wip", "".join(f"{blob}\t{rel}\n" for rel, blob in unstaged_wip(top).items()))
         put(session, "head", head(top))
         # このターンに作られたコミットを見分ける（unguarded_commits）: 開始の時刻と、HEAD とローカルブランチの先端
         put(session, "since", str(int(time.time())))
@@ -1482,8 +1772,10 @@ def handle(cmd, data):
         # fail-closed: 判定行がすべて「承認」「合格」のときだけ（空・中断・質問で終わった場合は記録しない）。
         # さらに、報告の版が今の作業ツリー全体の版と同じときだけ（レビュー・受け入れ検証の後に編集した内容には付けない）
         ok, note = passed(report, top) if top else (False, "")
-        if ok and not same_version(top, report):
+        drift = version_drift(top, report) if ok else []
+        if drift != []:  # 合格の報告が記録されない理由を、次の差し戻しの理由に出す（drift_note）
             ok, note = False, (note + " version-mismatch").strip()
+            put(repo_state(top), key + "-drift", ", ".join(drift) if drift else "?")
         log(cmd, data, f"{key}={ok} report_chars={len(report)} {note}".rstrip())  # 記録されない時の切り分け用
         # 報告は合否に関わらず、作業ツリーごとの git-dir に保存する（/review fix などで前回の報告として読む）
         gitdir = git(top, "rev-parse", "--absolute-git-dir") if top and report else None
@@ -1491,6 +1783,7 @@ def handle(cmd, data):
             put(gitdir.strip(), saved, report)
         if ok:
             put(repo_state(top), key, tree_hash(top, working_scope(top)))
+            put(repo_state(top), key + "-drift")
     elif cmd == "stop":
         if data.get("stop_hook_active"):
             log(cmd, data, "skip")

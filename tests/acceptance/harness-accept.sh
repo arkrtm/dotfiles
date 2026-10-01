@@ -72,7 +72,8 @@ done
 R="$TMP/repo"; G="git -C $R -c user.name=t -c user.email=t@t"
 mkdir -p "$R/tests"; $G init -q -b main; echo base > "$R/tests/test_a.py"; echo 'uv run pytest -q' > "$R/.harness-verify"   # 検証コマンドの宣言
 $G add -A; $G commit -q -m init; $G switch -q -c feat/x
-req() { printf "$1" | (cd "$R" && "$HOOK" requirements-save) >/dev/null; }   # 写しを保存する（保存した時の HEAD も記録される）
+# 写しを保存する（保存した時の HEAD も記録される）。条件を減らす版は承認を求められる（ARK-51 AC26）ので、準備として前の版は消す
+req() { _p=$(cd "$R" && "$HOOK" requirements-path); rm -rf "$_p" "$_p.history"; printf "$1" | (cd "$R" && "$HOOK" requirements-save) >/dev/null; }
 req 'AC1: 要件と受け入れ条件\n'   # 承認済みの要件の写し（関門が求める。受け入れは写しの AC 番号と突き合わせる）
 SID="acc-$$"
 common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"/dev/null"' "$SID" "$R"; }

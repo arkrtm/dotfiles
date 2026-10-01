@@ -269,10 +269,11 @@ done
 # rsync で git の設定・hooks を上書きする形。include.path と rsync の形は、使い捨てのリポジトリで実際に pre-commit を飛ばす
 for c in 'git commit --"no-verify" -m x' 'git commit --no-"verify" -m x' "git commit --no''-verify -m x" 'env -u "CLAUDECODE" git commit -m x' \
   'git config --global include.path /tmp/evil' 'git config --global "includeIf.gitdir:~/.path" /tmp/evil' 'git -c include.path=/tmp/evil commit -m x' \
-  'rsync -a /tmp/c/ ~/.config/git/' 'rsync /tmp/c .git/config' 'rsync -a /tmp/h/ .git/hooks/'; do
+  'rsync -a /tmp/c/ ~/.config/git/' 'rsync /tmp/c .git/config' 'rsync -a /tmp/h/ ~/.config/git/hooks/'; do
   case "$(guard "$c")" in *'"permissionDecision": "deny"'*) ;; *) ng "ARK-50 AC4: 拒否すべきものを通した: $c" ;; esac
 done
-for c in 'grep -rn hooksPath . 2>/dev/null' 'rsync -a src/ /tmp/dest/' 'rsync -a ~/.config/git/ /tmp/backup/'; do
+# プロジェクトの .git/hooks は、共通の pre-commit が関門を通した後に委譲する先なので、そこへの導入は通す（ARK-51 AC32 で仕様を変えた）
+for c in 'grep -rn hooksPath . 2>/dev/null' 'rsync -a src/ /tmp/dest/' 'rsync -a ~/.config/git/ /tmp/backup/' 'rsync -a /tmp/h/ .git/hooks/'; do
   case "$(guard "$c")" in *'"permissionDecision": "deny"'*) ng "ARK-50 AC4: 通すべきものを拒否した: $c" ;; esac
 done
 

@@ -77,7 +77,9 @@ guarde() { printf '{%s,"hook_event_name":"PreToolUse","tool_name":"Edit","tool_i
 precommit() { (cd "$REPO" && "$HOOK" pre-commit); }
 write() { mkdir -p "$(dirname "$REPO/$1")"; echo "$2" > "$REPO/$1"; }
 fresh() { $G reset -q --hard; $G clean -qfd; reqs; turn; }           # きれいな作業ツリーで、要件の写しを保存して新しいターンを始める
-reqs() { printf '%b\n' "${1:-AC1: 要件と受け入れ条件}" | (cd "${CWD:-$REPO}" && "$HOOK" requirements-save) >/dev/null; }  # 承認済みの要件の写しを保存する（今のブランチ。\n は改行）
+# 承認済みの要件の写しを保存する（今のブランチ。\n は改行）。テストの準備として、前の版（条件を減らすときに承認を求める比較の相手）は消す
+reqs() { _p=$(cd "${CWD:-$REPO}" && "$HOOK" requirements-path); rm -rf "$_p" "$_p.history"
+  printf '%b\n' "${1:-AC1: 要件と受け入れ条件}" | (cd "${CWD:-$REPO}" && "$HOOK" requirements-save) >/dev/null; }
 has() { printf '%s' "$1" | grep -qF -- "$2"; }   # has <文字列> <部分文字列>
 ready() { reqs; write src/app.py "$1"; write tests/test_app.py "$1"; bash_ "uv run pytest -q"; accept; review reviewer; }  # 証拠がそろった状態
 reqs   # feat/x の要件の写し（関門は、コードを変えたら承認済みの要件の写しを求める）
@@ -207,8 +209,13 @@ fresh; write src/app.py vm1; bash_ "uv run pytest -q"; accept; old=$(ver); write
 review reviewer "レビューした版: $old\n$OK3"
 check "レビューの後に編集した内容には、承認を記録しない（報告の版が今の版と違う）" block "$(stop)"
 expect "そのとき review-done のログに版の食い違いが残る" grep -q "review-done .*version-mismatch" "$XDG_STATE_HOME/harness/log"
+check "（そのとき）差し戻しの理由に、報告の版の後に変わったファイルが出る" block "$(stop | grep '版の後に src/app.py が変わって')"
+$G add -A
+expect "（同じく）pre-commit の理由にも出る" sh -c "printf '%s' \"\$(cd '$REPO' && '$HOOK' pre-commit 2>&1)\" | grep -q '版の後に src/app.py'"
+$G reset -q
 raw_review reviewer "$OK3"
 check "報告に版の行が無ければ、承認を記録しない" block "$(stop)"
+check "（そのとき）理由に、版の行が無いことが出る" block "$(stop | grep '版の行が無いか')"
 review reviewer
 check "（前提）今の版の報告なら記録する" pass "$(stop)"
 # 報告の版と今の版の差が、証拠に関わらないファイル（テスト実行の生成物・文書）だけなら同じとみなす
@@ -405,6 +412,7 @@ $G switch -q --detach; P="$(cd "$REPO" && "$HOOK" requirements-path)"; $G switch
 expect "detached HEAD では HEAD.md" [ "$P" = "$(cd "$REPO" && pwd -P)/.git/harness-requirements/HEAD.md" ]
 expect "ファイルは作らない" [ ! -e "$P" ]
 # .git の下は Claude Code の Write ツールでは書けない（保護される）ので、標準入力から保存する口を持つ
+rm -rf "$REQ" "$REQ.history"
 printf '承認済みの要件\n- AC1 x\n' | (cd "$REPO/src" && "$HOOK" requirements-save) > "$TMP/saved-path"
 expect "requirements-save は、標準入力を要件の写しとして保存し、そのパスを出す" [ "$(cat "$TMP/saved-path")" = "$REQ" ]
 expect "（同じく）内容がそのまま書かれる" [ "$(cat "$REQ")" = "$(printf '承認済みの要件\n- AC1 x')" ]
@@ -416,6 +424,24 @@ if out=$(printf 'AC1: x\n' | (cd "$REPO" && "$HOOK" requirements-save) 2>&1); th
 expect "main の上では requirements-save は保存せず失敗する" [ "$code" != 0 ]
 expect "理由に、先に作業ブランチを切ることが出る" has "$out" "作業ブランチを切ってから"
 expect "main の写しは作られない" [ ! -e "$(cd "$REPO" && pwd -P)/.git/harness-requirements/main.md" ]
+$G switch -q feat/x
+# 受け入れ条件を減らす版は、ユーザーの承認の節（## 変更の承認）が無ければ保存しない。保存した版はすべて .history に残る
+save_req() { printf '%b' "$1" | (cd "$REPO" && "$HOOK" requirements-save); }
+$G switch -q -c feat/ac main; P="$(cd "$REPO" && "$HOOK" requirements-path)"
+save_req 'AC1: a\nAC2: b\n' >/dev/null
+if out=$(save_req 'AC1: a\n' 2>&1); then code=0; else code=1; fi
+expect "受け入れ条件を減らす版は、承認の節が無ければ保存しない" [ "$code" = 1 ]
+expect "（そのとき）理由に、減った番号と承認の節の書き方が出る" sh -c 'printf "%s" "$1" | grep -q "AC2" && printf "%s" "$1" | grep -q "## 変更の承認"' _ "$out"
+expect "（そのとき）写しは前の版のまま" grep -q 'AC2: b' "$P"
+checkx "見出しだけの承認の節では保存しない" 1 save_req 'AC1: a\n## 変更の承認\n\n## ほか\n'
+checkx "承認の節があれば、減らす版も保存する" 0 save_req 'AC1: a\n## 変更の承認\n> ユーザー: AC2 は不要\n'
+checkx "条件を足すだけなら承認は要らない" 0 save_req 'AC1: a\nAC3: c\n'
+expect "保存した版はすべて .history に順に残る" sh -c '[ "$(ls "$1.history" | tr "\n" " ")" = "001.md 002.md 003.md " ] && grep -q "AC2: b" "$1.history/001.md"' _ "$P"
+rm "$P"
+checkx "写しを消しても、.history の最後の版と比べる" 1 save_req 'AC1: a\n'
+write src/ac.py x; $G add -A; $G commit -q -m code
+checkx "コード変更のコミットの後（新しい依頼）は、条件が変わっても承認なしで保存する" 0 save_req 'AC9: new\n'
+expect "（そのとき）前の依頼の版は .history.prev に移り、.history は新しい版から始まる" sh -c '[ -f "$1.history.prev/003.md" ] && [ "$(ls "$1.history")" = 001.md ]' _ "$P"
 $G switch -q feat/x
 # 承認済みの要件の写しが無い・空なら差し戻す。書き換えれば、検証・受け入れ・レビューの証拠はすべて無効になる
 fresh; rm "$REQ"; write src/app.py rq1; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
@@ -443,6 +469,7 @@ $G add src/app.py tests/test_app.py
 checkx "（同じく）前からあったファイルを除いた部分コミットができる" 0 precommit
 $G add scratch.py
 checkx "前からあったファイルをコミットに含めるなら、証拠が要る" 1 precommit
+expect "（そのとき）理由に、そのファイル名と手順が出る" sh -c "printf '%s' \"\$(cd '$REPO' && '$HOOK' pre-commit 2>&1)\" | grep -q 'scratch.py'"
 $G reset -q scratch.py; reqs
 check "写しを保存し直しても、前からあったファイルは除いたまま（最初の保存の時点で決まる）" pass "$(stop)"
 write scratch.py changed
@@ -450,6 +477,15 @@ check "前からあったファイルでも、その後に変えたら証拠が�
 write scratch.py mine; $G add -A; bash_ "uv run pytest -q"; accept; review reviewer
 checkx "前からあったファイルも、ステージして証拠をそろえればコミットできる" 0 precommit
 rm "$REPO/scratch.py"; $G reset -q --hard; $G switch -q feat/x
+# 追跡済みのファイルの未ステージの変更（利用者の WIP）も同じ: 変えずに未ステージのままなら指紋から除き、含めるなら証拠が要る
+$G switch -q -c feat/wip main; write src/lib.py wip; turn; reqs
+write src/app.py wp1; write tests/test_app.py wp1; bash_ "uv run pytest -q"; accept; review reviewer
+check "前からあった追跡済みファイルの WIP があっても、証拠をそろえた変更は通す" pass "$(stop)"
+$G add src/app.py tests/test_app.py
+checkx "（同じく）WIP を除いた部分コミットができる" 0 precommit
+$G add src/lib.py
+checkx "WIP をコミットに含めるなら、証拠が要る" 1 precommit
+$G reset -q --hard; $G switch -q feat/x
 # 写しは、保存した後に HEAD が進んだら（コミット等）古い。次のコード変更には保存し直しが要る（同じ依頼の続きなら同じ内容でよい）
 fresh; ready st1; $G add -A; $GH commit -q -m st1
 write src/app.py st2; write tests/test_app.py st2; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
@@ -506,6 +542,15 @@ for f in README.md notes.txt logo.png; do
   check "文書・画像だけの変更は通す: $f" pass "$(stop)"
 done
 # 文書・画像など以外はすべて対象（依存の定義・lockfile・環境・テンプレート・スキーマなど、振る舞いを変えうるもの）
+# テストとみなす（新規追加に証拠が要らない）のは、テストの名前の規則に当たるものと、トップの tests/・test/・spec/・__tests__/ の下だけ
+for f in src/components/SpeedTest.tsx api/spec/openapi.yaml src/test/server.go api/openapi.spec.yaml docker-compose.test.yml; do
+  fresh; write "$f" x; $G add -A
+  checkx "テストに見えてもテストでないものの追加には、証拠が要る: $f" 1 precommit
+done
+for f in tests/test_x.py src/foo.test.ts src/test/java/FooTest.java spec/a_spec.rb tests/fixtures/x.json pkg/x_test.go __tests__/a.js; do
+  fresh; write "$f" x; $G add -A
+  checkx "テストの追加には、証拠は要らない: $f" 0 precommit
+done
 for f in requirements.txt requirements-dev.txt requirements/base.txt CMakeLists.txt go.mod uv.lock Cargo.lock Gemfile .env app/views/x.erb templates/x.j2 \
   prisma/schema.prisma tsconfig.jsonc BUILD.bazel Procfile data/seed.csv; do
   fresh; write "$f" x
@@ -634,6 +679,57 @@ fresh; write src/app.py ug5; $G add -A; $GH commit -q -n -m skipped   # -n で p
 check "pre-commit を飛ばしたコミットは、post-commit が呼ばれても関門を通ったことにならない" block "$(stop)"
 write src/app.py ug3; $G add -A; $G commit -q -m before; turn
 check "ターンより前のコミットでは差し戻さない" pass "$(stop)"
+# rebase・cherry-pick で付け替えたコミット（git の hook は呼ばれない）は、patch-id が関門を通ったコミットと同じなら関門を通ったものとみなす
+$G reset -q --hard; $G clean -qfd; $G switch -q -c rb/x main; reqs; turn; ready rb1; $G add -A; $GH commit -q -m gated-rb
+$G switch -q main; write README.md "main moved"; $G add -A; $G commit -q -m "docs on main"; $G switch -q rb/x
+old=$($G rev-parse 'HEAD^{tree}'); turn; $G rebase -q main >/dev/null 2>&1
+expect "（前提）rebase でコミットの内容（tree）が変わっている" [ "$($G rev-parse 'HEAD^{tree}')" != "$old" ]
+check "rebase で付け替えた、関門を通ったコミット（patch が同じ）では、Stop は差し戻さない" pass "$(stop)"
+expect "（同じく）push の拒否の対象にもしない" sh -c "! printf '%s' \"\$1\" | grep -q \"\$2\"" _ "$(guardb "git push origin rb/x")" "$($G rev-parse --short=7 HEAD)"
+$G switch -q -c rb/y main; turn; $G cherry-pick rb/x >/dev/null 2>&1
+check "cherry-pick で付け替えた、関門を通ったコミットでも、Stop は差し戻さない" pass "$(stop)"
+turn; write src/app.py rb-changed; $G add -A; $G commit -q --amend --no-edit
+r=$(stop)
+check "patch が違えば（付け替えの後に手を加えた）、Stop が差し戻す" block "$r"
+expect "（そのとき）理由に、内容が証拠と同じなら既存の証拠のままコミットし直せることが出る" has "$r" "既存の証拠のままコミットし直せる"
+$G reset -q --hard; $G switch -q feat/x; $G branch -qD rb/x rb/y
+# pull --rebase: ターンの途中に別の人がリモートに push したコミット（fetch で取り込んだもの）は、このターンのコミットとみなさない
+git init -q --bare "$TMP/rb.git"; $G remote add rbo "$TMP/rb.git"; $G push -q rbo main; git clone -q -b main "$TMP/rb.git" "$TMP/rb-clone"
+$G switch -q -c rb/z main; reqs; turn; ready rbz; $G add -A; $GH commit -q -m gated-rbz
+turn; echo o > "$TMP/rb-clone/src/other.py"; git -C "$TMP/rb-clone" add -A
+git -C "$TMP/rb-clone" -c user.name=t -c user.email=t@t commit -qm other; git -C "$TMP/rb-clone" push -q origin main
+$G pull -q --rebase rbo main >/dev/null 2>&1
+expect "（前提）他人のコミットを取り込んで付け替えた" $G merge-base --is-ancestor rbo/main HEAD
+check "pull --rebase で、ターンの途中にリモートに入った他人のコミットを取り込んでも、Stop は差し戻さない" pass "$(stop)"
+# ただし、このターンに自分で作ったコミットは、リモート追跡ブランチに乗せても（URL への push の後の fetch、fetch .、update-ref）除かない
+for how in "push-url" "fetch-dot" "update-ref"; do
+  turn; write src/app.py "rbz-$how"; $G add -A; $G commit -q -m "ungated-$how"
+  case $how in
+    push-url) $G push -q "$TMP/rb.git" rb/z:refs/heads/tmp-z; $G fetch -q rbo ;;
+    fetch-dot) $G fetch -q . rb/z:refs/remotes/rbo/z ;;
+    update-ref) $G update-ref refs/remotes/rbo/z HEAD ;;
+  esac
+  check "自分で作った関門を通っていないコミットは、リモート追跡ブランチに乗せても Stop が差し戻す（$how）" block "$(stop)"
+  $G reset -q --hard HEAD~1
+done
+# URL からの pull --rebase（他人のコミットは FETCH_HEAD にだけ入る）: 他人のコミットは除き、自分で作った（記録が URL の : を含む）ものは除かない
+pushed_by_other() { echo "$1" > "$TMP/rb-clone/src/$1.py"; git -C "$TMP/rb-clone" add -A; git -C "$TMP/rb-clone" -c user.name=t -c user.email=t@t commit -qm "$1"; git -C "$TMP/rb-clone" push -q origin main; }
+turn; pushed_by_other o2; $G pull -q --rebase "file://$TMP/rb.git" main >/dev/null 2>&1
+check "URL からの pull --rebase で他人のコミットを取り込んでも、Stop は差し戻さない" pass "$(stop)"
+turn; write src/app.py rbz-url; $G add -A; $G commit -q -m ungated-url; pushed_by_other o3; $G pull -q --rebase "file://$TMP/rb.git" main >/dev/null 2>&1
+$G push -q "$TMP/rb.git" rb/z:refs/heads/tmp-url; $G fetch -q rbo
+check "URL からの pull --rebase で付け替えた、自分の関門を通っていないコミットは、Stop が差し戻す" block "$(stop)"
+$G reset -q --hard HEAD~1
+$G switch -q feat/x; $G branch -qD rb/z; $G remote remove rbo
+# 関門を通っていないコミットを、変更なしの --amend で付け直しても、関門を通ったことにならない（amend の pre-commit は HEAD との差しか見ない）
+fresh; write src/app.py am1; $G add -A; $G commit -q -m ungated-amend; turn
+$GH commit -q --amend -m relabeled
+check "関門を通っていないコミットを、変更なしの --amend（共通 hooks を通る）で付け直しても、Stop が差し戻す" block "$(stop)"
+$G reset -q --hard HEAD~1
+fresh; ready am2; $G add -A; $GH commit -q -m gated-amend; turn; write README.md "amend docs"; $G add -A; $GH commit -q --amend --no-edit
+check "関門を通ったコミットに文書を足す --amend では、Stop は差し戻さない" pass "$(stop)"
+turn; reqs; ready am3; $G add -A; $GH commit -q --amend --no-edit
+check "関門を通ったコミットに、証拠をそろえたコードを足す --amend でも、Stop は差し戻さない" pass "$(stop)"
 # マージの途中のコミット: 自動の結果（git merge-tree）との差（競合の解消・--no-commit の後に足したもの）だけに証拠を求める
 side() { # side <ブランチ名> <パス> <内容>: feat/x から分かれたブランチに 1 コミット作って feat/x に戻る（ターンの前に）
   $G switch -q -c "$1"; write "$2" "$3"; $G add -A; $G commit -q -m "$1"; $G switch -q feat/x; }
@@ -705,7 +801,15 @@ stop >/dev/null; turn
 checkd "前のターンに Stop が見つけた、関門を通っていないコミットも、リモートに無ければ push を拒否する" deny "$(guardb "git push origin feat/x")"
 $G switch -q main
 checkd "別のブランチに移っても、ローカルのブランチに残っていれば push を拒否する" deny "$(guardb "git push origin feat/x")"
+checkd "関門を通っていないコミットを含むブランチを、main に merge するのも拒否する" deny "$(guardb "git merge --ff-only feat/x")"
+checkd "（同じく）fast-forward の指定が無くても" deny "$(guardb "git merge feat/x")"
 $G switch -q feat/x
+checkd "同じコマンドで main に移ってから merge する形も拒否する（switch）" deny "$(guardb "git switch main && git merge --ff-only feat/x")"
+checkd "（同じく）checkout" deny "$(guardb "git checkout main && git merge feat/x")"
+checkd "（同じく）直前のブランチを - で指す形" deny "$(guardb "git switch main && git merge --ff-only -")"
+checkd "（同じく）移った後の @{-1}・HEAD@{1}" deny "$(guardb "git checkout main && git merge HEAD@{1}")"
+$G switch -q main; checkd "main の上で - で指す形も拒否する" deny "$(guardb "git merge -")"; $G switch -q feat/x
+checkd "（前提）main 以外に移ってからの merge は拒否しない" allow "$(guardb "git switch -c tmp-m main && git merge feat/x")"
 git init -q --bare "$TMP/pushed.git"; $G remote add pushed "$TMP/pushed.git"; $G push -q pushed HEAD:refs/heads/feat/x
 checkd "（前提）リモートに出た後は、push を止めない（ほかに残っていなければ）" allow "$(guardb "git push origin feat/x")"
 $G remote remove pushed
@@ -801,10 +905,52 @@ done
 # 環境を差し替えて git の hook を外す形（HOME・XDG_CONFIG_HOME の差し替え、env -i）は拒否する。読むだけの形は通す
 for c in "env -i PATH=/usr/bin git commit -m x" "HOME=/tmp/h git commit -m x" "XDG_CONFIG_HOME=/tmp/x git commit -m x" \
   "env - git commit -m x" "HOME=/x command git commit -m x" "XDG_CONFIG_HOME=/x nohup git commit -m x" \
-  "FOO=1 HOME=/tmp/h git commit -m x" "git config -c core.hooksPath= commit -m x" "git -c core.hooksPath= commit -m x"; do
+  "FOO=1 HOME=/tmp/h git commit -m x" "git config -c core.hooksPath= commit -m x" "git -c core.hooksPath= commit -m x" \
+  "export HOME=/tmp/h; git commit -m x" "HOME=/tmp/h bash -c 'git commit -m x'" "env -u HOME git commit -m x" "unset HOME; git commit -m x" \
+  "env -i git merge feat/x" "HOME=/tmp/h git -C r rebase main" "XDG_CONFIG_HOME=/x git cherry-pick abc" \
+  "HOME=/tmp/h git ci -m x" "XDG_CONFIG_HOME=/tmp/x git ci -m x" "git config alias.ci commit && HOME=/tmp/h git ci -m x" \
+  "HOME=/tmp/h git status-x -m x" 'HOME=/tmp/h git $(echo commit) -m x' 'HOME=/tmp/h git `echo commit` -m x' \
+  'XDG_CONFIG_HOME=/x git \"$(printf commit)\" -m x' 'HOME=/tmp/h git \"$c\" -m x' 'HOME=/tmp/h git ${c} -m x' \
+  "HOME=/tmp/h git {commit,-m,x}" "HOME=/tmp/h git -C r {commit,-m,x}" "XDG_CONFIG_HOME=/x git {merge,feat/y}" \
+  "HOME=/tmp/h git-commit -m x" "HOME=/tmp/h /opt/homebrew/opt/git/libexec/git-core/git-commit -m x" \
+  "XDG_CONFIG_HOME=/x /usr/lib/git-core/git-merge feat"; do
   checkd "拒否する: $c" deny "$(guardb "$c")"
 done
-for c in "git config core.hooksPath" "git config --global core.hooksPath" "GIT_CONFIG_NOSYSTEM=1 git status" "HOME=/tmp/h ls" "env -i ls"; do
+# --no-verify は検索の引数でも拒否する（検索だけの行の免除は、パス・PATH・ページャ・ヒアドキュメントで穴が開くので取り下げた。
+# ARK-51 AC32 の変更の承認。検索は rg -n 'no-verify' のように先頭の -- を付けずに書く）。コマンド置換・ブレース展開の形も拒否する
+for c in "rg -n -- '--no-verify' src/" "grep -- --no-verify f" "rg x <<EOF\\n\$(git commit --no-verify -m x)\\nEOF" \
+  "cat <<EOF\\n\$(git commit --no-verify -m x)\\nEOF" "wc <<EOF\\n\$(git commit -n -m x)\\nEOF" "cd . <<EOF\\n\`git commit -n -m x\`\\nEOF" \
+  "git commit -F - <<EOF\\nmsg \$(git commit -n -m y)\\nEOF" "cat <<E\\\"OF\\\"\\nfoo\\nEOF\\ngit commit --no-verify -m x" \
+  "cat <<'E'OF\\nfoo\\nEOF\\ngit commit -n -m x" "cat <<EOF\\n# note \$(git commit -n -m x)\\nEOF" \
+  "cat <<EOF\\nx #\`git commit -n -m x\`\\nEOF" "cat <<EOF\\n\`echo \\\\\`git commit -n -m x\\\\\`\`\\nEOF" \
+  "echo \`echo \\\\\`git commit -n -m x\\\\\`\`" "cat <<EOF\\n\$(echo \`echo \\\\\`git commit -n -m x\\\\\`\`)\\nEOF" \
+  "cat <<EOF\\n\`echo \\\\\`echo \\\\\\\\\\\\\`git commit -n -m x\\\\\\\\\\\\\`\\\\\`\`\\nEOF" \
+  "grep -o -- --no-verify f | xargs git commit -m x" "rg -o -- --no-verify f > args" "git commit \$(grep -o -- --no-verify f) -m x" \
+  "ag --pager='git commit --no-verify -F -' x f" "ack --pager='git commit --no-verify' x" "rg --pre sh -- --no-verify f" \
+  "ag --pag='git commit --no-verify -F -' x f" "ag --page 'git commit --no-verify' x f" "rg --pr=sh -- --no-verify f" \
+  "./rg commit --no-verify -m x" "/tmp/x/head commit --no-verify -m x" \
+  "grep -- --no-verify f && git commit --no-verify -m x" "git commit \\\"\$(cat <<'E'\\n-n\\nE\\n)\\\" -m x" \
+  "git commit -m \\\"\$(cat <<E\\n\$(git commit -n -m y)\\nE\\n)\\\"" "git commit \$(printf -- -n) -m x" "git commit -m x \$(echo LW4= | base64 -d)" \
+  "git commit -q -{n,m} y" "git {commit,-n,-m,x}" "git commit {-n,-m,x}" "git co{mmit,} -n -m x" \
+  "git commit -{n..n} -m x" "git commit -{n..m} x" "git commit -m x -{n..n}" "git commit -m x -{l..n..2}" \
+  "git commit {-n,-m{1..1}}" "git commit {-n,{1..1}} -m x" "git commit -nm1" "git commit -{n..n}m{1..300}" \
+  "git commit -m x {,-n}{,}{1..300}" "git commit -m '{x,-m}' -n" "git -C '{a,b}' commit -n -m x" \
+  "git commit -m '{x,-m}' -{n..n}" "git commit -m '{x,-m}' {-n,}" "git commit -m x -m '{y,-m}' {-n,}" \
+  "git commit -m '{x,--message}' {-n,}" 'git commit -m \\{x,-m\\} {-n,}' "git -c 'x.y={a,b}' commit {-n,} -m x" \
+  "git commit -m '{x,-m}' {-n,-m{1..1}}" "git commit -m -m -n" "git commit -m x -m -m -n" "git commit -m --message -n" \
+  "git commit --message -m -n" "git commit -m '-m' -n -a" "git commit -m x -m{,} {-n,}" "git commit {-m,-m} {-n,}" \
+  "git commit -m x {a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{-n,b}"; do
+  checkd "拒否する: $(printf '%s' "$c" | tr '\\' ' ')" deny "$(guardb "$c")"
+done
+for c in "git config core.hooksPath" "git config --global core.hooksPath" "GIT_CONFIG_NOSYSTEM=1 git status" "HOME=/tmp/h ls" "env -i ls" \
+  'HOME=$PWD/tmp-home git init' "HOME=/tmp/h git config --global user.name x" "HOME=/tmp/h git -C r status" \
+  "rg -n 'no-verify' src/" "grep -rn no-verify . | head -5" "cat > notes.txt <<EOF\\nrun git commit -n\\nbuilt \$(date)\\nEOF" \
+  'HOME=$PWD/tmp-home git clone https://github.com/x/git-foo' 'HOME=$PWD/tmp-home git init ~/src/my-git-tool' \
+  "git commit -m \\\"\$(cat <<'EOF'\\nstop using git commit -n\\nEOF\\n)\\\"" \
+  "gh pr create --title t --body \\\"\$(cat <<'EOF'\\nnever git commit --no-verify\\nEOF\\n)\\\"" \
+  'git commit -m \"use {n,m} quantifiers\"' "echo {a,b}" "cp src/{a,b}.py" "git commit -m x {1..a}" "echo {1..3}" \
+  'for i in {1..300}; do echo $i; done' 'git commit -m \"{1..300}\"' "touch file{001..300}.txt" "echo {a..z}{a..z}" \
+  "printf '%s\\\\n' {a..z}{0..9}"; do
   checkd "通す: $c" allow "$(guardb "$c")"
 done
 # 読むだけの形を通しても、設定する・消す形は拒否のまま
@@ -878,22 +1024,32 @@ for c in "cd ~/.config/git && grep -v hooksPath config > /tmp/c && mv /tmp/c con
   "grep -v hooksPath ~/.config/git/config | sponge ~/.config/git/config"; do
   checkd "拒否する: $c" deny "$(guardb "$c")"
 done
-# hook（~/.config/git/hooks・.git/hooks とその下、~/.local/bin/harness-hook、~/.local/libexec/uv）を消す・動かす・権限を変える・
-# 差し替える・書き換える形は拒否する。読むだけと、hook を元にした cp（写しを作る）は通す
+# hook（~/.config/git/hooks とその下、~/.local/bin/harness-hook、~/.local/libexec/uv）を消す・動かす・権限を変える・
+# 差し替える・書き換える形は拒否する。読むだけと、hook を元にした cp（写しを作る）は通す。プロジェクトの .git/hooks は、共通の
+# run-hook が関門を通した後に委譲する先なので、導入・書き換えを通す（関門は外れない）
 for c in "rm ~/.config/git/hooks/pre-commit" "rm -rf ~/.config/git/hooks" 'unlink $HOME/.config/git/hooks/run-hook' \
-  'shred -u ${XDG_CONFIG_HOME}/git/hooks/pre-commit' "truncate -s 0 ~/.local/bin/harness-hook" "rm .git/hooks/pre-commit" \
+  'shred -u ${XDG_CONFIG_HOME}/git/hooks/pre-commit' "truncate -s 0 ~/.local/bin/harness-hook" \
   "mv ~/.config/git/hooks /tmp/h" "mv /tmp/x ~/.config/git/hooks/pre-commit" "mv ~/.config/git ~/.config/git.bak" \
-  "chmod -x ~/.config/git/hooks/run-hook" "chmod 000 ~/.local/libexec/uv" "chattr +i .git/hooks/pre-commit" \
+  "chmod -x ~/.config/git/hooks/run-hook" "chmod 000 ~/.local/libexec/uv" \
   "chflags uchg ~/.config/git/hooks/pre-commit" "ln -sf /tmp/x ~/.config/git/hooks/pre-commit" "ln -s /tmp/x ~/.local/bin/harness-hook" \
-  "cp /tmp/x ~/.config/git/hooks/pre-commit" "install -m 755 /tmp/x .git/hooks/pre-commit" "cp -r /tmp/hooks ~/.config/git/" \
+  "cp /tmp/x ~/.config/git/hooks/pre-commit" "cp -r /tmp/hooks ~/.config/git/" \
   "echo 'exit 0' > ~/.config/git/hooks/pre-commit" "printf x >> ~/.local/bin/harness-hook" "echo x >~/.config/git/hooks/pre-commit" \
   "echo x | tee ~/.config/git/hooks/pre-commit" "sed -i '' 's/1/0/' ~/.config/git/hooks/run-hook" \
   "bash -c 'rm ~/.config/git/hooks/pre-commit'" "rm ~/.config/git/config" "mv ~/.gitconfig /tmp/"; do
   checkd "拒否する: $c" deny "$(guardb "$c")"
 done
+# 要件の写しとその版（git dir の harness-requirements）は requirements-save だけで書く。消す・動かす・上書きする形は拒否する
+for c in 'rm \"$(harness-hook requirements-path)\"' "rm -rf .git/harness-requirements" "echo AC1: x > .git/harness-requirements/feat_x.md" \
+  "mv .git/harness-requirements/feat_x.md.history /tmp/" 'rm -r \"$(harness-hook requirements-path).history\"'; do
+  checkd "拒否する: $c" deny "$(guardb "$c")"
+done
+for c in 'cat \"$(harness-hook requirements-path)\"' "ls .git/harness-requirements" 'harness-hook requirements-save < /tmp/req.md'; do
+  checkd "通す: $c" allow "$(guardb "$c")"
+done
 for c in "cat ~/.config/git/hooks/run-hook" "ls -l ~/.config/git/hooks" "grep -n exit ~/.config/git/hooks/run-hook" \
   "head ~/.local/bin/harness-hook" "file ~/.local/libexec/uv" "sh -n ~/.config/git/hooks/run-hook" "test -x .git/hooks/pre-commit" \
-  "cp ~/.config/git/hooks/run-hook /tmp/run-hook.copy" "cp -r .git /tmp/backup" "mv /tmp/f ~" "rm -rf /tmp/x" "chmod +x tests/x.sh"; do
+  "cp ~/.config/git/hooks/run-hook /tmp/run-hook.copy" "cp -r .git /tmp/backup" "mv /tmp/f ~" "rm -rf /tmp/x" "chmod +x tests/x.sh" \
+  "chmod +x .git/hooks/pre-commit" "cp scripts/pre-commit .git/hooks/pre-commit" "rm .git/hooks/pre-commit" "install -m 755 /tmp/x .git/hooks/pre-commit"; do
   checkd "通す: $c" allow "$(guardb "$c")"
 done
 for c in "sh -c \\\"git commit -m 'remove -n'\\\"" "bash -c 'git commit -m \\\"drop -n\\\"'" "eval 'git commit -m \\\"use -n\\\"'" \
