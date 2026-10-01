@@ -36,6 +36,7 @@ argument-hint: "[ARK-nn]"
 - Linear: 上の見出しでコメントする
 - CLAUDE.md: Edit で追記する（プロジェクトのものは別コミット。グローバルは提案まで）
 - README: 仕組みが変わったのに直っていなければ Edit で直す（CLAUDE.md と同じく別コミット）。コミットメッセージは直さない（書き写しもしない）
+- 変えるファイルがそのリポジトリの関門の対象（`.harness-code` に当たるもの。この dotfiles の CLAUDE.md・config/* など）なら、コードと同じく、写しを保存し直し（同じ依頼の続き）、/accept → /verify → /review を通してからコミットする（関門の対象でない文書だけなら、証拠なしでコミットできる）
 - tinymemory: remember の手順どおり `tinymemory save --type session --title "…"` と `--type fact` を quoted heredoc で実行する
 
 ## 4. 報告

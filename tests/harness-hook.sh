@@ -440,7 +440,10 @@ expect "保存した版はすべて .history に順に残る" sh -c '[ "$(ls "$1
 rm "$P"
 checkx "写しを消しても、.history の最後の版と比べる" 1 save_req 'AC1: a\n'
 write src/ac.py x; $G add -A; $G commit -q -m code
-checkx "コード変更のコミットの後（新しい依頼）は、条件が変わっても承認なしで保存する" 0 save_req 'AC9: new\n'
+checkx "コード変更のコミットの後（写しが古い）でも、条件を減らす版は承認の節が無ければ保存しない" 1 save_req 'AC9: new\n'
+if out=$(save_req 'AC9: new\n' 2>&1); then :; fi
+expect "（そのとき）理由に、新しい依頼なら --new を使うことが出る" has "$out" "requirements-save --new"
+checkx "新しい依頼は --new で、承認なしで保存する" 0 sh -c "printf 'AC9: new\n' | (cd '$REPO' && '$HOOK' requirements-save --new)"
 expect "（そのとき）前の依頼の版は .history.prev に移り、.history は新しい版から始まる" sh -c '[ -f "$1.history.prev/003.md" ] && [ "$(ls "$1.history")" = 001.md ]' _ "$P"
 $G switch -q feat/x
 # 承認済みの要件の写しが無い・空なら差し戻す。書き換えれば、検証・受け入れ・レビューの証拠はすべて無効になる
@@ -667,6 +670,18 @@ fresh; write src/app.py ug1; $G add -A; $G commit -q -m unguarded   # hook を�
 r=$(stop)
 check "このターンに pre-commit を通らずにコードをコミットしたら、Stop が差し戻す" block "$r"
 expect "理由に、そのコミットと戻し方（git reset --soft）が出る" sh -c "printf '%s' \"\$1\" | grep -q '$($G rev-parse --short HEAD)' && printf '%s' \"\$1\" | grep -q 'reset --soft'" _ "$r"
+expect "（そのとき）理由に、頼まれた revert・cherry-pick は --no-commit で行う手順が出る" has "$r" "--no-commit"
+# 差し戻しの後の続き（stop_hook_active）でも、関門を通っていないコミットの事後の確認をする。差し戻し済みのものだけなら通す
+write src/app.py ug1b; $G add -A; $G commit -q -m unguarded-again
+check "差し戻しの後の続きで、関門を通さずに作ったコミットも Stop が差し戻す" block "$(stop done true)"
+check "（同じく）差し戻し済みのコミットだけなら、続きの Stop は通す（止まらなくならない）" pass "$(stop done true)"
+checkd "（同じく）続きで作ったコミットも、push を拒否する" deny "$(guardb "git push origin feat/x")"
+$G reset -q --hard HEAD~2
+# 頼まれた revert は --no-commit で行い、証拠をそろえてから git commit する（CLAUDE.md の手順 7）。その形なら Stop は差し戻さない
+fresh; ready rv1; $G add -A; $GH commit -q -m to-revert; reqs; turn
+$G revert --no-commit HEAD >/dev/null 2>&1; bash_ "uv run pytest -q"; accept; review reviewer
+checkx "revert --no-commit の後、証拠をそろえれば git commit できる" 0 $GH commit -q -m revert
+check "（同じく）その revert のコミットで Stop は差し戻さない" pass "$(stop)"
 fresh; ready ug2; $G add -A; $GH commit -q -m gated
 check "pre-commit を通ったコミットでは差し戻さない" pass "$(stop)"
 # リポジトリ自身の pre-commit（lint-staged の整形など）が関門の後でインデックスを書き換えても、関門を通ったコミットとして扱う
@@ -783,6 +798,13 @@ checkd "（前提）証拠がそろえば、ヒアドキュメントの形の gi
 env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" add -A
 printf 'msg\n' | env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -F -; bash_ "$c"
 check "ヒアドキュメントの形でも、判定を通したコミットは Stop で差し戻さない" pass "$(stop)"
+# git 以外のコマンドを含む行（git add -A && git commit -m x && echo done）でも、コミットした内容が証拠と同じなら記録する
+turn; echo c4 > "$HUSKY/app.py"; reqs; bash_ "uv run pytest -q"; accept; review reviewer
+c="git add -A && git commit -q -m x && echo done"
+checkd "（前提）証拠がそろえば、git 以外を含む行の git commit も通す" allow "$(guardb "$c")"
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" add -A
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m x; bash_ "$c"
+check "git 以外を含む行でも、判定を通したコミットは Stop で差し戻さない" pass "$(stop)"
 # ただし記録するのは、コミットした内容が証拠の付いた内容と同じときだけ（ステージだけ違う内容・一部だけのコミットは記録しない）
 turn; echo BAD > "$HUSKY/app.py"; git -C "$HUSKY" add app.py; echo GOOD > "$HUSKY/app.py"; reqs; bash_ "uv run pytest -q"; accept; review reviewer
 checkd "（前提）作業ツリーには証拠があるので、判定は通す" allow "$(guardb "git commit -m sneaky")"

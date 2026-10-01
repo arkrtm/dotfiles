@@ -447,9 +447,10 @@ done
 # ---------- AC31・AC33・AC35: 文書 ----------
 grep -q 'timeout' "$D/config/claude/skills/verify/SKILL.md" && grep -q '600000' "$D/config/claude/skills/verify/SKILL.md" \
   || ng "AC31: /verify に、Bash の timeout（最大 600000 ミリ秒）を指定することが無い"
-lim="$(awk '/^- 限界/ { f = 1; next } f && /^- / { exit } f' "$D/README.md")"
-[ "$(printf '%s\n' "$lim" | grep -c '^  - ')" -ge 10 ] || ng "AC33: README の限界の節が項目ごとの箇条に分かれていない"
-[ "$(printf '%s\n' "$lim" | awk 'length($0) > 1200' | wc -l | tr -d ' ')" = 0 ] || ng "AC33: README の限界の節に長い段落（1200 字超）が残っている"
+# 限界の細目は ARK-51 の 4 回目（AC43）で docs/harness.md に移った。移した先が項目ごとの箇条に分かれているかを見る
+lim="$D/docs/harness.md"
+[ "$(grep -c '^ *- ' "$lim")" -ge 10 ] || ng "AC33: docs/harness.md の限界の細目が項目ごとの箇条に分かれていない"
+[ "$(awk 'length($0) > 1200' "$lim" | wc -l | tr -d ' ')" = 0 ] || ng "AC33: docs/harness.md に長い段落（1200 字超）が残っている"
 grep -q '常時読み込む' "$D/README.md" && grep -q '43,631' "$D/README.md" && grep -q '31,752' "$D/README.md" \
   || ng "AC33: README に計測し直した常時読み込みの量（43,631 と 31,752）が無い"
 grep -q '^| diagnosing-superpowers' "$D/README.md" || ng "AC33: superpowers との対応表に diagnosing-superpowers の行が無い"

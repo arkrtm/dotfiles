@@ -51,10 +51,11 @@ git から（core.hooksPath = ~/.config/git/hooks の pre-commit → run-hook）
 skill・手元から:
   harness-hook requirements-path  cwd のリポジトリの、承認済みの要件と受け入れ条件の写しの置き場所
                              （<git-dir>/harness-requirements/<ブランチ名>.md）を出す。ディレクトリは作り、ファイルは作らない
-  harness-hook requirements-save  標準入力をその写しとして保存し、パスを出す（.git の下は Write ツールでは書けないため。
-                             空の入力や、main/master の上では保存しない。同じ依頼の前の版にあった受け入れ条件の番号が無い版は、
-                             「## 変更の承認」の節が無ければ保存しない。版はすべて .history に残す）。保存した時の HEAD も記録し、
-                             その後にコード変更のコミットがあれば写しは古い（保存し直すまで証拠にならない）
+  harness-hook requirements-save [--new]  標準入力をその写しとして保存し、パスを出す（.git の下は Write ツールでは書けないため。
+                             空の入力や、main/master の上では保存しない。前の版にあった受け入れ条件の番号が無い版は、
+                             「## 変更の承認」の節が無ければ保存しない。--new（新しい依頼）なら比べず、前の依頼の版を .history.prev に移す。
+                             版はすべて .history に残す）。保存した時の HEAD も記録し、その後にコード変更のコミットがあれば写しは古い
+                             （保存し直すまで証拠にならない）
 
 文書・画像など（DOC_EXT の拡張子・DOC_NAME の名前）以外のファイルはすべて「コード」（関門の対象）。
 文書でも、リポジトリのトップの .harness-code（fnmatch のパターン）に当たればコード（.harness-code と .harness-verify 自体もコード）。
@@ -109,8 +110,6 @@ GATED_PATCH = "gated-patch"  # 関門を通ったコミットの patch-id（reba
 CREATED = re.compile(r"^(?:commit|cherry-pick|revert|am)\b|^(?:rebase|pull)\b.*\((?:pick|reword|edit|squash|fixup|continue)\): |Merge made by")
 # Stop が見つけた、関門を通っていないコミット（リポジトリ単位。push の前に見る）と、Bash の前の判定が通したコミットの実行待ち（セッション単位）
 UNGATED, GUARD_PENDING = "ungated", "guard-pending"
-# Bash の前の判定が通したコミットを記録してよいコマンドの git のサブコマンド（コミットの内容を変えないもの）
-SIMPLE_GIT = {"add", "commit", "status", "log", "diff", "show"}
 MERGE_VALUE_OPTS = {"-m", "-F", "-s", "-X", "--file", "--strategy", "--strategy-option", "--into-name", "--cleanup"}  # 値を取る git merge のオプション
 # テストとみなすパス（新しいテストの追加は関門の対象外にする。指紋には含める）: リポジトリのトップの tests/・test/・spec/・__tests__/ の下と、
 # テストの名前の規則（test_*.py、*_test.*・*.test.*・*.spec.*・*_spec.*。データ・設定の拡張子は除く。JVM・Swift・C#・PHP・Scala・Groovy の
@@ -846,21 +845,33 @@ def drift_note(top, key):
     return f"（前回の合格の報告は、報告の版の後に {drift} が変わっていたので記録しなかった → 変え終えてから、その内容でやり直す）"
 
 
+def unguarded_reason(session, top, only_new=False):
+    """このターンに関門を通らずに作られたコミットがあれば差し戻しの理由（無ければ None）。見つけたものは記録する（push と main への
+    merge を拒否する。次のターンでも）。only_new（差し戻しの後の続きの Stop）なら、このターンにまだ差し戻していないものだけで差し戻す"""
+    unguarded = unguarded_commits(session, top)
+    reported = (get(session, "reported") or "").split()
+    if not unguarded or (only_new and set(unguarded) <= set(reported)):
+        return None
+    d = tracked_state(top)
+    with locked(d):
+        put(d, UNGATED, "\n".join(dict.fromkeys(((get(d, UNGATED) or "").split() + unguarded)[-GATED_KEEP:])))
+    put(session, "reported", " ".join(dict.fromkeys(reported + unguarded)))
+    start = (get(session, "head") or "").strip()
+    undo = f"`git reset --soft {start[:12]}` で" if start else "最初のコミットを `git update-ref -d HEAD` で取り消して"
+    return (f"このターンのコミット {short(unguarded)} は、コミットの関門（pre-commit）を通っていない（git の hook が呼ばれなかった。"
+            "revert・cherry-pick・rebase・am、リポジトリ側の core.hooksPath、HOME・XDG_CONFIG_HOME の差し替えなど）。"
+            f"このままでは証拠を確かめていないコード変更がコミットに残る → {undo}変更をステージに戻し、/accept → /verify → /review を"
+            "通してからコミットし直す（作業ツリーの内容が証拠を取った内容と同じなら、既存の証拠のままコミットし直せる。証拠は内容で決まる）。"
+            "頼まれた revert・cherry-pick は `--no-commit` で行い、証拠をそろえてから git commit する。"
+            "戻せない（push 済みなど）なら、その旨をユーザーに報告して終える。")
+
+
 def gate_reason(session, top):
     """このターンに関門を通らないコミットがあったか、コードが変わって証拠が足りなければ差し戻しの理由。(理由 or None, ログの注記)"""
     try:
-        unguarded = unguarded_commits(session, top)
-        if unguarded:
-            d = tracked_state(top)  # push の前に見る（次のターンでも、リモートに無い間は push を拒否する）
-            with locked(d):
-                put(d, UNGATED, "\n".join(dict.fromkeys(((get(d, UNGATED) or "").split() + unguarded)[-GATED_KEEP:])))
-            start = (get(session, "head") or "").strip()
-            undo = f"`git reset --soft {start[:12]}` で" if start else "最初のコミットを `git update-ref -d HEAD` で取り消して"
-            return (f"このターンのコミット {short(unguarded)} は、コミットの関門（pre-commit）を通っていない（リポジトリ側の "
-                    "core.hooksPath、HOME・XDG_CONFIG_HOME の差し替え、rebase・cherry-pick などで git の hook が呼ばれなかった）。"
-                    f"証拠を確かめていないコード変更のコミットになっている → {undo}変更をステージに戻し、/accept → /verify → /review を"
-                    "通してからコミットし直す（作業ツリーの内容が証拠を取った内容と同じなら、既存の証拠のままコミットし直せる。証拠は内容で決まる）。"
-                    "戻せない（push 済みなど）なら、その旨をユーザーに報告して終える。"), f"unguarded={unguarded}"
+        reason = unguarded_reason(session, top)
+        if reason:
+            return reason, "unguarded"
         # このターンでコード・テストの未コミット変更が変わっていなければ何もしない（以前からの変更で差し戻さない）
         if get(session, "start") == tree_hash(top, working_scope(top)):
             return None, "unchanged"
@@ -1405,9 +1416,9 @@ def post_commit():
 def commit_guard(session, cwd, command):
     """Bash の git commit・git push の前（PreToolUse）の関門の判定。拒否の理由か None。
     commit: そのリポジトリでは共通の pre-commit が呼ばれない（リポジトリ側の core.hooksPath。husky など）なら、ここで作業ツリーの
-    変更の証拠を確かめる（git add は同じコマンドの中にありうるので、ステージではなく作業ツリーで見る）。通したコマンドが git の
-    SIMPLE_GIT（add・commit と読むだけのもの）だけなら、実行の後（PostToolUse の bash）にできたコミットを、内容が証拠と同じときだけ
-    関門を通ったものとして記録する（GUARD_PENDING・record_guarded）。
+    変更の証拠を確かめる（git add は同じコマンドの中にありうるので、ステージではなく作業ツリーで見る）。通したコマンドの実行の後
+    （PostToolUse の bash）にできたコミットは、内容が証拠と同じときだけ関門を通ったものとして記録する（GUARD_PENDING・record_guarded。
+    同じコマンドに git 以外があっても、内容で確かめるので記録してよい）。
     push: 関門を通っていないコード変更のコミット（このターンの unguarded_commits と、前のターンに Stop が見つけた UNGATED）が
     リモートに無いまま残っていれば拒否する。merge: main・master の上で（同じコマンド行で前に switch・checkout で移った先も見る）、
     取り込むブランチにそれがあれば拒否する（fast-forward も）"""
@@ -1416,8 +1427,6 @@ def commit_guard(session, cwd, command):
         commands = shell_commands(split_heredocs(command)[0])
     except (ValueError, IndexError):
         return None
-    simple = all(w and os.path.basename(w[0]) == "git" and git_parts(w)[2] < len(w) and w[git_parts(w)[2]] in SIMPLE_GIT
-                 for w in commands)
     cd = CD_TARGET.match(command.strip())
     base = os.path.join(cwd, os.path.expanduser((cd.group(1) or "~").strip().strip("'\""))) if cd else cwd
     switched = {}  # {top: 同じコマンド行で前に switch・checkout で移った先のブランチ}（merge の取り込み先）
@@ -1457,8 +1466,7 @@ def commit_guard(session, cwd, command):
             if changed and (missing or on_main):
                 return ("このリポジトリでは共通の pre-commit が呼ばれない（リポジトリ側の core.hooksPath）ので、コミットの前にここで"
                         "確かめた: " + reason_text(top, missing, on_main))
-            if simple:
-                put(session, GUARD_PENDING, f"{top}\t{head(top).strip()}")
+            put(session, GUARD_PENDING, f"{top}\t{head(top).strip()}")
     return None
 
 
@@ -1637,13 +1645,13 @@ def print_requirements_path():
     return 0
 
 
-def save_requirements():
+def save_requirements(new=False):
     """標準入力を、cwd のリポジトリの要件の写しとして保存し、パスを出す。.git の下は Claude Code の Write ツールでは
     書けない（保護される）ので、この口から書く。git 外か、入力が空なら何も書かずに exit 1（写しを空で上書きしない）。
     写しはブランチごとなので、main/master の上でも保存しない（ブランチを切った後に保存する）。
-    同じ依頼の前の版（.history の最後の版）にあった受け入れ条件の番号が無ければ、「## 変更の承認」の節（ユーザーの承認の引用）が
-    無いかぎり保存しない（条件を黙って減らさない）。保存した版はすべて写しの横の .history/<番号>.md に残す（reviewer が最初の版と比べる）。
-    前の写しが古い（その後にコード変更のコミットがある）なら新しい依頼とみなし、前の依頼の版は .history.prev に移す。
+    前の版（.history の最後の版。写しが古くなった後も）にあった受け入れ条件の番号が無ければ、「## 変更の承認」の節（ユーザーの承認の
+    引用）が無いかぎり保存しない（条件を黙って減らさない）。保存した版はすべて写しの横の .history/<番号>.md に残す（reviewer が
+    最初の版と比べる）。new（--new。新しい依頼）なら比べず、前の依頼の版は .history.prev に移す（reviewer が続きでないかを確かめる）。
     保存した時の HEAD を写しの横（.head）に書く（コミットの後は写しが古いとみなす。requirements_fresh）"""
     top = toplevel(os.getcwd())
     text = sys.stdin.read()
@@ -1659,12 +1667,13 @@ def save_requirements():
     history = path + ".history"
     versions = sorted(os.listdir(history)) if os.path.isdir(history) else []
     previous = read_bytes(os.path.join(history, versions[-1])) if versions else requirements(top)
-    if previous is not None and requirements_fresh(top):
+    if previous is not None and not new:
         removed = sorted(criteria_numbers(previous.decode("utf-8", "replace")) - criteria_numbers(text))
         if removed and not APPROVAL.search(text):
             sys.stderr.write(f"harness: 前の版にあった受け入れ条件 {', '.join(f'AC{n}' for n in removed)} が無いので保存しない。"
                              "条件を減らす・緩めるにはユーザーの承認が要る → 承認を得て、本文に「## 変更の承認」の節を書き、"
-                             "ユーザーの承認の言葉を引用してから保存し直す（条件を足すだけなら要らない）\n")
+                             "ユーザーの承認の言葉を引用してから保存し直す（条件を足すだけなら要らない）。"
+                             "前の依頼を終えて新しい依頼を始めるなら `harness-hook requirements-save --new`\n")
             return 1
     elif os.path.isdir(history):
         shutil.rmtree(history + ".prev", ignore_errors=True)
@@ -1708,6 +1717,7 @@ def handle(cmd, data):
         if top:  # ターンの開始時に既にある未ステージの手元の変更（写しの最初の保存が .baseline にする）
             put(repo_state(top), "turn-wip", "".join(f"{blob}\t{rel}\n" for rel, blob in unstaged_wip(top).items()))
         put(session, "head", head(top))
+        put(session, "reported", "")  # このターンに差し戻した、関門を通らないコミット（unguarded_reason）
         # このターンに作られたコミットを見分ける（unguarded_commits）: 開始の時刻と、HEAD とローカルブランチの先端
         put(session, "since", str(int(time.time())))
         put(session, "tips", " ".join(filter(None, [head(top).strip()] + ((git(top, "for-each-ref", "--format=%(objectname)", "refs/heads")
@@ -1786,7 +1796,15 @@ def handle(cmd, data):
             put(repo_state(top), key + "-drift")
     elif cmd == "stop":
         if data.get("stop_hook_active"):
-            log(cmd, data, "skip")
+            # 差し戻しの後の続き: 関門を通らないコミットの事後の確認だけをする（まだ差し戻していないものがあれば、もう一度差し戻す）
+            try:
+                reason = unguarded_reason(session, top, only_new=True) if top else None
+            except RuntimeError as e:
+                reason = None
+                log(cmd, data, f"active error={e}")
+            log(cmd, data, "active " + ("unguarded" if reason else "skip"))
+            if reason:
+                print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
             return
         reason, note = gate_reason(session, top) if top else (None, "no-repo")
         if not reason:  # 関門の差し戻しが先（remember の判定で例外になっても、関門の差し戻しは消えない）
@@ -1814,7 +1832,7 @@ if __name__ == "__main__":
     if cmd == "requirements-path":
         sys.exit(print_requirements_path())
     if cmd == "requirements-save":
-        sys.exit(save_requirements())
+        sys.exit(save_requirements(new="--new" in sys.argv[2:]))
     try:
         hook(cmd)
     except Exception:
