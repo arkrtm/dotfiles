@@ -78,7 +78,10 @@ SID="acc-$$"
 common() { printf '"session_id":"%s","cwd":"%s","transcript_path":"/dev/null"' "$SID" "$R"; }
 turn() { printf '{%s,"hook_event_name":"UserPromptSubmit","prompt":"x"}' "$(common)" | "$HOOK" turn; }
 verify() { printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"uv run pytest -q"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$(common)" | "$HOOK" bash; }
-sub() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "$2" | "$HOOK" review-done; }
+ver() { (cd "$R" && sh "$D/config/claude/skills/review/snapshot.sh" 2>/dev/null) || true; }   # 今の作業ツリー全体の版
+withver() { # withver <報告>: 版の行（した版: …）を今の版にする。無ければ先頭に足す（hook は報告の版が今の版のときだけ記録する。ARK-51）
+  case "$1" in *した版:*) printf '%s' "$1" | sed "s/した版: [0-9a-z]*/した版: $(ver)/" ;; *) printf 'レビューした版: %s\\n%s' "$(ver)" "$1" ;; esac; }
+sub() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "$(withver "$2")" | "$HOOK" review-done; }
 REV='## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 PASS='受け入れ検証した版: abc\n入力: サンプル\n## 条件ごとの結果\n- [AC1] 合格 — cmd → 500 行\n- [AC2] 合格 — cmd → 重複 0\n## 成果物のサンプル\n| id,name\n## 判定\n受け入れ: 合格'
 stop() { printf '{%s,"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"done"}' "$(common)" | "$HOOK" stop; }
@@ -91,7 +94,7 @@ LAST="$R/.git/harness-last-accept"
 change v1; verify; sub acceptor "$PASS"; sub reviewer "$REV"
 blocked && ng "AC5: 3 つそろっているのに Stop が差し戻した"
 $G add -A; commit_ok || ng "AC5: 3 つそろっているのに pre-commit が拒否した"
-[ "$(cat "$LAST" 2>/dev/null)" = "$(printf '%b' "$PASS")" ] || ng "AC4: harness-last-accept に報告がそのまま保存されていない"
+[ "$(cat "$LAST" 2>/dev/null)" = "$(printf '%b' "$(withver "$PASS")")" ] || ng "AC4: harness-last-accept に報告がそのまま保存されていない"
 
 # 受け入れだけが無い → Stop は /accept を理由に差し戻し、pre-commit も /accept を理由に拒否
 change v2; verify; sub reviewer "$REV"
@@ -113,7 +116,7 @@ rejects() { # rejects <説明> <acceptor の報告>
   n=$((n + 1)); change "r$n"; verify; sub reviewer "$REV"; sub acceptor "$2"; $G add -A
   blocked || ng "$1 なのに受け入れ済みになった（Stop が通した）"
   commit_ok && ng "$1 なのに受け入れ済みになった（pre-commit が通した）"
-  [ "$(cat "$LAST" 2>/dev/null)" = "$(printf '%b' "$2")" ] || ng "$1 の報告が harness-last-accept に保存されていない"
+  [ "$(cat "$LAST" 2>/dev/null)" = "$(printf '%b' "$(withver "$2")")" ] || ng "$1 の報告が harness-last-accept に保存されていない"
 }
 # 受け入れ済みにする報告（同じく、受け入れだけを差し替える）
 accepts() { # accepts <説明> <acceptor の報告>

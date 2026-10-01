@@ -133,7 +133,10 @@ run_ok() { # run_ok <command> [入力への追加 JSON]: Bash の成功
   printf '{%s%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"%s"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$(common)" "${2:-}" "$1" | "$HOOK" bash; }
 run_ng() { # run_ng <command> <error> [入力への追加 JSON]: Bash の失敗
   printf '{%s%s,"hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"%s"},"error":"%s","is_interrupt":false}' "$(common)" "${3:-}" "$1" "$2" | "$HOOK" bash-failed; }
-sub() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "$2" | "$HOOK" review-done; }
+ver() { (cd "$R" && sh "$D/config/claude/skills/review/snapshot.sh" 2>/dev/null) || true; }   # 今の作業ツリー全体の版
+withver() { # withver <報告>: 版の行（した版: …）を今の版にする。無ければ先頭に足す（hook は報告の版が今の版のときだけ記録する。ARK-51）
+  case "$1" in *した版:*) printf '%s' "$1" | sed "s/した版: [0-9a-z]*/した版: $(ver)/" ;; *) printf 'レビューした版: %s\\n%s' "$(ver)" "$1" ;; esac; }
+sub() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "$(withver "$2")" | "$HOOK" review-done; }
 REV='## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 ACC='## 条件ごとの結果\n- [AC1] 合格 — a → b\n## 判定\n受け入れ: 合格'
 acc() { sub acceptor "$ACC"; }; rev() { sub reviewer "$REV"; }

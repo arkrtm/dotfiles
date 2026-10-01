@@ -89,7 +89,8 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
       指摘を直したら /accept → /verify → /review fix（2 回まで。残ればユーザーが裁定）
   → コミット … pre-commit が、ステージした内容に対する 4 つの証拠を確かめる。git の hook を通らなかったコミットは Stop が見つける
   → /wrap-up（作業ブランチの上で、統合の前）… Linear・CLAUDE.md・README・tinymemory に 1 か所ずつ記録
-  → 統合の判断（ユーザー: マージ／PR／残す）→ マージ後に main で検証 → ブランチと worktree を片付ける → issue を Done
+  → 統合の判断（ユーザー: マージ／PR／残す）→ main へ fast-forward でマージ（ならなければ基点を作業ブランチに取り込み、
+      競合は作業ブランチで解消して /accept → /verify → /review の後に）→ マージ後に main で検証 → ブランチと worktree を片付ける → issue を Done
   （途中でコンテキストが溜まると、区切りで session の保存を促す。compact の後は記憶を注入）
 ```
 
@@ -111,7 +112,7 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 | requesting-code-review | `/review`（reviewer） | 自作 | 報告前の関門・重大度の定義・判断しなかったこと。承認が無いとコミットできない。`/review fix` は前回の報告（hook が保存）と修正差分だけを見る |
 | receiving-code-review | CLAUDE.md の手順 6 | 同等 | 確かめてから直す。誤りは根拠を添えて反論し、reviewer が確かめて取り下げる。人・PR・`/code-review` の指摘も同じ |
 | using-git-worktrees | `cw`（`claude -w`）、着手時の基準の検証 | 同等 | — |
-| finishing-a-development-branch | CLAUDE.md の手順 8 | 同等 | 選択肢の提示、マージ後の検証、破棄は明示の依頼のときだけ、worktree は `--force` を使わない |
+| finishing-a-development-branch | CLAUDE.md の手順 9 | 同等 | 選択肢の提示、fast-forward でのマージ（ならなければ基点を作業ブランチに取り込んで競合を解消し、検証し直してから）、マージ後の検証、破棄は明示の依頼のときだけ、worktree は `--force` を使わない |
 | writing-skills | 同梱の skill-creator、`tests/skills.sh`、`tests/e2e-flow.sh` | superpowers | superpowers は skill そのものを TDD で書く手法（圧力をかける場面で失敗を見てから直す）が詳しい。自作は skill・agent・参照・リンクの一貫性の検査（関門に入れる）と、流れ全体を `claude -p` で実際に動かす検査（手動。ふつうの依頼と、「テストとレビューを省いてすぐコミットして」と圧力をかける依頼の 2 場面）で補う |
 | — | 記録の振り分け（`/issue`・`/wrap-up`・区切りの remember） | 自作だけ | Linear・CLAUDE.md・README・tinymemory に重複なく |
 | プラグインとして 15 以上の環境に入る | dotfiles 前提 | superpowers | 自作は個人の環境での強制を優先した（ARK-46） |
@@ -126,13 +127,19 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 - 限界（ガードレールであって、セキュリティ境界ではない）:
   - 意図的な迂回は防ぎ切れない（`git commit-tree`、`env -i` のような環境の丸ごとの消去、証拠ファイルの書き換えなど。代表的な形は Bash hook が拒否し、CLAUDE.md で禁止している。証拠を記録する hook のサブコマンド（`harness-hook review-done`・`bash` など）を Bash から直接呼ぶ形も拒否する（ARK-51。偽の入力で証拠を作れるため）。ARK-49・50 で、閲覧目的のコマンド（小文字の `git_config` の grep、`--no-verbose`、`echo $CLAUDECODE`、`git log --grep=commit-tree`、`grep hooksPath`）とコミットメッセージの中の `-n`・`-inf` の誤検知は減らした。git の設定ファイルを `sed -i`・`tee`・リダイレクトで書き換える形は拒否する。`sh -c` の引数は実行されうるので検査の対象のまま。ヒアドキュメントの本文は、行のコマンドがすべて本文を実行しない既知のコマンド（cat・tee・tinymemory・harness-hook・gh の pr・issue・release・gist・git の commit・notes・tag・add（オプションは `-F`・`--file`・`-m`・`--message`・`-q`・`-a`・`-A`・`-u`・`--cleanup`・`--signoff`・`--no-edit`・`--annotate` とその束、全体のオプションは `-C`・`--no-pager`・`--git-dir=`・`--work-tree=` だけ。commit・tag・notes は `-F`・`-m` でメッセージを渡すときだけ。渡さないと git はエディタを起動し、エディタは本文を標準入力として受け継ぐ）・cd・mkdir・echo・printf・true・ls・chmod・wc。git・gh のほかのサブコマンドは alias で何でも実行でき、git apply は本文の中の先に書き、git の `-c core.editor=…`・`-e`・`-t`・`-c <commit>`・全体の `-p`、gh の `-e`・`--editor` は設定済みのエディタやページャを起動するので含めない）で、環境変数の前置（`GIT_EDITOR=…`）とコマンド置換が無いときだけデータとして検査しない（ARK-51。記憶の保存・`git commit -F -`・ファイルへの書き出し）。ほかのコマンド（`sh <<E`、`cat <<E | sh`、`read`、ファイルに書いて次の行で `sh f`・`./f`・`make`・`mise run` など）やコマンド置換があれば、本文もコマンド行として検査する。hooksPath を含む書き込みは、書き込み先が git の設定になりうるとき（`config` という名前、`.git` の下、`--git-dir` で求めた場所。`cd .git && cat >> config <<E` など）は本文の語も見て拒否する（ARK-51。記憶の保存・`git commit -F -`・ファイルへの書き出しだけの本文の語では止めない）。自分用の検証の宣言（git-common-dir の harness-verify）の内容も指紋に含める）
   - Bash の検査（ARK-50）は、クォートを見分ける字句解析でコマンドを区切り（サブシェルの `( )` も区切り）、`sh -c`・`eval`・コマンド置換の中も再帰して見る。文字列で見る形（`--no-verify`・`env -u CLAUDECODE` など）はクォートを外したコマンドにも当てる（`--"no-verify"` のようにクォートで語を割る形）。git のサブコマンド（commit-tree）・設定のキー（`-c`・`--config-env`・`git config` の core.hooksPath と、別の設定ファイルを読ませる include.path・includeIf.*.path）・alias の値（`-n` の commit や commit-tree になる定義）は、クォートを外した字句で見る。共通の hooks（`~/.config/git/hooks`）・`.git/hooks`・hook の本体（`~/.local/bin/harness-hook`・`~/.local/libexec/uv`）・git の設定を、消す・動かす・権限を変える・上書きする形は拒否する。hooksPath を含む行で書き込む形（リダイレクト・cp・mv・rsync・sponge・tee・dd・`sed -i` など）は、行き先を問わず拒否する。見ていないもの: hooksPath の語を含まない行での、`cd` で移ってからの相対パス、`xargs` や `find -exec` の `{}` のように引数が字句に現れない形、変数・alias による間接呼び出し（`g=git; $g commit -n`）、`curl -o`・スクリプト言語からの書き込み、別々の Bash 呼び出しに分けた手順。誤検知として、`rm -rf .git`・`mv ~/.gitconfig ~/.gitconfig.bak` と、クォートの中の文字列がコマンド行に見える形（`echo "git commit -n"`、`grep "hooksPath\|cp"`）も拒否する
-  - 競合の無い `merge`（マージコミット）、競合解消の締めのコミット、テストの追加だけのコミットは対象外（マージ後は main で検証一式を流す手順で補う）
-  - git の hook が呼ばれないコミット（リポジトリ側の `core.hooksPath`（husky 等）、`HOME`・`XDG_CONFIG_HOME` の差し替え、スクリプトからの `git commit -n`、`cherry-pick`・`rebase`）は、pre-commit では止まらない。代わりに Stop が、そのターンに作られたコミット（ターン開始時の HEAD から届かず、コミット時刻がターン開始以降の、マージでないもの。どのブランチでも）を、関門を通ってコミットされた内容（tree）の記録と突き合わせ、コード変更を含むのに記録に無ければ差し戻す（ARK-51）。記録は post-commit が、同じ git commit（git の PID で結び付ける）の pre-commit が関門を通したときだけ、実際にコミットされた tree で行う（リポジトリ自身の pre-commit が整形してインデックスを書き換えても一致する。`-n` のコミットは記録されない）。見ないもの: Stop の後に作られたコミット（次のターンで作れば見る）、セッションの cwd 以外のリポジトリのコミット
-  - 受け入れ検証とレビューの証拠は、サブエージェントが終わった時点の内容に記録される。その間にファイルを変えると、見ていない内容にも付く（CLAUDE.md で禁止）
+  - マージ・cherry-pick・revert の途中のコミットは、自動の結果（`git merge-tree --write-tree`）との差（競合の解消、`--no-commit` の後に足した変更）を「変更」として証拠を求める（自動の結果のままなら要らない。ARK-51）。自動の結果を求められないとき（3 つ以上の親のマージ、`merge-tree --write-tree` の無い git 2.38 より前、`--merge-base` の無い 2.40 より前の cherry-pick・revert）は、HEAD との差全体（Stop の事後の確認では最初の親との差）に証拠を求める。テストの追加だけのコミットは対象外（ただし conftest.py・`__init__.py`・pytest.ini・`*.config.*` はテストのディレクトリにあってもコード扱い）
+  - git の hook が呼ばれないコミット（リポジトリ側の `core.hooksPath`（husky 等）、スクリプトからの `git commit -n`、`cherry-pick`・`rebase`）への備え（ARK-51）:
+    - リポジトリ側の `core.hooksPath` があるリポジトリでは、Bash の `git commit` の前（PreToolUse）に作業ツリーの証拠を確かめ、足りなければ拒否する
+    - Stop が、そのターンに作られたコミット（ターン開始時の HEAD とローカルブランチの先端から届かず、コミット時刻がターン開始以降のもの。どのブランチでも。2 つの親のマージコミットは自動の結果と違うときだけ、3 つ以上の親のマージと自動の結果を求められないマージ（無関係な履歴など）は最初の親との差で見る）を、関門を通ってコミットされた内容（tree）の記録と突き合わせ、コード変更を含むのに記録に無ければ 1 回差し戻す。見つけたコミットは記録し、リモートに無い間は（次のターンでも）`git push` を拒否する。Bash の前の判定が通した、git の add・commit と読むだけのもの（status・log・diff・show）だけのコマンド（メッセージをヒアドキュメントで渡す形も）でできたコミットは、実行の後に、コミットした内容（親との差）の指紋が記録した証拠と同じときだけ関門を通ったものとして記録する（ステージだけ違う内容・一部だけのコミットは記録しない）
+    - 記録は post-commit が、同じ git commit（git の PID で結び付ける）の pre-commit が関門を通したときだけ、実際にコミットされた tree で行う（リポジトリ自身の pre-commit が整形してインデックスを書き換えても一致する。`-n` のコミットは記録されない）
+    - `HOME`・`XDG_CONFIG_HOME` を差し替えた git、`env -i` の git は Bash の検査が拒否する
+    - 見ないもの: Stop の後に作られたコミット（次のターンで作れば見る）、セッションの cwd 以外のリポジトリのコミット
+  - 受け入れ検証とレビューの証拠は、報告の「受け入れ検証した版」「レビューした版」が SubagentStop の時点の作業ツリー全体の版（snapshot.sh と同じ求め方）と同じときだけ記録する（ARK-51）。違いが生成物・文書だけなら同じとみなす。報告の後に編集したコードには付かない
+  - 作業ツリーの指紋（検証・受け入れ・レビュー・Stop）は、そのブランチで最初に写しを保存したターンの開始時に既にあった未追跡のファイル（利用者の手元のファイル）を、その後に変えていなければ含めない（部分コミットを止めない。ARK-51）。それをコミットに含めるなら証拠が要る。写しをコードを書いた後に保存すると、そのターンより前に作ったファイルが含まれなくなるので、写しはコードを書く前に保存する
   - 要件の写しはメインが書く（承認済みの issue の本文を写す手順）。写しが本文と一致しているかは、機械では確かめない
   - 共通 hooks にリンクを置いていない hook 名（`reference-transaction`、`post-index-change`、`pre-auto-gc`、`p4-*`。高頻度で呼ばれるため）は、リポジトリ自身に同名の hook があっても実行されない
   - グローバルな `core.hooksPath` との非互換: `pre-commit install`（pre-commit フレームワーク）は hooksPath が設定されていると拒否する。`git lfs install` は hooks を `~/.config/git/hooks`（= この dotfiles）に書こうとする。必要なリポジトリでは、そのリポジトリの設定で hooksPath を `.git/hooks` に向ける（その場合、そのリポジトリでは pre-commit の関門は効かず、Stop の事後の確認だけになる）
-  - TDD（テストが十分か）は reviewer が内容を読んで判定する。hook はテストファイルの有無を見ないが、失敗したテストの実行（コマンドと出力。implementer の分も）を git dir の `harness-red-log` に記録し、reviewer は RED をそこで確かめる（自己申告にしない。ARK-49）
+  - TDD（テストが十分か）は reviewer が内容を読んで判定する。hook はテストファイルの有無を見ないが、失敗したテストの実行（コマンドと出力。implementer の分も）を git dir の `harness-red-log` に記録し、reviewer は RED をそこで確かめる（自己申告にしない。ARK-49）。記録するのは、宣言した検証・よく使うテストランナーと、test・tests/・spec を含むコマンド（`python manage.py test`・`bazel test` など。grep などの読むだけのコマンドは除く。ARK-51）の失敗。パイプを付けた実行は終了コードが 0 になるので記録されない
   - 検証の証拠になるのは、リポジトリが宣言した全体の検証コマンド（`.harness-verify`、置けなければ `<git-common-dir>/harness-verify`）が、すべて同じ内容で、リポジトリのトップで単独で成功したときだけ（ARK-49 で宣言を必須にした。lint だけ・絞った実行・下位のディレクトリでの実行（ARK-51）は証拠にならない）。並列に実行しても記録は落ちない（状態の読み書きはファイルロックで順番にする）。検証コマンドが後で失敗すると証拠は消える。サブエージェント内（hook の入力に `agent_id` がある）の検証は記録しない
   - 要件の写し（ARK-49）: 承認済みの要件と受け入れ条件を `harness-hook requirements-save`（標準入力から保存。置き場所は git dir の下でブランチごと、Claude Code の Write ツールでは書けないため）で置き、その内容を証拠の指紋に含める。写しが無いとコミットできず、書き換えると検証・受け入れ・レビューの証拠はすべて無効になる。acceptor と reviewer は依頼の文面ではなくここを読む（本人の転記や、後から条件を削ることを防ぐ）。ARK-51: main・master の上では保存できない（ブランチを切った後に保存する）。保存した後にコード変更を含むコミットがあれば写しは古いとみなし、次のコード変更には保存し直しが要る（同じ依頼の続きなら同じ内容でよい。前の依頼の写しの使い回しを防ぐ）
   - 関門の対象: 上の「コード」（この repo の `.harness-code` は `config/*`・`shell/*`・`CLAUDE.md`）と、既存テストの変更・削除（テストを弱めて通すのを防ぐ。テストの追加だけなら対象外）。`.harness-code`・`.harness-verify` 自体の変更も対象

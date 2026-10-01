@@ -55,11 +55,19 @@ turn() { printf '{%s,"hook_event_name":"UserPromptSubmit","prompt":"x"}' "$(comm
 bash_() { # bash_ <command> [tool_input への追加 JSON] [interrupted]
   printf '{%s,"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"%s"%s},"tool_response":{"stdout":"","stderr":"","interrupted":%s}}' "$(common)" "$1" "${2:-}" "${3:-false}" | "$HOOK" bash; }
 OK3='## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'   # reviewer の出力（3 軸とも承認）。\n は JSON の改行
-OKA='受け入れ検証した版: 4b825dc\n## 条件ごとの結果\n- [AC1] 合格 — 確かめ方 → 観測値\n- [AC2] 合格 — 確かめ方 → 観測値\n## 判定\n受け入れ: 合格'   # acceptor の出力（条件と判定がすべて合格）
-review() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "${2-$OK3}" | "$HOOK" review-done; }
+OKA='## 条件ごとの結果\n- [AC1] 合格 — 確かめ方 → 観測値\n- [AC2] 合格 — 確かめ方 → 観測値\n## 判定\n受け入れ: 合格'   # acceptor の出力（条件と判定がすべて合格）
+SNAP="$DOTFILES/config/claude/skills/review/snapshot.sh"
+ver() { (cd "${CWD:-$REPO}" && sh "$SNAP" 2>/dev/null) || true; }   # 今の作業ツリー全体の版（reviewer・acceptor が報告の先頭に書くもの）
+versioned() { # versioned <agent_type> <報告>: 報告に版の行が無ければ今の版の行を先頭に足す（@VER@ は今の版に置き換える）
+  case "$2" in
+    *した版:*) printf '%s' "$2" | sed "s/@VER@/$(ver)/g" ;;
+    *) if [ "$1" = acceptor ]; then label=受け入れ検証した版; else label=レビューした版; fi; printf '%s: %s\\n%s' "$label" "$(ver)" "$2" ;;
+  esac; }
+raw_review() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"%s"}' "$(common)" "$1" "$2" | "$HOOK" review-done; }
+review() { raw_review "$1" "$(versioned "$1" "${2-$OK3}")"; }
 accept() { review acceptor "${1-$OKA}"; }
 review_handback() { # review_handback <報告> [agent_type（既定 reviewer）]。報告をツール呼び出し（SubagentHandback）で返す環境: 最後のテキストに判定文は無く、サブエージェントの記録にある
-  printf '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"SubagentHandback","input":{"message":"%s"}}]}}\n{"message":{"role":"assistant","content":[{"type":"text","text":"報告を返しました"}]}}\n' "$1" > "$TMP/agent.jsonl"
+  printf '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"SubagentHandback","input":{"message":"%s"}}]}}\n{"message":{"role":"assistant","content":[{"type":"text","text":"報告を返しました"}]}}\n' "$(versioned "${2:-reviewer}" "$1")" > "$TMP/agent.jsonl"
   printf '{%s,"hook_event_name":"SubagentStop","agent_type":"%s","last_assistant_message":"報告を返しました","agent_transcript_path":"%s"}' "$(common)" "${2:-reviewer}" "$TMP/agent.jsonl" | "$HOOK" review-done; }
 review_from() { printf '{%s,"hook_event_name":"SubagentStop","agent_type":"reviewer","last_assistant_message":"","agent_transcript_path":"%s"}' "$(common)" "$1" | "$HOOK" review-done; }  # 判定は記録からだけ読める
 log_count() { grep -c "$1" "$XDG_STATE_HOME/harness/log" || true; }
@@ -118,7 +126,7 @@ check "そのターンでドキュメントだけコミットしても（HEAD �
 if [ "$(id -u)" != 0 ]; then   # root は chmod 000 のファイルも読めるので、この検査は成り立たない
   fresh; write src/app.py c; write tests/test_app.py t; write src/locked.py x; chmod 000 "$REPO/src/locked.py"; bash_ "uv run pytest -q"; accept; review reviewer
   check "読めないファイルがあって指紋を作れないときは、証拠を記録せず差し戻す" block "$(stop)"
-  EXPECTED_ERRORS=$((EXPECTED_ERRORS + 3))   # 上の bash と 2 つの review-done は指紋を作れず例外で終わる（だから証拠が記録されない）
+  EXPECTED_ERRORS=$((EXPECTED_ERRORS + 1))   # 上の bash は指紋を作れず例外で終わる（2 つの review-done は版を求められないので、例外の前に記録しないで終わる）
   chmod 644 "$REPO/src/locked.py"
 fi
 
@@ -150,9 +158,9 @@ review reviewer '## 指摘\n- [軽] 将来は修正が必要かもしれない\n
 check "3 軸とも承認なら、指摘文に『修正が必要』の語があってもレビュー済みにする（箇条書き・強調も可）" pass "$(stop)"
 # /review fix（範囲限定の再レビュー）の出力形式。reviewer.md は根拠の行を軸名で始めることを禁じている（判定と読まれるため）
 write src/app.py code1n; bash_ "uv run pytest -q"; accept
-review reviewer 'レビューした版: 4b825dc\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- テスト: sh tests/x.sh 成功\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
+review reviewer 'レビューした版: @VER@\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- テスト: sh tests/x.sh 成功\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 check "根拠の行を軸名で始めると判定と読まれ、承認にならない" block "$(stop)"
-review reviewer 'レビューした版: 4b825dc\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- [R1-3] 直っていない — のちに修正が必要 src/app.py:9\n\n## 修正による新しい問題\n- [R2-1] [軽] [テスト] tests/test_app.py:12 — 名前が曖昧\n\n## ユーザー判断で見送り\n- [R1-3] 裁定: 対象外の環境なので見送り\n\n## 範囲外\n- src/other.py:5 — 修正が必要になりそうな箇所\n\n未解決: なし\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
+review reviewer 'レビューした版: @VER@\n\n## 指摘ごとの判定\n- [R1-2] 直った — 根拠 src/app.py:3\n- [R1-3] 直っていない — のちに修正が必要 src/app.py:9\n\n## 修正による新しい問題\n- [R2-1] [軽] [テスト] tests/test_app.py:12 — 名前が曖昧\n\n## ユーザー判断で見送り\n- [R1-3] 裁定: 対象外の環境なので見送り\n\n## 範囲外\n- src/other.py:5 — 修正が必要になりそうな箇所\n\n未解決: なし\n\n## 判定\n仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認'
 check "範囲限定の再レビューの出力形式（見送り・範囲外の節つき）は、3 軸とも承認なら承認として読む" pass "$(stop)"
 write src/app.py code1b; bash_ "uv run pytest -q"; accept
 check "（再編集後）レビューが無効になっている" block "$(stop)"
@@ -163,7 +171,7 @@ check "報告がハンドバック経由（最後のテキストに判定文が�
 write src/app.py code1c; bash_ "uv run pytest -q"; accept
 # 再開された reviewer: 前回は承認、今回の依頼の後は判定を出さずに終わった（想定外の形の行も混ぜる）
 resumed() { # resumed <新しい依頼の行（空なら入れない）>
-  { printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"text","text":"仕様適合: 承認\nテスト: 承認\n品質・保守性: 承認"}]}}'
+  { printf '{"message":{"role":"assistant","content":[{"type":"text","text":"レビューした版: %s\\n仕様適合: 承認\\nテスト: 承認\\n品質・保守性: 承認"}]}}\n' "$(ver)"
     [ -z "$1" ] || printf '%s\n' "$1"
     printf '%s\n' '{"message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"x"}}]}}' \
       '{"message":{"role":"user","content":[{"type":"tool_result","content":"x"}]}}' \
@@ -192,7 +200,24 @@ check "再検証・再受け入れ・再レビューすれば通す" pass "$(sto
 review reviewer '仕様適合: 修正が必要\nテスト: 承認\n品質・保守性: 承認'
 expect "review-done は reviewer の報告を .git/harness-last-review に保存する（不承認でも）" grep -q "仕様適合: 修正が必要" "$REPO/.git/harness-last-review"
 review reviewer
-expect "次の review-done で上書きされる" [ "$(cat "$REPO/.git/harness-last-review")" = "$(printf "$OK3")" ]
+expect "次の review-done で上書きされる" [ "$(cat "$REPO/.git/harness-last-review")" = "$(printf "$(versioned reviewer "$OK3")")" ]
+# 証拠は、報告の版（レビューした版・受け入れ検証した版）が SubagentStop の時点の作業ツリー全体の版と一致するときだけ記録する
+# （レビュー・受け入れ検証の後に編集した内容には付かない）
+fresh; write src/app.py vm1; bash_ "uv run pytest -q"; accept; old=$(ver); write src/app.py vm2; bash_ "uv run pytest -q"; accept
+review reviewer "レビューした版: $old\n$OK3"
+check "レビューの後に編集した内容には、承認を記録しない（報告の版が今の版と違う）" block "$(stop)"
+expect "そのとき review-done のログに版の食い違いが残る" grep -q "review-done .*version-mismatch" "$XDG_STATE_HOME/harness/log"
+raw_review reviewer "$OK3"
+check "報告に版の行が無ければ、承認を記録しない" block "$(stop)"
+review reviewer
+check "（前提）今の版の報告なら記録する" pass "$(stop)"
+# 報告の版と今の版の差が、証拠に関わらないファイル（テスト実行の生成物・文書）だけなら同じとみなす
+old=$(ver); write src/app.py vm4; bash_ "uv run pytest -q"; accept; old=$(ver)
+mkdir -p "$REPO/src/__pycache__"; echo bin > "$REPO/src/__pycache__/app.cpython-311.pyc"; write README.md "notes after review"
+review reviewer "レビューした版: $old\n$OK3"
+check "報告の後に生成物と文書だけが増えても、承認を記録する" pass "$(stop)"
+old=$(ver); write src/app.py vm3; bash_ "uv run pytest -q"; review reviewer; accept "受け入れ検証した版: $old\n$OKA"
+check "受け入れ検証の後に編集した内容にも、合格を記録しない" block "$(stop | grep /accept)"
 
 # 受け入れ（acceptor の報告）: 条件の行「[AC<n>] <状態>」と判定行「受け入れ: <値>」がそれぞれ 1 行以上あり、すべて「合格」のときだけ受け入れ済み
 fresh; write src/app.py ac1; write tests/test_app.py ac1; bash_ "uv run pytest -q"; review reviewer
@@ -203,13 +228,13 @@ expect "同じ内容をステージすると、pre-commit も /accept を理由�
 review acceptor
 check "reviewer の報告の形で acceptor が終わっても受け入れ済みにしない" block "$(stop)"
 C='## 条件ごとの結果\n'   # 条件の行は、この節の中だけを読む
-accept "受け入れ検証した版: 4b825dc\n$C- [AC1] 合格 — x → y\n## 判定\n受け入れ: 不合格"
+accept "受け入れ検証した版: @VER@\n$C- [AC1] 合格 — x → y\n## 判定\n受け入れ: 不合格"
 check "判定行が『不合格』なら受け入れ済みにしない" block "$(stop)"
 accept "$C- [AC1] 合格 — x → y\n- [AC2] 不合格 — 期待 / 実際\n受け入れ: 合格"
 check "判定行が合格でも、条件の行に『不合格』があれば受け入れ済みにしない" block "$(stop)"
 accept "$C- [AC1] 合格 — x → y\n- [AC2] 未確認 — 理由\n受け入れ: 合格"
 check "判定行が合格でも、条件の行に『未確認』があれば受け入れ済みにしない" block "$(stop)"
-accept "受け入れ検証した版: 4b825dc\n$C- [AC1] 合格 — x → y"
+accept "受け入れ検証した版: @VER@\n$C- [AC1] 合格 — x → y"
 check "判定行が無ければ受け入れ済みにしない（『受け入れ検証した版:』は判定行ではない）" block "$(stop)"
 accept "$C## 判定\n受け入れ: 合格"
 check "条件の行が無ければ受け入れ済みにしない" block "$(stop)"
@@ -225,7 +250,7 @@ expect "review-done は acceptor の報告を .git/harness-last-accept に保存
 review_handback "$OKA" acceptor
 check "報告がハンドバック経由でも、記録から判定を読んで受け入れ済みにする" pass "$(stop)"
 expect "review-done は受け入れの可否を 1 行でログに残す" grep -q "review-done .*accepted=True" "$XDG_STATE_HOME/harness/log"
-expect "harness-last-accept は次の報告で上書きされる" [ "$(cat "$REPO/.git/harness-last-accept")" = "$(printf "$OKA")" ]
+expect "harness-last-accept は次の報告で上書きされる" [ "$(cat "$REPO/.git/harness-last-accept")" = "$(printf "$(versioned acceptor "$OKA")")" ]
 $G add -A
 checkx "検証・受け入れ・レビューがそろった内容をステージすればコミットできる" 0 precommit
 write src/app.py ac2; bash_ "uv run pytest -q"; review reviewer
@@ -327,6 +352,18 @@ for c in "deno test" "mocha" "npx mocha" "playwright test" "npx playwright test"
   bash_fail "$c 2>&1 | tail -3" "red: $c"
   expect "テストランナーの失敗も RED として記録する: $c" grep -qx "  red: $c" "$RED"
 done
+# テストを走らせるコマンド（test・tests/・spec を含む）の失敗も記録する。ただし「検証済み」は消さない。読むだけのコマンドの失敗は記録しない
+for c in "python manage.py test" "bin/rails test" "xcodebuild test -scheme App" "bazel test //..." "node tests/x.test.js" \
+  "uv run python tests/x.py" "stack test"; do
+  bash_fail "$c" "red: $c"
+  expect "テストを走らせるコマンドの失敗も RED として記録する: $c" grep -qx "  red: $c" "$RED"
+done
+for c in "grep -rn test src" "find tests -name x" "git log -- tests"; do
+  bash_fail "$c" "noise: $c"
+  expect "読むだけのコマンドの失敗は記録しない: $c" sh -c "! grep -qx '  noise: $c' '$RED'"
+done
+fresh; write src/app.py red2; bash_ "uv run pytest -q"; accept; review reviewer; bash_fail "python manage.py test" "x"
+check "宣言に無いテストのコマンドの失敗では、検証済みは消えない" pass "$(stop)"
 
 # 宣言した検証コマンド（リポジトリのトップの .harness-verify）: 書かれたコマンドがすべて同じ内容で成功したときだけ検証済み
 fresh; printf '# 宣言した検証コマンド\nsh tests/run.sh\n\n./ci.sh\n' > "$REPO/.harness-verify"; write src/app.py hv1; accept; review reviewer
@@ -397,6 +434,22 @@ checkx "同じく、ステージ済みの内容でも pre-commit は拒否する
 reqs
 check "要件を元に戻せば、以前の証拠が有効（指紋は内容で決まる）" pass "$(stop)"
 checkx "同じく、コミットできる（要件の写しは、作業ツリーとインデックスで同じ指紋に入る）" 0 precommit
+# そのブランチで最初に写しを保存したターンの開始時に既にあった未追跡のファイル（利用者の手元のファイル）は、変えていなければ
+# 作業ツリーの指紋から除く（部分コミットを止めない）。コミットに含めるなら証拠が要る
+$G switch -q -c feat/bl main; write scratch.py mine; turn; reqs
+write src/app.py bl1; write tests/test_app.py bl1; bash_ "uv run pytest -q"; accept; review reviewer
+check "前からあった未追跡のコードがあっても、証拠をそろえた変更は通す" pass "$(stop)"
+$G add src/app.py tests/test_app.py
+checkx "（同じく）前からあったファイルを除いた部分コミットができる" 0 precommit
+$G add scratch.py
+checkx "前からあったファイルをコミットに含めるなら、証拠が要る" 1 precommit
+$G reset -q scratch.py; reqs
+check "写しを保存し直しても、前からあったファイルは除いたまま（最初の保存の時点で決まる）" pass "$(stop)"
+write scratch.py changed
+check "前からあったファイルでも、その後に変えたら証拠が要る" block "$(stop)"
+write scratch.py mine; $G add -A; bash_ "uv run pytest -q"; accept; review reviewer
+checkx "前からあったファイルも、ステージして証拠をそろえればコミットできる" 0 precommit
+rm "$REPO/scratch.py"; $G reset -q --hard; $G switch -q feat/x
 # 写しは、保存した後に HEAD が進んだら（コミット等）古い。次のコード変更には保存し直しが要る（同じ依頼の続きなら同じ内容でよい）
 fresh; ready st1; $G add -A; $GH commit -q -m st1
 write src/app.py st2; write tests/test_app.py st2; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
@@ -431,6 +484,11 @@ $G add -A
 checkx "同じく、既存のテストの削除をステージしたコミットにも証拠が要る" 1 precommit
 fresh; write tests/test_added.py t; $G add -A
 checkx "新しいテストの追加だけなら、コミットに証拠は要らない" 0 precommit
+# テストの集め方を変えうるファイル（conftest.py・__init__.py・*.config.*・pytest.ini）は、テストのディレクトリにあっても追加に証拠が要る
+for f in tests/conftest.py tests/sub/__init__.py tests/jest.config.js tests/pytest.ini; do
+  fresh; write "$f" x; $G add -A
+  checkx "テストのディレクトリの $f の追加にも、コミットに証拠が要る" 1 precommit
+done
 
 # 設定ファイル・ビルド定義もコード
 for f in pyproject.toml package.json compose.yaml .github/workflows/ci.yml tox.ini setup.cfg src/m.mts src/m.cts run.bash \
@@ -486,10 +544,9 @@ checkx "証拠なしの pre-commit は失敗する" 1 precommit
 checkx "人の手動コミット（CLAUDECODE なし）は対象外" 0 env -u CLAUDECODE sh -c "cd '$REPO' && '$HOOK' pre-commit"
 for ref in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
   $G rev-parse HEAD > "$REPO/.git/$ref"
-  checkx "競合解消の締めのコミット（$ref あり）は対象外" 0 precommit
+  checkx "マージ・cherry-pick・revert の途中（$ref あり）でも、自動の結果と違うコードの変更には証拠が要る" 1 precommit
   rm "$REPO/.git/$ref"
 done
-checkx "（前提）上の ref が無ければ失敗する" 1 precommit
 OTHER="$TMP/other"; git init -q -b feat "$OTHER"; echo c > "$OTHER/app.py"; git -C "$OTHER" add -A
 checkx "Claude が作業していないリポジトリ（テストが作る一時リポジトリ等）は対象外" 0 sh -c "cd '$OTHER' && '$HOOK' pre-commit"
 OUTSIDE="$TMP/outside"; git init -q -b feat "$OUTSIDE"; echo c > "$OUTSIDE/app.py"; git -C "$OUTSIDE" add -A; mkdir -p "$TMP/elsewhere"
@@ -577,6 +634,29 @@ fresh; write src/app.py ug5; $G add -A; $GH commit -q -n -m skipped   # -n で p
 check "pre-commit を飛ばしたコミットは、post-commit が呼ばれても関門を通ったことにならない" block "$(stop)"
 write src/app.py ug3; $G add -A; $G commit -q -m before; turn
 check "ターンより前のコミットでは差し戻さない" pass "$(stop)"
+# マージの途中のコミット: 自動の結果（git merge-tree）との差（競合の解消・--no-commit の後に足したもの）だけに証拠を求める
+side() { # side <ブランチ名> <パス> <内容>: feat/x から分かれたブランチに 1 コミット作って feat/x に戻る（ターンの前に）
+  $G switch -q -c "$1"; write "$2" "$3"; $G add -A; $G commit -q -m "$1"; $G switch -q feat/x; }
+fresh; side m1 src/side1.py s1; turn
+$G merge -q --no-commit --no-ff m1 >/dev/null 2>&1; write src/evil.py e; $G add -A
+checkx "マージの途中に足したコードは、証拠なしではコミットできない" 1 precommit
+check "そのまま Stop しても差し戻す" block "$(stop)"
+$G rm -q --cached src/evil.py; rm "$REPO/src/evil.py"
+checkx "自動のマージの結果のままなら、証拠は要らない" 0 precommit
+check "（同じく）Stop も通す" pass "$(stop)"
+$G commit -q -m "merge m1"
+fresh; side m2 src/side2.py s2; turn
+$G merge -q --no-commit --no-ff m2 >/dev/null 2>&1; write src/evil2.py e; $G add -A; $G commit -q -m "merge m2 with extra"   # 関門を通らないマージコミット
+check "自動の結果と違うマージコミットを関門を通らずに作れば、Stop が差し戻す" block "$(stop)"
+fresh; side m3 src/side3.py s3; turn; $G merge -q --no-ff -m "merge m3" m3
+check "自動の結果のままのマージコミットでは、Stop は差し戻さない" pass "$(stop)"
+# 競合の解消: 解消した内容に証拠を求める（取り込む側の変更全体には求めない）
+fresh; side m4 src/lib.py theirs; write src/lib.py ours; $G add -A; $G commit -q -m ours; reqs; turn
+$G merge -q m4 >/dev/null 2>&1 || true; write src/lib.py resolved; $G add -A
+checkx "競合を解消した内容は、証拠なしではコミットできない" 1 precommit
+bash_ "uv run pytest -q"; accept; review reviewer
+checkx "解消した内容に証拠をそろえればコミットできる" 0 precommit
+$G commit -q -m "merge m4"
 # 実際の git で: リポジトリ側の core.hooksPath（husky 等）があると、共通 hooks の pre-commit は呼ばれない
 HUSKY="$TMP/husky"; git init -q -b main "$HUSKY"; echo 'uv run pytest -q' > "$HUSKY/.harness-verify"
 git -C "$HUSKY" add -A; git -C "$HUSKY" -c user.name=t -c user.email=t@t commit -q -m init; git -C "$HUSKY" switch -q -c feat/h
@@ -586,7 +666,61 @@ checkx "（前提）リポジトリ側の設定が無ければ、共通 hooks �
 mkdir -p "$HUSKY/.husky"; git -C "$HUSKY" config core.hooksPath .husky
 checkx "（前提）リポジトリ側の core.hooksPath があると pre-commit は呼ばれず、証拠なしでコミットできてしまう" 0 env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m nohook
 check "その証拠なしのコミットを、Stop が差し戻す" block "$(stop)"
+git -C "$HUSKY" reset -q --soft HEAD~1   # 差し戻しの手順どおりに戻す（以下はそのコミットが無い状態で）
+# 共通の pre-commit が呼ばれないリポジトリでは、Bash の git commit の前（PreToolUse）に関門の判定をする
+turn; echo c2 > "$HUSKY/app.py"
+checkd "リポジトリ側の core.hooksPath があれば、証拠なしの git commit は Bash の前に拒否する" deny "$(guardb "git add -A && git commit -m x")"
+expect "理由に、足りない証拠が出る" has "$(guardb "git commit -am x")" "/accept"
+CWD="$TMP"; checkd "git -C で指しても同じ" deny "$(guardb "git -C $HUSKY commit -am x")"; CWD="$HUSKY"
+reqs; mkdir -p "$HUSKY/tests"; bash_ "uv run pytest -q"; accept; review reviewer
+checkd "証拠がそろえば、git commit を通す" allow "$(guardb "git add -A && git commit -m x")"
+# 判定を通したコミット（git add と git commit だけのコマンド）は、実行の後に関門を通ったコミットとして記録する
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" add -A
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m judged
+bash_ "git add -A && git commit -m x"
+check "判定を通したコミットは、Stop で関門を通っていないとみなさない" pass "$(stop)"
+checkd "（同じく）push も拒否しない" allow "$(guardb "git push origin feat/h")"
+# メッセージをヒアドキュメントで渡す形・読むだけの git を挟んだ形でも、判定を通したコミットとして記録する
+turn; echo c3 > "$HUSKY/app.py"; reqs; bash_ "uv run pytest -q"; accept; review reviewer
+c="git add -A && git status && git commit -q -F - <<'EOF'\\nmsg\\nEOF"
+checkd "（前提）証拠がそろえば、ヒアドキュメントの形の git commit も通す" allow "$(guardb "$c")"
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" add -A
+printf 'msg\n' | env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -F -; bash_ "$c"
+check "ヒアドキュメントの形でも、判定を通したコミットは Stop で差し戻さない" pass "$(stop)"
+# ただし記録するのは、コミットした内容が証拠の付いた内容と同じときだけ（ステージだけ違う内容・一部だけのコミットは記録しない）
+turn; echo BAD > "$HUSKY/app.py"; git -C "$HUSKY" add app.py; echo GOOD > "$HUSKY/app.py"; reqs; bash_ "uv run pytest -q"; accept; review reviewer
+checkd "（前提）作業ツリーには証拠があるので、判定は通す" allow "$(guardb "git commit -m sneaky")"
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m sneaky; bash_ "git commit -m sneaky"
+git -C "$HUSKY" checkout -q -- app.py   # 作業ツリーをコミットした内容にそろえる（事後の確認だけで判断させる）
+r=$(stop)
+check "証拠の付いた内容と違うものをコミットしたら、Stop が差し戻す" block "$r"
+expect "（そのとき）理由は、関門を通っていないコミット" has "$r" "関門（pre-commit）を通っていない"
+git -C "$HUSKY" reset -q --hard HEAD~1
 CWD=""
+checkd "（前提）リポジトリ側の設定が無ければ、Bash の前には判定しない（pre-commit が判定する）" allow "$(guardb "git commit -m x")"
+# git push の前: このターンに作った、関門を通っていないコード変更のコミットがあれば拒否する
+fresh; write src/app.py p1; $G add -A; $G commit -q -m ungated
+checkd "このターンに関門を通っていないコミットがあれば、git push を拒否する" deny "$(guardb "git push origin feat/x")"
+stop >/dev/null; turn
+checkd "前のターンに Stop が見つけた、関門を通っていないコミットも、リモートに無ければ push を拒否する" deny "$(guardb "git push origin feat/x")"
+$G switch -q main
+checkd "別のブランチに移っても、ローカルのブランチに残っていれば push を拒否する" deny "$(guardb "git push origin feat/x")"
+$G switch -q feat/x
+git init -q --bare "$TMP/pushed.git"; $G remote add pushed "$TMP/pushed.git"; $G push -q pushed HEAD:refs/heads/feat/x
+checkd "（前提）リモートに出た後は、push を止めない（ほかに残っていなければ）" allow "$(guardb "git push origin feat/x")"
+$G remote remove pushed
+# 自動の結果を求められないマージ（無関係な履歴。merge-tree が失敗する）に足したコードも、関門を通らなければ Stop が差し戻す
+fresh; $G switch -q --orphan un1; write src/un.py u; $G add src/un.py; $G commit -q -m un1; $G switch -q feat/x; turn
+$G merge -q --no-commit --allow-unrelated-histories un1 >/dev/null 2>&1; write src/extra.py e; $G add -A; $G commit -q -m "merge unrelated"
+r=$(stop)
+check "自動の結果を求められないマージに足したコードを関門を通らずにコミットすれば、Stop が差し戻す" block "$r"
+expect "（そのとき）理由は、関門を通っていないコミット" has "$r" "関門（pre-commit）を通っていない"
+$G reset -q --hard HEAD~1
+# 3 つ以上の親のマージ: 手を加えたもの（--no-commit の後に足したもの）は、関門を通らなければ Stop が差し戻す
+fresh; side o1 src/o1.py a; side o2 src/o2.py b; turn
+$G merge -q --no-ff --no-commit o1 o2 >/dev/null 2>&1; write src/octo.py y; $G add -A; $G commit -q -m octopus
+expect "（前提）3 つの親のマージコミットができている" [ "$($G rev-list --parents -n 1 HEAD | wc -w | tr -d ' ')" = 4 ]
+check "手を加えた 3 つの親のマージコミットを関門を通らずに作れば、Stop が差し戻す" block "$(stop)"
 
 # ---- リポジトリ自身の hook への委譲（run-hook）----
 fresh; write README.md d1; $G add -A
@@ -662,6 +796,15 @@ for c in "harness-hook review-done <<'E'\\n{}\\nE" "~/.local/bin/harness-hook ba
 done
 for c in "harness-hook requirements-path" "harness-hook requirements-save < /tmp/req.md" "cat bin/harness-hook" "grep -n review-done bin/harness-hook" \
   "echo harness-hook review-done" "grep -n harness-hook stop.md"; do
+  checkd "通す: $c" allow "$(guardb "$c")"
+done
+# 環境を差し替えて git の hook を外す形（HOME・XDG_CONFIG_HOME の差し替え、env -i）は拒否する。読むだけの形は通す
+for c in "env -i PATH=/usr/bin git commit -m x" "HOME=/tmp/h git commit -m x" "XDG_CONFIG_HOME=/tmp/x git commit -m x" \
+  "env - git commit -m x" "HOME=/x command git commit -m x" "XDG_CONFIG_HOME=/x nohup git commit -m x" \
+  "FOO=1 HOME=/tmp/h git commit -m x" "git config -c core.hooksPath= commit -m x" "git -c core.hooksPath= commit -m x"; do
+  checkd "拒否する: $c" deny "$(guardb "$c")"
+done
+for c in "git config core.hooksPath" "git config --global core.hooksPath" "GIT_CONFIG_NOSYSTEM=1 git status" "HOME=/tmp/h ls" "env -i ls"; do
   checkd "通す: $c" allow "$(guardb "$c")"
 done
 # 読むだけの形を通しても、設定する・消す形は拒否のまま
