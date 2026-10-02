@@ -333,6 +333,8 @@ bash_fail "uv run pytest -q 2>&1 | tail -3"
 check "同じ内容で検証コマンドが失敗すれば（パイプ付きの形でも）、検証済みが消えて差し戻す" block "$(stop)"
 $G add -A
 checkx "同じく、pre-commit も失敗する" 1 precommit
+fresh; ready vf2; bash_fail "uv run ruff check src/app.py" 'E1 x' ',"agent_id":"r1","agent_type":"reviewer"'
+check "サブエージェント内の検証コマンドの失敗では、メインの検証済みは消えない（RED として記録するだけ）" pass "$(stop)"
 
 # 検証コマンドの失敗は、出力の先頭 15 行を <git-dir>/harness-red-log に残す（RED を観測できるように。サブエージェント内も）
 RED="$REPO/.git/harness-red-log"
@@ -410,6 +412,10 @@ expect "requirements-path は、cwd のリポジトリの要件の写しの置�
 expect "置き場所のディレクトリは作る" [ -d "$(cd "$REPO" && pwd -P)/.git/harness-requirements" ]
 $G switch -q --detach; P="$(cd "$REPO" && "$HOOK" requirements-path)"; $G switch -q feat/x
 expect "detached HEAD では HEAD.md" [ "$P" = "$(cd "$REPO" && pwd -P)/.git/harness-requirements/HEAD.md" ]
+$G switch -q --detach main
+checkd "main の先端の detached HEAD でも、編集を拒否する" deny "$(guarde "$REPO/src/app.py")"
+checkx "（同じく）写しの保存も拒否する" 1 sh -c "printf 'AC1: x\n' | (cd '$REPO' && '$HOOK' requirements-save)"
+$G switch -q feat/x
 expect "ファイルは作らない" [ ! -e "$P" ]
 # .git の下は Claude Code の Write ツールでは書けない（保護される）ので、標準入力から保存する口を持つ
 rm -rf "$REQ" "$REQ.history"
@@ -449,7 +455,9 @@ $G switch -q feat/x
 # 承認済みの要件の写しが無い・空なら差し戻す。書き換えれば、検証・受け入れ・レビューの証拠はすべて無効になる
 fresh; rm "$REQ"; write src/app.py rq1; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
 check "要件の写しが無ければ、ほかの証拠がそろっていても差し戻す" block "$r"
-expect "理由に、要件の写しの保存のしかた・場所と /issue が含まれる" [ -n "$(printf '%s' "$r" | grep -F "承認済みの要件と受け入れ条件の写しを \`harness-hook requirements-save\` に標準入力で渡して保存する（場所: $REQ。S は依頼の原文と受け入れ条件 1 行）→ /issue")" ]
+expect "理由に、要件の写しの保存のしかた・場所が含まれる" [ -n "$(printf '%s' "$r" | grep -F "承認済みの要件と受け入れ条件の写しを \`harness-hook requirements-save\` に標準入力で渡して保存する（場所: $REQ。S は依頼の原文と受け入れ条件 1 行。")" ]
+expect "（同じく）/issue が含まれる" has "$r" "→ /issue"
+expect "（そのとき）理由に、ブランチ名を変えたら保存し直すことが出る" has "$r" "ブランチ名を変えたなら保存し直す"
 expect "（前提）足りないのは要件と、その受け入れ条件の番号だけ（/verify・/review は理由に無い。受け入れは写しの番号と突き合わせる）" [ -z "$(printf '%s' "$r" | grep -e /verify -e /review)" ]
 $G add -A
 checkx "同じく、pre-commit も拒否する" 1 precommit
@@ -463,6 +471,17 @@ checkx "同じく、ステージ済みの内容でも pre-commit は拒否する
 reqs
 check "要件を元に戻せば、以前の証拠が有効（指紋は内容で決まる）" pass "$(stop)"
 checkx "同じく、コミットできる（要件の写しは、作業ツリーとインデックスで同じ指紋に入る）" 0 precommit
+# 証拠の指紋は土台（HEAD）のコードの内容も含む: 証拠を取った後に土台が変われば（stash → rebase → stash pop など）証拠は無効。
+# 文書だけのコミットでは無効にならない
+fresh; ready base1; $G stash -q -u; write README.md "docs only"; $G add -A; $G commit -q -m docs; $G stash pop -q >/dev/null; turn; $G add -A
+checkx "土台に文書だけのコミットが入っても、証拠は有効なまま（コミットできる）" 0 precommit
+$G reset -q; $G stash -q -u; write src/lib.py "base changed"; $G add -A; $G commit -q -m base-code; $G stash pop -q >/dev/null; reqs; turn; $G add -A
+r=$(cd "$REPO" && "$HOOK" pre-commit 2>&1 || true)
+expect "土台のコードが変わったら、同じ変更でも証拠を取り直すまで pre-commit が拒否する" has "$r" "コミットできない"
+expect "（そのとき）足りないのは検証・受け入れ・レビュー" sh -c 'printf "%s" "$1" | grep -q /verify && printf "%s" "$1" | grep -q /accept && printf "%s" "$1" | grep -q /review' _ "$r"
+bash_ "uv run pytest -q"; accept; review reviewer
+checkx "新しい土台で証拠を取り直せば、コミットできる" 0 precommit
+$G reset -q
 # そのブランチで最初に写しを保存したターンの開始時に既にあった未追跡のファイル（利用者の手元のファイル）は、変えていなければ
 # 作業ツリーの指紋から除く（部分コミットを止めない）。コミットに含めるなら証拠が要る
 $G switch -q -c feat/bl main; write scratch.py mine; turn; reqs
@@ -489,11 +508,22 @@ checkx "（同じく）WIP を除いた部分コミットができる" 0 precomm
 $G add src/lib.py
 checkx "WIP をコミットに含めるなら、証拠が要る" 1 precommit
 $G reset -q --hard; $G switch -q feat/x
+# 写しを保存した後でも、ターンとターンの間に変わった未ステージの変更（利用者の編集）は、変えずに未ステージのままなら指紋から除く
+$G switch -q -c feat/wip2 main; turn; reqs; write src/app.py wq1; write tests/test_app.py wq1; stop done true >/dev/null
+write src/lib.py "user edit between turns"; turn
+bash_ "uv run pytest -q"; accept; review reviewer
+check "ターンの間の利用者の編集があっても、証拠をそろえた変更は通す" pass "$(stop)"
+$G add src/app.py tests/test_app.py
+checkx "（同じく）利用者の編集を除いた部分コミットができる" 0 precommit
+$G add src/lib.py
+checkx "（同じく）利用者の編集をコミットに含めるなら、証拠が要る" 1 precommit
+$G reset -q --hard; $G switch -q feat/x
 # 写しは、保存した後に HEAD が進んだら（コミット等）古い。次のコード変更には保存し直しが要る（同じ依頼の続きなら同じ内容でよい）
 fresh; ready st1; $G add -A; $GH commit -q -m st1
 write src/app.py st2; write tests/test_app.py st2; bash_ "uv run pytest -q"; accept; review reviewer; r=$(stop)
 check "保存した後にコミットがあった写しは古いので、ほかの証拠がそろっていても差し戻す" block "$r"
 expect "理由に、写しを保存し直すことが出る" has "$r" "保存し直す"
+expect "（そのとき）理由に、新しい依頼なら --new で保存することが出る" has "$r" "requirements-save --new"
 $G add -A
 checkx "（同じく）pre-commit も拒否する" 1 precommit
 reqs
@@ -708,6 +738,25 @@ r=$(stop)
 check "patch が違えば（付け替えの後に手を加えた）、Stop が差し戻す" block "$r"
 expect "（そのとき）理由に、内容が証拠と同じなら既存の証拠のままコミットし直せることが出る" has "$r" "既存の証拠のままコミットし直せる"
 $G reset -q --hard; $G switch -q feat/x; $G branch -qD rb/x rb/y
+# 競合を解消した rebase の後の差し戻しは、戻し方の先を新しい土台（関門を通っていないコミットのうちいちばん古いものの親）にする
+$G switch -q -c rb/c main; reqs; turn; write src/lib.py "branch side"; ready rbc; $G add -A; $GH commit -q -m gated-rbc
+$G switch -q main; write src/lib.py "main side"; $G add -A; $G commit -q -m "main changes lib"; $G switch -q rb/c; turn
+$G rebase main >/dev/null 2>&1 || true; write src/lib.py "resolved"; $G add -A; GIT_EDITOR=true $G rebase --continue >/dev/null 2>&1
+r=$(stop)
+check "（前提）競合を解消した rebase の後は、Stop が差し戻す" block "$r"
+expect "（そのとき）戻し方は新しい土台（main の先端）への reset --soft" has "$r" "reset --soft $($G rev-parse main | cut -c1-12)"
+$G reset -q --hard main; $G switch -q feat/x; $G branch -qD rb/c
+# rebase の途中（競合で止まり、HEAD が main の先端に detached している）は、main とみなさない（作業ブランチの上で競合を解消する）
+$G switch -q -c rb/d main; write src/lib.py "branch side d"; $G add -A; $G commit -q -m d1
+$G switch -q main; write src/lib.py "main side d"; $G add -A; $G commit -q -m "main changes lib d"; $G switch -q rb/d
+$G rebase main >/dev/null 2>&1 || true
+expect "（前提）rebase が競合で止まり、HEAD は main の先端に detached している" [ "$($G rev-parse HEAD)" = "$($G rev-parse main)" ]
+checkd "rebase の途中は、競合を解消する編集を拒否しない" allow "$(guarde "$REPO/src/lib.py")"
+$G rebase --abort; $G switch -q feat/x; $G branch -qD rb/d
+# コミット時刻を過去にずらしたコミットも、このリポジトリで作った記録（reflog）があれば見つける
+fresh; write src/app.py olddate; $G add -A; GIT_COMMITTER_DATE="2000-01-01T00:00:00" $G commit -q -m old-date
+check "コミット時刻を過去にずらした、関門を通っていないコミットも、Stop が差し戻す" block "$(stop)"
+$G reset -q --hard HEAD~1
 # pull --rebase: ターンの途中に別の人がリモートに push したコミット（fetch で取り込んだもの）は、このターンのコミットとみなさない
 git init -q --bare "$TMP/rb.git"; $G remote add rbo "$TMP/rb.git"; $G push -q rbo main; git clone -q -b main "$TMP/rb.git" "$TMP/rb-clone"
 $G switch -q -c rb/z main; reqs; turn; ready rbz; $G add -A; $GH commit -q -m gated-rbz
@@ -745,6 +794,27 @@ fresh; ready am2; $G add -A; $GH commit -q -m gated-amend; turn; write README.md
 check "関門を通ったコミットに文書を足す --amend では、Stop は差し戻さない" pass "$(stop)"
 turn; reqs; ready am3; $G add -A; $GH commit -q --amend --no-edit
 check "関門を通ったコミットに、証拠をそろえたコードを足す --amend でも、Stop は差し戻さない" pass "$(stop)"
+# main・master への取り込みは、取り込む先端が関門を通ってコミットされた内容のときだけ（土台が変わった後は検証し直す）
+$G reset -q --hard; $G clean -qfd; $G switch -q -c m5/x main; reqs; turn; ready m5a; $G add -A; $GH commit -q -m gated-m5
+checkd "（前提）関門を通った先端は、main に fast-forward で取り込める" allow "$(guardb "git switch main && git merge --ff-only m5/x")"
+$G switch -q main; write README.md "main moved m5"; $G add -A; $G commit -q -m "main moves"; $G switch -q m5/x; turn
+$G rebase -q main >/dev/null 2>&1
+r=$(guardb "git switch main && git merge --ff-only m5/x")
+checkd "rebase で土台が変わった先端（関門を通っていない内容）は、main に取り込まない" deny "$r"
+expect "（そのとき）理由に、reset --soft でまとめて検証し直す手順が出る" has "$r" "reset --soft"
+checkd "（同じく）main の上での reset・rebase、branch -f・update-ref で main を動かす形も拒否する" deny "$(guardb "git switch main && git reset --hard m5/x")"
+checkd "（同じく）rebase" deny "$(guardb "git switch main && git rebase m5/x")"
+checkd "（同じく）branch -f" deny "$(guardb "git branch -f main m5/x")"
+checkd "（同じく）update-ref" deny "$(guardb "git update-ref refs/heads/main m5/x")"
+checkd "（同じく）branch -C（コピーで main を置き換える）" deny "$(guardb "git branch -C m5/x main")"
+checkd "（同じく）branch -M（改名で main を置き換える）" deny "$(guardb "git branch -M m5/x main")"
+checkd "（同じく）push .（ローカルへの push で main を動かす）" deny "$(guardb "git push . m5/x:main")"
+checkd "main の古いコミットへ戻す reset は拒否しない" allow "$(guardb "git switch main && git reset --hard HEAD~1")"
+$G reset -q --soft main; reqs; turn; bash_ "uv run pytest -q"; accept; review reviewer; $GH commit -q -m gated-on-new-base
+checkd "reset --soft でまとめて検証し直してコミットした先端は、取り込める" allow "$(guardb "git switch main && git merge --ff-only m5/x")"
+$G switch -q main; write README.md "main moves again m5"; $G add -A; $G commit -q -m "main moves again"
+checkd "fast-forward にならない merge（main が先に進んでいる）は、先端が関門を通っていても拒否する" deny "$(guardb "git merge m5/x")"
+$G switch -q feat/x; $G branch -qD m5/x
 # マージの途中のコミット: 自動の結果（git merge-tree）との差（競合の解消・--no-commit の後に足したもの）だけに証拠を求める
 side() { # side <ブランチ名> <パス> <内容>: feat/x から分かれたブランチに 1 コミット作って feat/x に戻る（ターンの前に）
   $G switch -q -c "$1"; write "$2" "$3"; $G add -A; $G commit -q -m "$1"; $G switch -q feat/x; }
@@ -805,6 +875,12 @@ checkd "（前提）証拠がそろえば、git 以外を含む行の git commit
 env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" add -A
 env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m x; bash_ "$c"
 check "git 以外を含む行でも、判定を通したコミットは Stop で差し戻さない" pass "$(stop)"
+# 証拠の要らないコミット（文書だけ。/wrap-up など）も、判定を通したら記録する（その先端を main に取り込める）
+turn; echo "notes" > "$HUSKY/NOTES.md"; c="git add -A && git commit -q -m docs"
+checkd "（前提）文書だけの git commit は通す" allow "$(guardb "$c")"
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" add -A
+env GIT_CONFIG_GLOBAL="$TMP/global.gitconfig" git -C "$HUSKY" commit -q -m docs; bash_ "$c"
+checkd "文書だけのコミットを先端にしたブランチも、main に fast-forward で取り込める" allow "$(guardb "git switch main && git merge --ff-only feat/h")"
 # ただし記録するのは、コミットした内容が証拠の付いた内容と同じときだけ（ステージだけ違う内容・一部だけのコミットは記録しない）
 turn; echo BAD > "$HUSKY/app.py"; git -C "$HUSKY" add app.py; echo GOOD > "$HUSKY/app.py"; reqs; bash_ "uv run pytest -q"; accept; review reviewer
 checkd "（前提）作業ツリーには証拠があるので、判定は通す" allow "$(guardb "git commit -m sneaky")"

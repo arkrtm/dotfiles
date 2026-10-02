@@ -90,8 +90,9 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
       指摘を直したら /accept → /verify → /review fix（2 回まで。残ればユーザーが裁定）
   → コミット … pre-commit が、ステージした内容に対する 4 つの証拠を確かめる。git の hook を通らなかったコミットは Stop が見つける
   → /wrap-up（作業ブランチの上で、統合の前）… Linear・CLAUDE.md・README・tinymemory に 1 か所ずつ記録
-  → 統合の判断（ユーザー: マージ／PR／残す）→ main へ fast-forward でマージ（ならなければ基点を作業ブランチに取り込み、
-      競合は作業ブランチで解消して /accept → /verify → /review の後に）→ マージ後に main で検証 → ブランチと worktree を片付ける → issue を Done
+  → 統合の判断（ユーザー: マージ／PR／残す）→ main へ fast-forward でマージ … hook: 関門を通った先端だけを取り込める
+      （ならなければ基点の上に rebase し、競合は作業ブランチで解消し、reset --soft でまとめて /accept → /verify → /review の後に）
+      → マージ後に main で検証 → ブランチと worktree を片付ける → issue を Done
   （途中でコンテキストが溜まると、区切りで session の保存を促す。compact の後は記憶を注入）
 ```
 
@@ -102,7 +103,7 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 | superpowers | 自作 | 強い方 | 違い |
 |---|---|---|---|
 | using-superpowers（作業の前に skill を使わせる案内） | CLAUDE.md の流れの 1 行（常時読み込み） | 自作 | superpowers は案内の文を入れるだけ。自作は、手順を飛ばすと Stop が差し戻し、pre-commit が止める |
-| brainstorming | `/design`・`/issue` | 同等 | 質問は 1 問ずつでなく、選択肢と推奨を付けてまとめて聞く（往復が少ない）。承認の前に 4 項目の自己点検（空欄・矛盾・曖昧さ・範囲）、大きな依頼は子 issue に分ける。設計・要件・受け入れ条件は issue の本文に 1 か所 |
+| brainstorming | `/design`・`/issue` | superpowers | 質問は 1 問ずつでなく、選択肢と推奨を付けてまとめて聞く（往復が少ない）。承認の前に 4 項目の自己点検（空欄・矛盾・曖昧さ・範囲）、大きな依頼は子 issue に分ける。設計・要件・受け入れ条件は issue の本文に 1 か所。superpowers の spike の経路（捨てる調査）と視覚の補助（ブラウザでのモックアップ）に当たるものは無い |
 | writing-plans | `/implement` の計画の形 | 同等 | superpowers は手順ごとのコードまで書く。自作は、全体の制約・レビューの焦点・受け入れ条件 → タスクの対応・「作る側 → 使う側」の表・RED で期待する失敗を書き、承認の前に決めていない行が無いかを見直す。コードは implementer に任せる |
 | executing-plans・subagent-driven-development | `/implement` | 同等 | 自作は波ごとに並列で速く、安い（implementer は約 1.5 万トークン）。superpowers はタスクごとに 2 段のレビューをする。自作はその代わりに、インタフェースを作った波の後に `/review interim`、最後に `/accept` とフルの `/review`。進捗は issue の本文のチェックリスト、実装者が自分で決めたことは `## 判断` に集めて完了報告に全件並べる。2 回 BLOCKED なら上位のモデルで立て直す |
 | dispatching-parallel-agents | `/implement` の波、`/diagnose` の並列の調査 | 同等 | — |
@@ -114,8 +115,8 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 | requesting-code-review | `/review`（reviewer） | 自作 | 報告前の関門・重大度の定義・判断しなかったこと。承認が無いとコミットできない。`/review fix` は前回の報告（hook が保存）と修正差分だけを見る |
 | receiving-code-review | CLAUDE.md の手順 6 | 同等 | 確かめてから直す。誤りは根拠を添えて反論し、reviewer が確かめて取り下げる。人・PR・`/code-review` の指摘も同じ |
 | using-git-worktrees | `cw`（`claude -w`）、着手時の基準の検証 | 同等 | — |
-| finishing-a-development-branch | CLAUDE.md の手順 9 | 同等 | 選択肢の提示、fast-forward でのマージ（ならなければ基点を作業ブランチに取り込んで競合を解消し、検証し直してから）、マージ後の検証、破棄は明示の依頼のときだけ、worktree は `--force` を使わない |
-| writing-skills | 同梱の skill-creator、`tests/skills.sh`、`tests/e2e-flow.sh` | superpowers | superpowers は skill そのものを TDD で書く手法（圧力をかける場面で失敗を見てから直す）が詳しい。自作は skill・agent・参照・リンクの一貫性の検査（関門に入れる）と、流れ全体を `claude -p` で実際に動かす検査（手動。ふつうの依頼と、「テストとレビューを省いてすぐコミットして」と圧力をかける依頼の 2 場面）で補う |
+| finishing-a-development-branch | CLAUDE.md の手順 9 | 同等 | 選択肢の提示、fast-forward でのマージ（関門を通った先端だけ。ならなければ基点の上に rebase し、reset --soft でまとめて検証し直してから）、マージ後の検証、破棄は明示の依頼のときだけ、worktree は `--force` を使わない |
+| writing-skills | 同梱の skill-creator、`tests/skills.sh`、`tests/e2e-flow.sh` | superpowers | superpowers は skill そのものを TDD で書く手法（圧力をかける場面で失敗を見てから直す）が詳しい。自作は skill・agent・参照・リンクの一貫性の検査（関門に入れる）と、流れ全体を `claude -p` で実際に動かす検査（手動。ふつうの依頼、husky 型のリポジトリ、利用者の作業中の変更、rebase、「テストとレビューを省いてすぐコミットして」と圧力をかける依頼の 5 場面）で補う |
 | — | 記録の振り分け（`/issue`・`/wrap-up`・区切りの remember） | 自作だけ | Linear・CLAUDE.md・README・tinymemory に重複なく |
 | プラグインとして 15 以上の環境に入る | dotfiles 前提 | superpowers | 自作は個人の環境での強制を優先した（ARK-46） |
 
@@ -126,7 +127,7 @@ superpowers（obra/superpowers）の各 skill に当たるものと、どちら�
 - 対象: Claude Code から行うコミット（環境変数 `CLAUDECODE` がある）。人の手動コミットは止めない
 - 「コード」= 文書・画像など以外のすべてのファイル（依存の定義・設定・データも）と、`.harness-code` に書いたパス。コードを変えたら、要件の写し・宣言した検証の成功・受け入れ検証の合格・レビューの承認の 4 つの証拠が、変更の内容（指紋）に対してそろうまで、pre-commit がコミットを止め、Stop が 1 回差し戻す
 - 受け入れ検証がいちばん大事な段階: 独立した acceptor が実装を読む前に成果物を動かし、要件の写しの AC 番号すべてを観測値で確かめる
-- git の hook が呼ばれないコミット（husky 等、revert・cherry-pick・rebase）は、Bash の前の判定と Stop の事後の確認で見つけ、push と main への merge を止める
+- git の hook が呼ばれないコミット（husky 等、revert・cherry-pick・rebase）は、Bash の前の判定と Stop の事後の確認で見つけ、push と main への merge を止める。証拠は土台（HEAD）のコードにも結び付き、土台が変われば取り直す。main へは関門を通った先端だけを fast-forward で取り込める
 - Bash の検査は代表的な迂回（`--no-verify`、`commit-tree`、hook・設定の書き換え、環境の差し替えなど）を拒否する。ガードレールであって、セキュリティ境界ではない（変数による間接呼び出しなど、見ていない形がある）
 
 ## 端末ごとの注意

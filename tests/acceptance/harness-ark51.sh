@@ -497,7 +497,8 @@ commits "$R" -m t || ng "AC21: テストの追加だけのコミットが止ま�
 # ---------- AC19・AC22・AC23・AC24: 文書 ----------
 step9="$(awk '/^9\. \*\*統合\*\*/ { f = 1 } f && /^$/ { exit } f' "$D/$C/CLAUDE.md")"
 case "$step9" in *--ff-only*) ;; *) ng "AC19: CLAUDE.md の統合の手順に fast-forward（--ff-only）が無い" ;; esac
-case "$step9" in *'git merge <基点>'*作業ブランチの上*) ;; *) ng "AC19: CLAUDE.md の統合の手順に、基点を作業ブランチに取り込み、作業ブランチの上で競合を解消する手順が無い" ;; esac
+# ARK-51 AC45（ユーザーが「関門で強制する」を選んだ）で、基点の取り込みは rebase と reset --soft でまとめて検証し直す手順に変えた
+case "$step9" in *'git rebase <基点>'*作業ブランチの上*'git reset --soft <基点>'*) ;; *) ng "AC19: CLAUDE.md の統合の手順に、基点の上に載せ直し（作業ブランチの上で競合を解消し）、reset --soft でまとめて検証し直す手順が無い" ;; esac
 grep -Eq 'fast-forward|ff-only' "$D/README.md" || ng "AC19: README に、統合で fast-forward にならないときの手順が無い"
 red="$(awk '/^1\. \*\*RED\*\*/ { f = 1; next } f && /^[0-9]+\. / { exit } f' "$D/$C/skills/tdd/SKILL.md")"
 case "$red" in *パイプ*記録*) ;; *) ng "AC22: /tdd の RED に、パイプを付けると失敗が記録されないことが無い" ;; esac

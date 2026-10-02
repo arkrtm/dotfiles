@@ -1,7 +1,7 @@
 #!/bin/sh
 # ハーネスの一貫性の検査: skill・agent の frontmatter、文中のスラッシュコマンド、install.sh の LINKS、
 # settings.json の SubagentStop の matcher と bin/harness-hook の agent 名の定数、流れの段の順序（CLAUDE.md の流れの 1 行・
-# 手順の番号・README の流れの図）が食い違っていないこと
+# 手順の番号・README の流れの図）、README に書いた e2e の場面の数（tests/e2e-flow.sh）が食い違っていないこと
 #   sh tests/skills.sh [-v] [<リポジトリのトップ>]   既定はこのリポジトリ。失敗した項目と要約 1 行だけを出す（-v で通った項目も）
 # 検査そのものの否定のテスト（一時ディレクトリに写して 1 か所ずつ壊し、FAIL が出ること）も毎回走る
 set -eu
@@ -80,6 +80,9 @@ EOF
   diagram=$(awk '/^### 流れの全体図/ { f = 1; next } f && /^```/ { n++; if (n == 2) exit; next } f && n == 1' "$1/README.md")
   expect "README の流れの図の段の順序" \
     in_order "$diagram" '→ ブランチ' '→ 要件の写しを固定' '→ /accept' '→ /verify' '→ /review' '→ コミット' '→ /wrap-up' '→ 統合'
+  # README に書いた e2e の場面の数が、tests/e2e-flow.sh の場面（使い方の行の [a|b|…]）の数と一致すること
+  scenes=$(sed -n 's/^#   sh tests\/e2e-flow.sh .*\[\([a-z|]*\)\].*/\1/p' "$1/tests/e2e-flow.sh" | head -n 1 | tr '|' '\n' | grep -c . || true)
+  expect "README の e2e の場面の数（tests/e2e-flow.sh の ${scenes} 場面）" grep -q "の ${scenes} 場面）" "$1/README.md"
   # bin/harness-hook の agent 名の定数（REVIEWER = "reviewer" の形。agents/<名前>.md があるもの）は、SubagentStop で hook が動くこと
   matcher=$(awk '/"SubagentStop"/ { f = 1 } f && match($0, /"matcher": *"[^"]*"/) { m = substr($0, RSTART, RLENGTH); sub(/^"matcher": *"/, "", m); sub(/"$/, "", m); print m; exit } f && /^[[:space:]]*[]][[:space:]]*,?[[:space:]]*$/ { exit }' "$c/settings.json")
   for a in $(grep -E '^[A-Z][A-Z0-9_]*(, *[A-Z][A-Z0-9_]*)* = "' "$1/bin/harness-hook" | grep -oE '"[^"]*"' | tr -d '"'); do
@@ -93,9 +96,9 @@ checks "$ROOT"
 # 否定のテスト: 検査に要るファイルを一時ディレクトリに写し、1 か所ずつ壊して、その FAIL が出ること
 T="$TMP/repo"
 fresh() { # 壊す前の写しを作る
-  rm -rf "$T"; mkdir -p "$T/config/claude" "$T/bin"
+  rm -rf "$T"; mkdir -p "$T/config/claude" "$T/bin" "$T/tests"
   cp -R "$ROOT/config/claude/skills" "$ROOT/config/claude/agents" "$ROOT/config/claude/CLAUDE.md" "$ROOT/config/claude/settings.json" "$T/config/claude/"
-  cp "$ROOT/install.sh" "$ROOT/README.md" "$T/"; cp "$ROOT/bin/harness-hook" "$T/bin/"
+  cp "$ROOT/install.sh" "$ROOT/README.md" "$T/"; cp "$ROOT/bin/harness-hook" "$T/bin/"; cp "$ROOT/tests/e2e-flow.sh" "$T/tests/"
 }
 edit() { # edit <ファイル> <sed の式>（sed -i は GNU と BSD で書き方が違うので使わない）
   sed "$2" "$1" > "$TMP/edit"; mv "$TMP/edit" "$1"
@@ -131,6 +134,8 @@ fresh; edit "$T/config/claude/CLAUDE.md" 's/^1\. \*\*ブランチ\*\*/1. **要�
 expect "否定: CLAUDE.md の手順の番号が入れ替わっていれば FAIL" failed "CLAUDE.md の手順の番号の順序"
 fresh; edit "$T/README.md" 's|→ ブランチ（基点から）|→ @|; s|→ 要件の写しを固定|→ ブランチ（基点から）|; s|→ @|→ 要件の写しを固定|'; run
 expect "否定: README の流れの図でブランチと要件の固定を入れ替えれば FAIL" failed "README の流れの図の段の順序"
+fresh; edit "$T/tests/e2e-flow.sh" 's/^\(#   sh tests\/e2e-flow.sh .*\)\]$/\1|extra]/'; run
+expect "否定: e2e の場面が増えたのに README の場面の数が古ければ FAIL" failed "README の e2e の場面の数"
 
 echo "skills: ok $passed, FAIL $fail"
 [ "$fail" -eq 0 ]

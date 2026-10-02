@@ -104,8 +104,9 @@ has $C/agents/reviewer.md '^## 判断しなかったこと'
 sh "$D/tests/skills.sh" >/dev/null 2>&1 || ng "AC7: tests/skills.sh が本物のリポジトリで落ちる"
 grep -qx 'sh tests/skills.sh' "$D/.harness-verify" || ng "AC7: .harness-verify に sh tests/skills.sh が無い"
 T="$TMP/copy"
-copy() { rm -rf "$T"; mkdir -p "$T/config/claude" "$T/bin"
-  cp -R "$D/$C/skills" "$D/$C/agents" "$D/$C/CLAUDE.md" "$D/$C/settings.json" "$T/$C/"; cp "$D/install.sh" "$D/README.md" "$T/"; cp "$D/bin/harness-hook" "$T/bin/"; }   # README は流れの図の順序の検査（ARK-51）が読む
+copy() { rm -rf "$T"; mkdir -p "$T/config/claude" "$T/bin" "$T/tests"
+  cp -R "$D/$C/skills" "$D/$C/agents" "$D/$C/CLAUDE.md" "$D/$C/settings.json" "$T/$C/"; cp "$D/install.sh" "$D/README.md" "$T/"; cp "$D/bin/harness-hook" "$T/bin/"
+  cp "$D/tests/e2e-flow.sh" "$T/tests/"; }   # README は流れの図の順序の検査、e2e-flow.sh は README の e2e の場面の数の検査（ARK-51）が読む
 edit() { sed "$2" "$T/$1" > "$TMP/e"; cp "$TMP/e" "$T/$1"; cmp -s "$TMP/e" "$D/$1" && ng "AC7（前提）: $1 を壊せていない（$2）"; return 0; }
 breaks() { # breaks <説明>: 壊した写しで skills.sh が落ちる
   if out="$(sh "$D/tests/skills.sh" "$T" 2>&1)"; then ng "AC7: 壊しても skills.sh が通った: $1"; fi; }

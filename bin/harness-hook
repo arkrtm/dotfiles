@@ -23,8 +23,9 @@ Claude Code の hooks から:
   harness-hook guard-bash    PreToolUse        Bash。関門を迂回する形（--no-verify 等、hook と git の設定を消す・書き換える形）を含めば拒否
                                                （コマンド行を字句に分けて見る。コミットメッセージの中の -n などは除く）。
                                                共通の pre-commit が呼ばれないリポジトリ（リポジトリ側の core.hooksPath）では
-                                               git commit の前に関門の判定をし、関門を通らないコミットが残っていれば git push と
-                                               main・master への git merge を拒否
+                                               git commit の前に関門の判定をし、関門を通らないコミットが残っていれば git push を拒否。
+                                               main・master への取り込み（merge・reset・rebase・branch -f など）は、関門を通って
+                                               コミットされた先端の fast-forward だけ
   harness-hook bash          PostToolUse       Bash。宣言した検証コマンド（.harness-verify と <git-common-dir>/harness-verify の行）が
                                                リポジトリのトップで単独で成功したら、その時点の作業ツリーに「検証済み」（宣言した行がすべて
                                                同じ内容で成功したときだけ証拠になる。宣言が無ければ何を成功させても証拠にならない。
@@ -111,6 +112,7 @@ CREATED = re.compile(r"^(?:commit|cherry-pick|revert|am)\b|^(?:rebase|pull)\b.*\
 # Stop が見つけた、関門を通っていないコミット（リポジトリ単位。push の前に見る）と、Bash の前の判定が通したコミットの実行待ち（セッション単位）
 UNGATED, GUARD_PENDING = "ungated", "guard-pending"
 MERGE_VALUE_OPTS = {"-m", "-F", "-s", "-X", "--file", "--strategy", "--strategy-option", "--into-name", "--cleanup"}  # 値を取る git merge のオプション
+INTEGRATING = ("merge", "reset", "rebase", "branch", "update-ref")  # ブランチを別のコミットに動かしうる git のサブコマンド（integration_target）
 # テストとみなすパス（新しいテストの追加は関門の対象外にする。指紋には含める）: リポジトリのトップの tests/・test/・spec/・__tests__/ の下と、
 # テストの名前の規則（test_*.py、*_test.*・*.test.*・*.spec.*・*_spec.*。データ・設定の拡張子は除く。JVM・Swift・C#・PHP・Scala・Groovy の
 # *Test.*・*Tests.*）。src/test/server.go・api/spec/openapi.yaml・SpeedTest.tsx のようなテストに見える名前のコードは含めない
@@ -549,8 +551,14 @@ def head(top):
 
 
 def protected_branch(top):
-    """作業してはいけないブランチ（main/master）にいればその名前。最初のコミット前（git init 直後）は対象外"""
+    """作業してはいけないブランチ（main/master）にいればその名前。main/master の先端にいる detached HEAD も、そのブランチとみなす
+    （ブランチを切らずに作業を始めさせない）。最初のコミット前（git init 直後）は対象外"""
     out = git(top, "symbolic-ref", "--short", "-q", "HEAD")
+    rebasing = any(os.path.isdir(os.path.join(git_dir(top), d)) for d in ("rebase-merge", "rebase-apply"))
+    if out is None and has_ref(top, "HEAD") and not rebasing:  # detached（rebase の途中は作業ブランチの上で競合を解消している）
+        tips = (git(top, "for-each-ref", "--points-at", "HEAD", "--format=%(refname:short)",
+                    *(f"refs/heads/{b}" for b in sorted(PROTECTED))) or "").split()
+        return tips[0] if tips else None
     branch = out.strip() if out else None
     return branch if branch in PROTECTED and has_ref(top, "HEAD") else None
 
@@ -576,10 +584,33 @@ def unstaged_wip(top):
 
 
 def baseline(top):
-    """そのブランチで最初に要件の写しを保存したターンの開始時に既にあった、未ステージの手元の変更（写しの横の .baseline。
-    利用者の作業中のファイル。Claude がそのターンに作ったもの・ステージ済みのものは入らない）{パス: blob ID}"""
-    return dict(line.split("\t", 1)[::-1] for line in (read_bytes(requirements_path(top) + ".baseline") or b"").decode(
-        "utf-8", "surrogateescape").splitlines() if "\t" in line)
+    """利用者の作業中の変更として証拠の対象から外すもの（写しの横の .baseline）{パス: blob ID}: そのブランチで最初に要件の写しを
+    保存したターンの開始時に既にあった未ステージの変更と、その後のターンとターンの間に変わった未ステージの変更（exclude_user_edits）。
+    Claude がターンの中で作ったもの・ステージ済みのものは入らない"""
+    return parse_wip((read_bytes(requirements_path(top) + ".baseline") or b"").decode("utf-8", "surrogateescape"))
+
+
+def wip_text(wip):
+    """{パス: blob ID} を 1 行 1 件（blob ID とパスをタブで区切る）の文字列に"""
+    return "".join(f"{blob}\t{rel}\n" for rel, blob in wip.items())
+
+
+def parse_wip(text):
+    """wip_text の逆"""
+    return dict(line.split("\t", 1)[::-1] for line in text.splitlines() if "\t" in line)
+
+
+def exclude_user_edits(top, wip):
+    """ターンとターンの間に変わった未ステージの変更（前のターンの終わりに Stop が控えた turn-end-wip と、今の wip の違い。利用者の
+    編集）を写しの .baseline に足す（working_scope が、変えずに未ステージのままなら証拠の対象から外す）。写しがまだ無い・前のターンの
+    終わりの記録が無ければ何もしない（最初の保存は turn-wip を使う）"""
+    end, path = get(repo_state(top), "turn-end-wip"), requirements_path(top) + ".baseline"
+    if end is None or not os.path.exists(path):
+        return
+    before = parse_wip(end)
+    changed = {rel: blob for rel, blob in wip.items() if before.get(rel) != blob}
+    if changed:
+        put(os.path.dirname(path), os.path.basename(path), wip_text({**baseline(top), **changed}))
 
 
 def working_scope(top):
@@ -725,15 +756,17 @@ def blob_ids(top, rels, staged, rev=None):
 
 
 def tree_hash(top, changes, staged=False, rev=None):
-    """変更されたコード・テストの内容と、承認済みの要件の写し・自分だけの検証の宣言（<git-common-dir>/harness-verify）で決まる指紋。
-    作業ツリー（検証・受け入れ・レビュー時）とインデックス（コミット時）とコミット rev の内容で、同じ内容なら同じ値になる（要件の写しと
-    自分だけの宣言は git の外にあるので、どれでも同じファイルを読む）。あとから編集すれば、要件や自分だけの宣言を書き換えても変わる。
-    HEAD は含めない（ドキュメントだけ先にコミットしても証拠は有効）"""
+    """変更されたコード・テストの内容と、土台（HEAD。コミット rev ならその最初の親）のコード・テストの内容と、承認済みの要件の写し・
+    自分だけの検証の宣言（<git-common-dir>/harness-verify）で決まる指紋。作業ツリー（検証・受け入れ・レビュー時）とインデックス
+    （コミット時）とコミット rev の内容で、同じ内容なら同じ値になる（要件の写しと自分だけの宣言は git の外にあるので、どれでも同じ
+    ファイルを読む）。あとから編集すれば、要件や自分だけの宣言を書き換えても変わる。土台のコードが変われば（rebase・main の取り込み
+    など）証拠を取り直す。文書だけのコミットでは変わらない"""
     rels = sorted({rel for _, rel in changes if is_code(top, rel, staged) or is_test(rel)})
     ids = blob_ids(top, rels, staged, rev)
     h = hashlib.sha1()
     for rel in rels:
         h.update(f"\0{rel}\0{ids[rel]}".encode("utf-8", "surrogateescape"))
+    h.update(f"\0\0base\0{base_code(top, f'{rev}^' if rev else 'HEAD', staged)}".encode())
     outside = ((REQUIREMENTS, requirements(top)),
                (PRIVATE_VERIFY, read_bytes(os.path.join(git_dir(top, common=True), PRIVATE_VERIFY))))
     for name, data in outside:  # パスは空にならないので区別できる
@@ -741,13 +774,31 @@ def tree_hash(top, changes, staged=False, rev=None):
     return h.hexdigest()
 
 
+def base_code(top, rev, staged=False):
+    """コミット rev のコードとテストの内容（文書は除く）の指紋。rev が無ければ（最初のコミットの前、親の無いコミット）'none'"""
+    sha = (git(top, "rev-parse", "-q", "--verify", f"{rev}^{{commit}}") or "").strip()
+    return base_code_of(top, sha, staged) if sha else "none"
+
+
+@functools.lru_cache(maxsize=None)  # 1 回の起動の中で、同じコミットの内容は変わらない
+def base_code_of(top, sha, staged):
+    h = hashlib.sha1()
+    for entry in must(git(top, "ls-tree", "-r", "-z", sha), "git ls-tree").split("\0"):
+        meta, _, path = entry.partition("\t")
+        if path and (is_code(top, path, staged) or is_test(path)):
+            h.update(f"{path}\0{meta.split()[2]}\0".encode("utf-8", "surrogateescape"))
+    return h.hexdigest()
+
+
 # ---- 証拠の判定 --------------------------------------------------------------
 
 TEXT = {  # {private} は <git-common-dir>/harness-verify、{requirements} は要件の写しのパス
     "requirements": "承認済みの要件の写しが無いか空 → 承認済みの要件と受け入れ条件の写しを `harness-hook requirements-save` に"
-                    "標準入力で渡して保存する（場所: {requirements}。S は依頼の原文と受け入れ条件 1 行）→ /issue",
+                    "標準入力で渡して保存する（場所: {requirements}。S は依頼の原文と受け入れ条件 1 行。写しはブランチごとなので、"
+                    "ブランチ名を変えたなら保存し直す）→ /issue",
     "stale": "要件の写しを保存した後にコミット（HEAD の移動）があったので、写しは古い → 同じ依頼の続きなら、同じ内容のままでも "
-             "`harness-hook requirements-save` で保存し直す（場所: {requirements}）。新しい依頼なら、新しい要件と受け入れ条件を合意して保存する",
+             "`harness-hook requirements-save` で保存し直す（場所: {requirements}）。新しい依頼なら、新しい要件と受け入れ条件を合意して "
+             "`harness-hook requirements-save --new` で保存する",
     "undeclared": "検証コマンドを宣言していない（宣言したコマンドの成功だけが検証の証拠になる）→ "
                   "全体の検証コマンドを .harness-verify（共有）か {private}（自分だけ）に 1 行 1 つ書く → /verify",
     "verified": "この内容に対して、宣言した検証コマンド（.harness-verify か {private} に書いたもの）のすべてを単独で成功させていない → /verify",
@@ -856,7 +907,11 @@ def unguarded_reason(session, top, only_new=False):
     with locked(d):
         put(d, UNGATED, "\n".join(dict.fromkeys(((get(d, UNGATED) or "").split() + unguarded)[-GATED_KEEP:])))
     put(session, "reported", " ".join(dict.fromkeys(reported + unguarded)))
-    start = (get(session, "head") or "").strip()
+    # 戻す先: HEAD の履歴にある、関門を通っていないコミットのうちいちばん古いものの親（rebase の後なら新しい土台）。
+    # HEAD の履歴に無ければ（別のブランチのコミット）ターン開始時の HEAD
+    tips = (get(session, "tips") or "").split()
+    on_head = [s for s in (git(top, "rev-list", "HEAD", *(["--not", *tips] if tips else [])) or "").split() if s in set(unguarded)]
+    start = ((git(top, "rev-parse", "-q", "--verify", f"{on_head[-1]}^") or "") if on_head else (get(session, "head") or "")).strip()
     undo = f"`git reset --soft {start[:12]}` で" if start else "最初のコミットを `git update-ref -d HEAD` で取り消して"
     return (f"このターンのコミット {short(unguarded)} は、コミットの関門（pre-commit）を通っていない（git の hook が呼ばれなかった。"
             "revert・cherry-pick・rebase・am、リポジトリ側の core.hooksPath、HOME・XDG_CONFIG_HOME の差し替えなど）。"
@@ -1380,7 +1435,8 @@ def pre_commit():
         hint = "（レビューした内容と、ステージした内容が一致している必要がある。未ステージ・未追跡のコードやテストがあれば一致しない）"
         wip = sorted(p for _, p in staged_changes(top) if p in baseline(top))
         if wip:
-            hint += (f"写しを保存する前からあった手元の変更 {', '.join(wip)} をステージしている → コミットに含めないなら "
+            hint += (f"利用者の作業中の変更（写しを保存する前からあったか、ターンとターンの間に変わったもの）{', '.join(wip)} を"
+                     "ステージしている → コミットに含めないなら "
                      "`git restore --staged <ファイル>`。含めるなら、ステージしたまま /accept → /verify → /review をやり直す")
         sys.stderr.write("harness: コミットできない。" + reason_text(top, missing, on_main) + hint + "\n")
         return 1
@@ -1420,8 +1476,8 @@ def commit_guard(session, cwd, command):
     （PostToolUse の bash）にできたコミットは、内容が証拠と同じときだけ関門を通ったものとして記録する（GUARD_PENDING・record_guarded。
     同じコマンドに git 以外があっても、内容で確かめるので記録してよい）。
     push: 関門を通っていないコード変更のコミット（このターンの unguarded_commits と、前のターンに Stop が見つけた UNGATED）が
-    リモートに無いまま残っていれば拒否する。merge: main・master の上で（同じコマンド行で前に switch・checkout で移った先も見る）、
-    取り込むブランチにそれがあれば拒否する（fast-forward も）"""
+    リモートに無いまま残っていれば拒否する。main・master への取り込み（integration_target。同じコマンド行で前に switch・checkout で
+    移った先も見る）は integration_reason で判定する"""
     put(session, GUARD_PENDING, "")
     try:
         commands = shell_commands(split_heredocs(command)[0])
@@ -1432,41 +1488,90 @@ def commit_guard(session, cwd, command):
     switched = {}  # {top: 同じコマンド行で前に switch・checkout で移った先のブランチ}（merge の取り込み先）
     for words in commands:
         parts = git_parts(words)
-        if not parts or parts[2] >= len(words) or words[parts[2]] not in ("commit", "push", "merge", "switch", "checkout"):
+        if not parts or parts[2] >= len(words) or words[parts[2]] not in ("commit", "push", "switch", "checkout") + INTEGRATING:
             continue
         at, _, sub = parts
         where = next((os.path.join(base, os.path.expanduser(words[i + 1])) for i in range(at + 1, sub - 1) if words[i] == "-C"), base)
         top = toplevel(where)
         if not top:
             continue
+        target = integration_target(top, words[sub], words[sub + 1:], switched)
+        if target and target[0] in PROTECTED:
+            reason = integration_reason(session, top, *target, moved=top in switched, ff_only=words[sub] in ("merge", "rebase"))
+            if reason:
+                return reason
         if words[sub] in ("switch", "checkout"):
-            target = switch_target(top, words[sub + 1:])
-            if target is not None:
-                switched[top] = target
-        elif words[sub] in ("push", "merge"):
+            to = switch_target(top, words[sub + 1:])
+            if to is not None:
+                switched[top] = to
+        elif words[sub] == "push":  # どのローカルブランチ（と HEAD）の履歴に残っていても（git push --all・別のブランチから push する形も）
             ungated = set(unguarded_commits(session, top)) | set((get(tracked_state(top), UNGATED) or "").split())
-            into = switched.get(top, protected_branch(top))
-            if words[sub] == "push":  # どのローカルブランチ（と HEAD）の履歴に残っていても（git push --all・別のブランチから push する形も）
-                found = (git(top, "rev-list", "--branches", "HEAD", "--not", "--remotes") or "").split()
-            elif into in PROTECTED:  # 取り込む側（オプションとその値以外の引数）にあって、取り込み先に無いもの
-                revs = merge_sources(words[sub + 1:])
-                if top in switched and any("@{" in r for r in revs):
-                    # 移った後の @{-1}・HEAD@{n} は、移る前のこの時点では解決できない → どのブランチにあるものも見る
-                    revs = ["--branches", "--remotes", "HEAD"]
-                found = [s for rev in revs for s in (git(top, "rev-list", rev, "--not", into) or "").split()]
-            else:
-                continue
-            found = [s for s in dict.fromkeys(found) if s in ungated]
+            found = [s for s in (git(top, "rev-list", "--branches", "HEAD", "--not", "--remotes") or "").split() if s in ungated]
             if found:
-                return (f"コミット {short(found)} は、コミットの関門（pre-commit）を通っていないので "
-                        f"{'push' if words[sub] == 'push' else into + ' に merge'} しない → "
+                return (f"コミット {short(found)} は、コミットの関門（pre-commit）を通っていないので push しない → "
                         "Stop の差し戻しの手順で戻して証拠をそろえ直すか、ユーザーに報告する")
-        elif hooks_overridden(top):
+        elif words[sub] == "commit" and hooks_overridden(top):
             changed, missing, on_main = evidence(top)
             if changed and (missing or on_main):
                 return ("このリポジトリでは共通の pre-commit が呼ばれない（リポジトリ側の core.hooksPath）ので、コミットの前にここで"
                         "確かめた: " + reason_text(top, missing, on_main))
             put(session, GUARD_PENDING, f"{top}\t{head(top).strip()}")
+    return None
+
+
+def integration_target(top, sub, args, switched):
+    """ブランチを動かしうる git のコマンドの (動かすブランチの名前, 取り込む指定のリスト)。merge・reset・rebase は今のブランチ
+    （同じコマンド行で前に移った先も）、branch -f・update-ref・switch -C・checkout -B は指定のブランチ、branch -C・-M（強制の
+    コピー・改名）は行き先、push . <元>:<先>（ローカルへの push）は先。当たらなければ None"""
+    plain = [a for a in args if not a.startswith("-")]
+    current = switched.get(top, protected_branch(top))
+    if sub == "merge":
+        return current, merge_sources(args)
+    if sub in ("reset", "rebase"):
+        return current, plain
+    if sub == "branch" and {"-C", "-M"} & set(args) and plain:
+        return (plain[1], plain[:1]) if len(plain) > 1 else (plain[0], ["HEAD"])
+    if sub == "branch" and {"-f", "--force"} & set(args) and plain:
+        return plain[0], plain[1:2] or ["HEAD"]
+    if sub == "push" and plain[:1] == ["."] and len(plain) > 1 and ":" in plain[1]:
+        src, _, dst = plain[1].lstrip("+").partition(":")
+        return dst.removeprefix("refs/heads/"), [src or "HEAD"]
+    if sub == "update-ref" and plain and plain[0].startswith("refs/heads/"):
+        return plain[0][len("refs/heads/"):], plain[1:2]
+    if sub in ("switch", "checkout") and {"-C", "-B"} & set(args) and plain:
+        return plain[0], plain[1:2] or ["HEAD"]
+    return None
+
+
+def integration_reason(session, top, into, revs, moved=False, ff_only=False):
+    """main・master（into）を revs に動かす・revs を取り込む形の拒否の理由（無ければ None）。into とその上流（*/into のリモート追跡
+    ブランチ）に無いコミットがあるとき: 関門を通っていないコミットを含むか、取り込む先端の内容が関門を通ってコミットされた内容
+    でなければ拒否する（rebase・土台の取り込みの後は検証し直す）。ff_only（merge・rebase）は fast-forward にならなければ拒否する"""
+    if moved and any("@{" in r for r in revs):
+        # 移った後の @{-1}・HEAD@{n} は、移る前のこの時点では解決できない → どのブランチにあるものも見る（先端の確かめはしない）
+        revs = ["--branches", "--remotes", "HEAD"]
+    state = tracked_state(top)
+    ungated = set(unguarded_commits(session, top)) | set((get(state, UNGATED) or "").split())
+    gated = set((get(state, GATED) or "").split())
+    redo = (f"作業ブランチで `git reset --soft {into}` で変更をまとめてステージに戻し、写しを保存し直して /accept → /verify → /review を"
+            f"通してからコミットし、`git merge --ff-only` で取り込む")
+    for rev in revs:
+        new = (git(top, "rev-list", rev, "--not", into, f"--remotes=*/{into}") or "").split()
+        if not new:
+            continue
+        bad = [s for s in new if s in ungated]
+        if bad:
+            return (f"コミット {short(bad)} は、コミットの関門（pre-commit）を通っていないので {into} に取り込まない → "
+                    "Stop の差し戻しの手順で戻して証拠をそろえ直すか、ユーザーに報告する")
+        if rev.startswith("--"):
+            continue
+        if ff_only and git(top, "merge-base", "--is-ancestor", into, rev, ok=(0,)) is None:
+            return (f"{into} が先に進んでいるので、{rev} の取り込みは fast-forward にならない（取り込んだ結果は検証していない）→ "
+                    f"作業ブランチを `git rebase {into}` で載せ直し（競合は解消する）、" + redo)
+        tree = (git(top, "rev-parse", "-q", "--verify", f"{rev}^{{tree}}") or "").strip()
+        if tree and tree not in gated:
+            return (f"{into} に取り込む先端 {rev} の内容は、関門を通ってコミットされたものではない（rebase・土台の取り込みの後などで、"
+                    "新しい土台の上で検証していない）→ " + redo)
     return None
 
 
@@ -1505,11 +1610,13 @@ def switch_target(top, args):
 
 
 def record_guarded(session):
-    """commit_guard が通した git commit の実行の後（PostToolUse）: HEAD が進んでいれば、そのコミットを関門を通ったものとして記録する"""
+    """commit_guard が通した git commit の実行の後（PostToolUse）: HEAD が進んでいて、コミットの内容が証拠と同じか、証拠の要らない
+    コミット（文書だけ）なら、関門を通ったものとして記録する（その先端を main に取り込める）"""
     pending = get(session, GUARD_PENDING) or ""
     put(session, GUARD_PENDING, "")
     top, _, before = pending.partition("\t")
-    if top and head(top).strip() not in ("", before) and committed_with_evidence(top, "HEAD"):
+    if top and head(top).strip() not in ("", before) and (
+            committed_with_evidence(top, "HEAD") or not needs_evidence(top, commit_changes(top, "HEAD"))):
         record_gated(top)
 
 
@@ -1559,25 +1666,25 @@ def patch_id(top, rev):
 
 def unguarded_commits(session, top):
     """このターンに作られたコミット（どのブランチでも、ターン開始時の HEAD とローカルブランチの先端から届かず、コミット時刻が
-    ターン開始以降のもの。fetch・pull で取り込んだ他人のコミットは、時刻と、取り込んだ先端（fetched_since）から届くもののうち
-    このリポジトリで作っていないもの（created_since）として除く）
-    のうち、関門を通ってコミットされた内容（tree）にも、
-    関門を通ったコミットの変更（patch-id。rebase・cherry-pick で付け替えたもの）にも無く、証拠を求める変更を含むものの ID。
+    ターン開始以降のもの。このターンにこのリポジトリで作った記録（created_in_turn）があるものは、コミット時刻をずらしていても含める。
+    fetch・pull で取り込んだ他人のコミットは、時刻と、取り込んだ先端（fetched_since）から届くもののうち
+    このリポジトリで作っていないものとして除く）のうち、関門を通ってコミットされた内容（tree）にも、
+    関門を通ったコミットの変更（patch-id。rebase・cherry-pick で付け替えたもの）にも無く、証拠を求める変更を含むものの ID（新しい順）。
     マージコミットは、2 つの親の自動の結果（git merge-tree）との差を変更とみなす（自動の結果のままなら対象外）。
     3 つ以上の親のマージは自動の結果を求められないので、最初の親との差を変更とみなす（--no-commit の後に手を加えた形も見落とさない）"""
     since, tips = get(session, "since"), (get(session, "tips") or "").split()
     not_tips = ["--not", *tips] if tips else []
-    out = since and git(top, "log", f"--max-age={since}", "--format=%H %T %P", "--branches", "HEAD", *not_tips)
+    out = since and git(top, "log", "--format=%H %T %ct %P", "--branches", "HEAD", *not_tips)
     if not out:
         return []
+    created = created_in_turn(session, top)
     # 取り込んだ他人のコミット: ターンの間に fetch・pull で動いたリモート追跡ブランチから届くもののうち、このリポジトリで作っていないもの
     fetched = fetched_since(top, int(since))
-    foreign = (set((git(top, "rev-list", f"--max-age={since}", *fetched, *not_tips) or "").split()) - created_since(top, int(since))
-               if fetched else set())
+    foreign = (set((git(top, "rev-list", f"--max-age={since}", *fetched, *not_tips) or "").split()) - created if fetched else set())
     state, found = tracked_state(top), []
     gated, patches = (set((get(state, name) or "").split()) for name in (GATED, GATED_PATCH))
-    for sha, tree, *parents in (line.split() for line in out.splitlines()):
-        if tree in gated or sha in foreign:
+    for sha, tree, when, *parents in (line.split() for line in out.splitlines()):
+        if tree in gated or sha in foreign or (int(when) < int(since) and sha not in created):
             continue
         changes = None
         if len(parents) >= 2:  # マージ: 自動の結果を求められなければ（3 つ以上の親、merge-tree の無い古い git）最初の親との差
@@ -1602,13 +1709,38 @@ def fetched_since(top, since):
     return found
 
 
-def created_since(top, since):
-    """時刻 since 以降にこのリポジトリで作ったコミット: すべての worktree の HEAD とローカルブランチの reflog のうち、コミットを作る
-    操作（CREATED。commit・amend・merge・rebase と pull --rebase の pick など・cherry-pick・revert・am）の記録の値"""
+def reflog_files(top):
+    """すべての worktree の HEAD とローカルブランチの reflog のファイル（logs/HEAD・logs/refs/heads/…）のパス"""
     worktrees = [line[len("worktree "):] for line in (git(top, "worktree", "list", "--porcelain") or "").splitlines()
                  if line.startswith("worktree ")] or [top]
-    logs = [(w, "HEAD") for w in worktrees] + [(top, ref) for ref in (git(top, "for-each-ref", "--format=%(refname)", "refs/heads") or "").split()]
-    return {sha for where, ref in logs for sha, message in reflog_since(where, ref, since) if CREATED.search(message)}
+    files = [(git(w, "rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD") or "").strip() for w in worktrees]
+    heads = os.path.join(git_dir(top, common=True), "logs", "refs", "heads")
+    files += [os.path.join(d, f) for d, _, names in os.walk(heads) for f in names]
+    return [f for f in files if f]
+
+
+def reflog_marks(top):
+    """reflog のファイルごとの今の行数（ターン開始時に控え、created_in_turn がそれより後の行を見る）"""
+    marks = {}
+    for path in reflog_files(top):
+        with contextlib.suppress(OSError), open(path, "rb") as f:
+            marks[path] = sum(1 for _ in f)
+    return marks
+
+
+def created_in_turn(session, top):
+    """このターンにこのリポジトリで作ったコミット: ターン開始時に控えた行数（reflog-marks）より後に足された reflog の記録のうち、
+    コミットを作る操作（CREATED。commit・amend・merge・rebase と pull --rebase の pick など・cherry-pick・revert・am）の新しい値。
+    記録の時刻には頼らない（GIT_COMMITTER_DATE で過去にずらせるため）"""
+    marks, created = json.loads(get(session, "reflog-marks") or "{}"), set()
+    for path in reflog_files(top):
+        with contextlib.suppress(OSError), open(path, "rb") as f:
+            for line in itertools.islice(f, marks.get(path, 0), None):
+                entry, _, message = line.decode("utf-8", "replace").rstrip("\n").partition("\t")
+                fields = entry.split()
+                if len(fields) > 1 and CREATED.search(message):
+                    created.add(fields[1])
+    return created
 
 
 def reflog_since(top, ref, since):
@@ -1713,9 +1845,13 @@ def handle(cmd, data):
         put(tracked_state(top), "tracked")
 
     if cmd == "turn":
+        if top:
+            put(session, "reflog-marks", json.dumps(reflog_marks(top)))  # このターンに作ったコミットを見分ける（created_in_turn）
+            with contextlib.suppress(RuntimeError):  # 求められなくても（読めないファイル等）、ターンの開始の記録は続ける
+                wip = unstaged_wip(top)
+                exclude_user_edits(top, wip)  # ターンの間の利用者の編集を写しの .baseline に足す（start より先に）
+                put(repo_state(top), "turn-wip", wip_text(wip))  # ターンの開始時の手元の変更（写しの最初の保存が .baseline にする）
         put(session, "start", tree_hash(top, working_scope(top)) if top else "")
-        if top:  # ターンの開始時に既にある未ステージの手元の変更（写しの最初の保存が .baseline にする）
-            put(repo_state(top), "turn-wip", "".join(f"{blob}\t{rel}\n" for rel, blob in unstaged_wip(top).items()))
         put(session, "head", head(top))
         put(session, "reported", "")  # このターンに差し戻した、関門を通らないコミット（unguarded_reason）
         # このターンに作られたコミットを見分ける（unguarded_commits）: 開始の時刻と、HEAD とローカルブランチの先端
@@ -1763,11 +1899,13 @@ def handle(cmd, data):
             put(session, "saved", str(used))
     elif cmd == "bash-failed":
         # 検証コマンド（パイプ等の形でも、宣言した行でも）が失敗したら、それまでの「検証済み」を消し、RED として記録する
-        # （サブエージェント内でも。implementer の RED を観測できるように）
+        # （サブエージェント内の失敗は RED として記録するだけ。implementer の RED を観測でき、reviewer の焦点を絞った実行で
+        # メインの検証済みを消さない。検証済みを付けるのもメインの会話だけ）
         put(session, GUARD_PENDING, "")  # 失敗したコマンドのコミットは記録しない
         command = (data.get("tool_input") or {}).get("command") or ""
         if top and (VERIFY_CMD.search(command) or CD_PREFIX.sub("", command.strip()) in verify_lines(top)):
-            put(repo_state(top), "verified")
+            if not data.get("agent_id"):
+                put(repo_state(top), "verified")
             red_log(top, data, command)
         elif top and RED_CMD.search(command) and os.path.basename(CD_PREFIX.sub("", command.strip()).split(" ")[0]) not in READ_COMMANDS:
             red_log(top, data, command)  # テストを走らせるほかのコマンド（manage.py test など）: RED として残すだけ（検証済みは消さない）
@@ -1795,6 +1933,11 @@ def handle(cmd, data):
             put(repo_state(top), key, tree_hash(top, working_scope(top)))
             put(repo_state(top), key + "-drift")
     elif cmd == "stop":
+        # ターンの終わりの未ステージの変更（次のターンの開始時に、その間の利用者の編集を見分ける。exclude_user_edits）。
+        # 求められなくても（読めないファイル等）、関門の判定は続ける
+        with contextlib.suppress(RuntimeError):
+            if top:
+                put(repo_state(top), "turn-end-wip", wip_text(unstaged_wip(top)))
         if data.get("stop_hook_active"):
             # 差し戻しの後の続き: 関門を通らないコミットの事後の確認だけをする（まだ差し戻していないものがあれば、もう一度差し戻す）
             try:
