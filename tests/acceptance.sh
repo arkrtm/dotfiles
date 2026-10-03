@@ -1,5 +1,5 @@
 #!/bin/sh
-# 受け入れ検査（/accept の acceptor が tests/acceptance/ に残したもの）をすべて実行する。
+# 受け入れ検査（issue の受け入れ条件を確かめる tests/acceptance/*.sh）をすべて実行する。
 # 1 本でも失敗すれば exit 1。出力は失敗した検査の出力と、要約 1 行だけ
 #   sh tests/acceptance.sh
 set -u

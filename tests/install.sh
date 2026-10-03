@@ -1,6 +1,7 @@
 #!/bin/sh
 # install.sh の検査: 空の HOME に対して実行し、(1) LINKS 表の全項目がリンクされること、(2) 既存ファイルが
-# 退避されること、(3) 配置した git 設定とこの端末に入れたプラグイン harness でコミットの関門が効くこと、
+# 退避されること、(3) 配置した git 設定とこの端末に入れたプラグイン harness でコミットの関門（作業ブランチでの
+# 検証なしのコードのコミットと、main の上のコミット）が効くこと、
 # (4) 再実行しても同じ結果になること、(5) ハーネスの旧来のリンクを置かないこと
 #   sh tests/install.sh   （プラグイン harness を入れた端末で）
 set -eu
@@ -49,18 +50,22 @@ export XDG_STATE_HOME="$HOME/.state"
 out="$(CLAUDE_PLUGIN_DATA="$HOME/.claude/plugins/data/harness-harness" "$PLUGIN/bin/harness-hook" session-start </dev/null)"
 case "$out" in
   *systemMessage*) ng "git 設定の core.hooksPath が、プラグインが置く data の git-hooks を指していない: $out" ;;
-  *additionalContext*) ok "git 設定の core.hooksPath が、プラグインが置く data の git-hooks を指す（SessionStart が警告を出さない）" ;;
-  *) ng "プラグインの session-start が動かない: $out" ;;
+  *) if [ -x "$HOME/.claude/plugins/data/harness-harness/git-hooks/run-hook" ]; then
+       ok "git 設定の core.hooksPath が、プラグインが置く data の git-hooks を指す（SessionStart が警告を出さずに run-hook を置く）"
+     else ng "プラグインの session-start が data に git の共通 hooks を置かない: $out"; fi ;;
 esac
 R="$HOME/repo"; mkdir -p "$R"; g="git -C $R -c user.name=t -c user.email=t@t"
 $g init -q -b main; $g commit -q --allow-empty -m init; $g switch -q -c feat/x
-# Claude Code のセッションがこのリポジトリで始まった状態にする（turn hook が対象に登録する）
-printf '{"session_id":"t","cwd":"%s","hook_event_name":"UserPromptSubmit"}' "$R" | "$PLUGIN/bin/harness-hook" turn
+# Claude Code がこのリポジトリで Bash を実行した状態にする（一時ディレクトリの中のリポジトリは、Bash の後の hook が関門の対象に登録する）
+printf '{"session_id":"t","cwd":"%s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git status"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$R" \
+  | "$PLUGIN/bin/harness-hook" bash
 echo doc > "$R/README.md"; $g add -A
 if CLAUDECODE=1 $g commit -q -m docs 2>/dev/null; then ok "インストール後: ドキュメントだけのコミットは通る"; else ng "ドキュメントのコミットが止められた"; fi
 echo code > "$R/app.py"; $g add -A
 if CLAUDECODE=1 $g commit -q -m code 2>/dev/null; then ng "インストール後: 証拠なしのコード変更がコミットできてしまった"; else ok "インストール後: Claude Code からの、証拠なしのコード変更のコミットは止まる"; fi
 if $g commit -q -m code 2>/dev/null; then ok "インストール後: 人の手動コミットは止めない"; else ng "人の手動コミットが止められた"; fi
+$g switch -q main; echo doc > "$R/NOTES.md"; $g add -A
+if CLAUDECODE=1 $g commit -q -m main-docs 2>/dev/null; then ng "インストール後: main の上の Claude の文書だけのコミットが通ってしまった"; else ok "インストール後: main の上の Claude のコミットは文書だけでも止まる"; fi
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
 out=$(DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh")

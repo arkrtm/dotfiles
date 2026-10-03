@@ -126,7 +126,8 @@
   },
   "enabledPlugins": {
     "tinymemory@tinymemory": true,
-    "harness@harness": true
+    "harness@harness": true,
+    "superpowers@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "tinymemory": {

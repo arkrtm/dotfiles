@@ -1,7 +1,9 @@
 #!/bin/sh
-# ARK-52 D の受け入れ検査: dotfiles をプラグイン harness に切り替えた後の状態（AC9 の静的な部分）。
+# dotfiles をプラグインに切り替えた後の状態の受け入れ検査: ARK-52 D（ハーネスをプラグイン harness に）と
+# ARK-63 AC8（開発の手順は superpowers、harness は関門と記録の skill だけ）。
 # 検証一式（sh tests/install.sh・DOCKER='ssh nas docker' sh tests/install-nosudo.sh）は別に実行する。
-# LIVE=1 のときだけ、本物の claude のセッションで SessionStart の注入（AC5）も確かめる（モデルを呼ぶので数十秒・課金あり）
+# LIVE=1 のときだけ、本物の claude -p の新しいセッションで、プラグインと skill の見え方とコミットの関門（AC8-5）も確かめる
+# （haiku を 1 回呼ぶので数十秒・数セントの課金あり）
 #   sh tests/acceptance/plugin-switch.sh
 #   LIVE=1 sh tests/acceptance/plugin-switch.sh
 set -u
@@ -13,13 +15,15 @@ check() { d=$1; shift; if "$@" >/dev/null 2>&1; then ok "$d"; else ng "$d"; fi; 
 absent() { [ ! -e "$ROOT/$1" ] && [ ! -L "$ROOT/$1" ]; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い"; exit 1; }
 
-# settings.json: ハーネスの hooks が無く、harness@harness が有効で、marketplace は github の arkrtm/harness
+# settings.json: ハーネスの hooks が無く、superpowers・harness・tinymemory が有効で、harness の marketplace は github の arkrtm/harness（AC8-3）
 S="$ROOT/config/claude/settings.json"
 check "settings.json の hooks にハーネスの command が無い" \
   sh -c "! jq -r '[.hooks[][].hooks[].command] | .[]' '$S' | grep -qi harness"
 check "settings.json の hooks に agent-status・tinymemory の配線は残る" \
   sh -c "jq -r '[.hooks[][].hooks[].command] | .[]' '$S' | grep -q agent-status && jq -r '[.hooks[][].hooks[].command] | .[]' '$S' | grep -q tinymemory"
-check "enabledPlugins の harness@harness が true" [ "$(jq -r '.enabledPlugins["harness@harness"]' "$S")" = true ]
+for p in superpowers@claude-plugins-official harness@harness tinymemory@tinymemory; do
+  check "enabledPlugins の $p が true" [ "$(jq -r --arg p "$p" '.enabledPlugins[$p]' "$S")" = true ]
+done
 check "extraKnownMarketplaces.harness は github の arkrtm/harness" \
   [ "$(jq -r '.extraKnownMarketplaces.harness.source | "\(.source) \(.repo)"' "$S")" = "github arkrtm/harness" ]
 
@@ -35,14 +39,31 @@ check "install.sh の LINKS 表を読めた" [ -n "$links" ]
 check "install.sh の LINKS 表にハーネス（harness-hook・skills・agents・git hooks）が無い" \
   sh -c "! printf '%s\n' \"\$1\" | grep -Eq 'harness|skills|agents|git/hooks'" _ "$links"
 
-# グローバルの CLAUDE.md: 「作業の進め方」が無く、個人の規則の節は残る
+# グローバルの CLAUDE.md（AC8-1）: 手順は superpowers の skill、harness は関門と記録の skill だけ。規模（S/M/L）と手順の注入の記述が無い
 C="$ROOT/config/claude/CLAUDE.md"
 check "グローバルの CLAUDE.md に「作業の進め方」の節が無い" sh -c "! grep -q '^#* *作業の進め方' '$C'"
 for h in 作業の哲学 Linear Karpathy Ponytail スクリーンショット; do
   check "グローバルの CLAUDE.md に「$h」の節が残る" grep -Eq "^#+ .*$h" "$C"
 done
-check "グローバルの CLAUDE.md の skill 名はプラグインの形（/harness:x）" \
-  sh -c "! grep -Eo '\`/(accept|verify|review|issue|wrap-up|design|implement|diagnose|tdd)\b' '$C' | grep -q ."
+check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
+check "グローバルの CLAUDE.md: harness は関門と記録の skill だけ" grep -q 'harness.*関門.*記録の skill.*だけ' "$C"
+check "グローバルの CLAUDE.md: 設計（spec）と計画（plan）は issue の本文に書き、docs/superpowers/ を作らない" \
+  sh -c "grep -q '設計（spec）と計画（plan）' '$C' && grep -q 'docs/superpowers/.*作らない' '$C'"
+check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
+check "グローバルの CLAUDE.md に規模（S/M/L）の記述が無い" sh -c "! grep -Eq '規模|M / L|S は任意|L の計画' '$C'"
+check "グローバルの CLAUDE.md に SessionStart（harness が手順を入れる）の記述が無い" sh -c "! grep -q SessionStart '$C'"
+
+# dotfiles の文書（AC8-2）: 消えた skill・acceptor・手順の注入・「superpowers は使わない」の記述が無く、superpowers の入れ方がある
+for f in "$C" "$ROOT/CLAUDE.md" "$ROOT/README.md" "$ROOT/tests/acceptance.sh"; do
+  n="${f#"$ROOT"/}"
+  check "$n に消えた skill（/harness:accept など）と acceptor が無い" \
+    sh -c "! grep -Eq '/harness:(accept|verify|review|tdd|design|diagnose|implement)|\`/(accept|verify|review|tdd|design|diagnose|implement)\b|acceptor' '$f'"
+  check "$n に「harness が SessionStart で手順を入れる」の記述が無い" \
+    sh -c "! grep -Eq 'SessionStart で(入れる|コンテキストに入れる|読み込む)' '$f'"
+done
+check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q superpowers "$ROOT/CLAUDE.md"
+check "README の「使わないもの」に superpowers が無い" sh -c "! sed -n '/^### 使わないもの/,/^#/p' '$ROOT/README.md' | grep -q superpowers"
+check "README に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md"
 
 # git の共通 hooks の場所: dotfiles の設定がプラグインの data の git-hooks を指し、この端末で効いていて、run-hook がある
 G="$ROOT/config/git/config"
@@ -53,23 +74,28 @@ check "この端末で効いている global の core.hooksPath も同じ（$eff
 check "その場所に run-hook と pre-commit がある" \
   sh -c "[ -x \"\$HOME/.claude/plugins/data/harness-harness/git-hooks/run-hook\" ] && [ -e \"\$HOME/.claude/plugins/data/harness-harness/git-hooks/pre-commit\" ]"
 
+# LIVE（AC8-5）: 新しいセッションの起動情報（init）のプラグインと skill、作業ブランチでの検証なしのコードのコミットが止まること
 if [ -n "${LIVE:-}" ]; then
-  MARK='# harness: 作業の手順（プラグイン harness が SessionStart で読み込む）'
-  D="$(mktemp -d)"; git -C "$D" init -q
-  ans="$(cd "$D" && claude -p '「# harness:」で始まる行がコンテキストにあれば、その行だけをそのまま 1 行で答えて。無ければ「なし」。ツールは使わない。' \
-          --output-format json --debug-file "$D/start.txt" | jq -r '.result, .session_id')"
-  sid="$(printf '%s\n' "$ans" | tail -1)"
-  check "（LIVE）startup のセッションが印の行を答える" sh -c "printf '%s' \"\$1\" | grep -Fq \"\$2\"" _ "$ans" "$MARK"
-  (cd "$D" && claude -p '/compact' --resume "$sid" --output-format json --debug-file "$D/compact.txt" >/dev/null)
-  (cd "$D" && claude -p '/clear' --resume "$sid" --output-format json --debug-file "$D/clear.txt" >/dev/null)
-  cat "$D"/start.txt "$D"/compact.txt "$D"/clear.txt > "$D/all.txt"
-  for src in startup resume compact clear; do
-    check "（LIVE）SessionStart:$src でプラグインの hook が動く" grep -q "Hook SessionStart:$src (SessionStart) success" "$D/all.txt"
+  D="$(mktemp -d)"; L="$D/live.jsonl"
+  # 前提の init コミットは人の手動のコミットとして作る（Claude Code の中で実行されても関門の対象にしない）
+  ( unset CLAUDECODE; g="git -C $D -c user.name=t -c user.email=t@t"
+    $g init -q -b main && $g commit -q --allow-empty -m init && $g switch -q -c feat/live &&
+    echo 'print(1)' > "$D/app.py" && $g add app.py )
+  (cd "$D" && claude -p 'このリポジトリで `git commit -m live` を 1 回だけ実行し、その出力をそのまま答えて。ほかのコマンドは実行しない。' \
+     --model haiku --permission-mode dontAsk --allowedTools 'Bash(git commit:*)' \
+     --strict-mcp-config --no-session-persistence --output-format stream-json --verbose > "$L" 2>/dev/null)
+  init="$(jq -c 'select(.type == "system" and .subtype == "init")' "$L")"
+  has() { printf '%s' "$init" | jq -e --arg x "$2" "$1 | index(\$x)" >/dev/null; }
+  for p in superpowers harness; do check "（LIVE）新しいセッションにプラグイン $p がある" has '.plugins | map(.name)' "$p"; done
+  for s in superpowers:brainstorming superpowers:test-driven-development harness:issue harness:wrap-up; do
+    check "（LIVE）skill $s が見える" has '.skills' "$s"
   done
-  P="$(jq -r '.plugins["harness@harness"][0].installPath' "$HOME/.claude/plugins/installed_plugins.json")"
-  n="$(printf '%s\n\n' "$MARK" | cat - "$P/rules/workflow.md" | LC_ALL=en_US.UTF-8 wc -m | tr -d ' ')"
-  check "（LIVE）注入した長さが、印の行と rules/workflow.md の全文の長さ（$n 字）と同じ" \
-    grep -q "harness-hook\" session-start) provided additionalContext ($n chars)" "$D/all.txt"
+  for s in harness:accept harness:verify harness:review; do
+    check "（LIVE）消えた skill $s が見えない" sh -c '! printf "%s" "$1" | jq -e --arg x "$2" ".skills | index(\$x)"' _ "$init" "$s"
+  done
+  check "（LIVE）Claude の git commit を harness の関門が止めた（「harness: コミットできない」）" grep -q 'harness: コミットできない' "$L"
+  check "（LIVE）作業ブランチのコミットは増えていない" [ "$(git -C "$D" rev-list --count HEAD)" = 1 ]
+  rm -rf "$D"
 fi
 
 [ "$fail" = 0 ] && echo "acceptance plugin-switch: ok"

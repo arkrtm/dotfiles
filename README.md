@@ -48,8 +48,8 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | tinymemory と harness のプラグイン（GitHub の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
-| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、Linear の使い方、スクショの場所（作業の進め方はプラグイン harness が SessionStart で入れる） |
+| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・harness は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
+| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch / `core.hooksPath`（プラグイン harness の data の `git-hooks`）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
@@ -66,13 +66,13 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 ## Claude Code ハーネス
 
-開発の手順と関門（superpowers の代替。ARK-30）は、プラグイン harness（[arkrtm/harness](https://github.com/arkrtm/harness)。skill は `/harness:<名前>`、agent は `harness:<名前>`）に移した（ARK-52）。仕組み・限界・superpowers との対応は harness の README にある。dotfiles が受け持つのは次の 3 つ:
+開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せ、自作のプラグイン harness（[arkrtm/harness](https://github.com/arkrtm/harness)）は関門（コミット前の検証・main を守る・迂回の拒否）と記録の skill（`/harness:issue`・`/harness:wrap-up`）だけを持つ（ARK-63。経緯は ARK-30・ARK-52・ARK-61）。関門の仕組みと限界は harness の README にある。dotfiles が受け持つのは次の 3 つ:
 
-- `config/claude/settings.json` の宣言（`extraKnownMarketplaces.harness` と `enabledPlugins["harness@harness"]`）。新しい端末では `install.sh` の後に `claude plugin marketplace add arkrtm/harness` → `claude plugin install harness@harness` → Claude Code のセッションを 1 回始める（SessionStart が data に git の共通 hooks を置く）
+- `config/claude/settings.json` の宣言（`extraKnownMarketplaces.harness` と、`enabledPlugins` の `harness@harness`・`superpowers@claude-plugins-official`）。新しい端末では `install.sh` の後に `claude plugin marketplace add arkrtm/harness` → `claude plugin install harness@harness` → `claude plugin install superpowers@claude-plugins-official` → Claude Code のセッションを 1 回始める（harness の SessionStart が data に git の共通 hooks を置く）
 - `config/git/config` の `core.hooksPath = ~/.claude/plugins/data/harness-harness/git-hooks`（git の共通 hooks。最初のセッションの前は無いので、それまで pre-commit の関門は効かない）
-- `install.sh` が置く `~/.local/libexec/uv`（プラグインの harness-hook の起動部が使う）
+- `install.sh` が置く `~/.local/libexec/uv`（harness の hook の起動部が使う）
 
-更新は `claude plugin marketplace update harness` → `claude plugin update harness@harness` → 新しいセッション。`sh tests/install.sh` は、この端末に入れたプラグインで、空の HOME に置いた git 設定経由の関門が効くことを確かめる（プラグインを入れた端末で実行する）。
+更新は、harness が `claude plugin marketplace update harness` → `claude plugin update harness@harness`、superpowers が `claude plugin marketplace update claude-plugins-official` → `claude plugin update superpowers@claude-plugins-official`。どちらも新しいセッションから効く。`sh tests/install.sh` は、この端末に入れた harness で、空の HOME に置いた git 設定経由の関門が効くことを確かめる（プラグインを入れた端末で実行する）。`LIVE=1 sh tests/acceptance/plugin-switch.sh` は、本物の `claude -p` の新しいセッションで、superpowers と harness の skill が見え、検証なしのコードのコミットが止まることを確かめる（haiku を 1 回呼ぶ。課金あり）。
 
 ## 端末ごとの注意
 
@@ -119,4 +119,4 @@ NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w
 
 ### 使わないもの（決定済み）
 
-conda / conda-forge / pixi（Python は uv）、システムや Homebrew の Python・Node を開発に使うこと（uv / fnm で管理）、Windows ネイティブ、superpowers（自作ハーネス arkrtm/harness を使う: ARK-30・ARK-52）
+conda / conda-forge / pixi（Python は uv）、システムや Homebrew の Python・Node を開発に使うこと（uv / fnm で管理）、Windows ネイティブ
