@@ -1,57 +1,146 @@
 {
+  "cleanupPeriodDays": 365,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status idle",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "compact|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'PATH=\"$PATH:$HOME/.local/bin:$HOME/.cargo/bin\"; command -v tinymemory >/dev/null 2>&1 && exec tinymemory hook session-start; exit 0'",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status working",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status waiting",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status waiting",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status waiting",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status working",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status working",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status done",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status idle",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/agent-status idle",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "tinymemory@tinymemory": true,
+    "harness@harness": true
+  },
   "extraKnownMarketplaces": {
     "tinymemory": {
       "source": {
         "source": "github",
         "repo": "arkrtm/tinymemory"
       }
+    },
+    "harness": {
+      "source": {
+        "source": "github",
+        "repo": "arkrtm/harness"
+      }
     }
   },
-  "theme": "dark",
-  "cleanupPeriodDays": 365,
-  "enabledPlugins": {
-    "tinymemory@tinymemory": true
-  },
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] },
-      { "matcher": "compact|resume", "hooks": [{ "type": "command", "command": "sh -c 'PATH=\"$PATH:$HOME/.local/bin:$HOME/.cargo/bin\"; command -v tinymemory >/dev/null 2>&1 && exec tinymemory hook session-start; exit 0'", "timeout": 15 }] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook turn", "timeout": 15 }] }
-    ],
-    "PreToolUse": [
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] },
-      { "matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook guard-branch", "timeout": 15 }] },
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook guard-bash", "timeout": 15 }] }
-    ],
-    "SubagentStop": [
-      { "matcher": "reviewer|acceptor", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook review-done", "timeout": 60 }] }
-    ],
-    "PermissionRequest": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] }
-    ],
-    "Notification": [
-      { "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status waiting", "timeout": 5 }] }
-    ],
-    "PostToolUse": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] },
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook bash", "timeout": 15 }] }
-    ],
-    "PostToolUseFailure": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status working", "timeout": 5 }] },
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook bash-failed", "timeout": 15 }] }
-    ],
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status done", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/harness-hook stop", "timeout": 60 }] }
-    ],
-    "StopFailure": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] }
-    ],
-    "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/agent-status idle", "timeout": 5 }] }
-    ]
-  }
+  "theme": "dark"
 }

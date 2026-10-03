@@ -41,10 +41,13 @@ if [ "${1:-}" = --check ]; then
   u="$(zq 'command -v uv' || true)"
   [ "$u" = "$HOME/.local/share/mise/shims/uv" ] && ok "日常の uv は mise の shim（プロジェクトの版の固定に従う）" || ng "日常の uv が mise の shim でない（${u:-なし}）"
 
-  # harness-hook は uv 経由で動く（システムに python3 が無くても判定できる）
+  # プラグイン harness（arkrtm/harness）の harness-hook は、install.sh が置く ~/.local/libexec/uv で動く（システムに python3 が
+  # 無くても判定できる）。コンテナには Claude Code が無いので、GitHub の main を clone して起動部を直接動かす
+  H="$HOME/harness"
+  [ -d "$H" ] || git clone -q --depth 1 https://github.com/arkrtm/harness.git "$H"
   hook_in() { # $1 = hook を起動する cwd、$2 = PATH
     printf '{"session_id":"t","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit --no-verify -m x"}}' "$1" |
-      (cd "$1" && env -i HOME="$HOME" PATH="$2" "$HOME/.local/bin/harness-hook" guard-bash) 2>&1 || true
+      (cd "$1" && env -i HOME="$HOME" PATH="$2" "$H/bin/harness-hook" guard-bash) 2>&1 || true
   }
   out="$(hook_in /tmp "$HOME/.local/bin:/usr/bin:/bin")"
   case "$out" in *'"deny"'*) ok "harness-hook が uv 経由で動き、迂回を拒否する" ;; *) ng "harness-hook が動かない: $out" ;; esac

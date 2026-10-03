@@ -14,24 +14,10 @@ config/mise/config.toml  .config/mise/config.toml
 config/starship.toml     .config/starship.toml
 config/bat/config        .config/bat/config
 config/git/config        .config/git/config
-config/git/hooks         .config/git/hooks
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
 config/claude/CLAUDE.md  .claude/CLAUDE.md
-config/claude/agents/reviewer.md  .claude/agents/reviewer.md
-config/claude/agents/implementer.md  .claude/agents/implementer.md
-config/claude/agents/acceptor.md  .claude/agents/acceptor.md
-config/claude/skills/verify  .claude/skills/verify
-config/claude/skills/review  .claude/skills/review
-config/claude/skills/issue   .claude/skills/issue
-config/claude/skills/wrap-up .claude/skills/wrap-up
-config/claude/skills/implement .claude/skills/implement
-config/claude/skills/diagnose  .claude/skills/diagnose
-config/claude/skills/accept    .claude/skills/accept
-config/claude/skills/design    .claude/skills/design
-config/claude/skills/tdd       .claude/skills/tdd
-bin/harness-hook         .local/bin/harness-hook
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync
 bin/lan-reachable        .local/bin/lan-reachable
@@ -106,12 +92,13 @@ export FNM_DIR="$HOME/.local/share/fnm"
 "$MISE" exec -- fnm install --lts
 "$MISE" exec -- fnm default lts-latest
 
-# harness-hook は ~/.local/libexec/uv を直接使う（mise の shim は cwd の mise 設定で壊れうるため）。uv の実体
-# （global 設定の latest 経由なので mise の更新に追随）をリンクする。PATH には入れない（日常の uv はプロジェクトの版の固定に従わせる）
+# プラグイン harness（arkrtm/harness）の harness-hook は ~/.local/libexec/uv を直接使う（mise の shim は cwd の mise 設定で
+# 壊れうるため）。uv の実体（global 設定の latest 経由なので mise の更新に追随）をリンクする。PATH には入れない
+# （日常の uv はプロジェクトの版の固定に従わせる）
 mkdir -p "$HOME/.local/libexec"
 ln -sfn "$("$MISE" which uv)" "$HOME/.local/libexec/uv"
 # Python が無い端末では初回の hook 実行（timeout 15 秒）で
-# ダウンロードが走らないよう、ここで入れておく（>=3.9 は bin/harness-hook の requires-python と同じ）。
+# ダウンロードが走らないよう、ここで入れておく（>=3.9 はプラグインの src/hook.py の requires-python と同じ）。
 # Python は uv 経由で実行する方針なので、~/.local/bin に python 実行ファイルは置かない（--no-bin）
 "$MISE" exec -- uv python find '>=3.9' >/dev/null 2>&1 || "$MISE" exec -- uv python install --no-bin '>=3.9'
 
