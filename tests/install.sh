@@ -65,7 +65,9 @@ echo code > "$R/app.py"; $g add -A
 if CLAUDECODE=1 $g commit -q -m code 2>/dev/null; then ng "インストール後: 証拠なしのコード変更がコミットできてしまった"; else ok "インストール後: Claude Code からの、証拠なしのコード変更のコミットは止まる"; fi
 if $g commit -q -m code 2>/dev/null; then ok "インストール後: 人の手動コミットは止めない"; else ng "人の手動コミットが止められた"; fi
 $g switch -q main; echo doc > "$R/NOTES.md"; $g add -A
-if CLAUDECODE=1 $g commit -q -m main-docs 2>/dev/null; then ng "インストール後: main の上の Claude の文書だけのコミットが通ってしまった"; else ok "インストール後: main の上の Claude のコミットは文書だけでも止まる"; fi
+if err="$(CLAUDECODE=1 $g commit -q -m main-docs 2>&1)"; then ng "インストール後: main の上の Claude の文書だけのコミットが通ってしまった"
+else case "$err" in *"harness: コミットできない"*) ok "インストール後: main の上の Claude のコミットは文書だけでも止まる" ;;
+  *) ng "main の上のコミットが関門以外の理由で失敗した: $err" ;; esac; fi
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
 out=$(DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh")

@@ -50,6 +50,7 @@ check "グローバルの CLAUDE.md: harness は関門と記録の skill だけ"
 check "グローバルの CLAUDE.md: 設計（spec）と計画（plan）は issue の本文に書き、docs/superpowers/ を作らない" \
   sh -c "grep -q '設計（spec）と計画（plan）' '$C' && grep -q 'docs/superpowers/.*作らない' '$C'"
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
+check "グローバルの CLAUDE.md: /harness:wrap-up は統合の前に作業ブランチの上で" grep -q '統合の前に、作業ブランチの上で `/harness:wrap-up`' "$C"
 check "グローバルの CLAUDE.md に規模（S/M/L）の記述が無い" sh -c "! grep -Eq '規模|M / L|S は任意|L の計画' '$C'"
 check "グローバルの CLAUDE.md に SessionStart（harness が手順を入れる）の記述が無い" sh -c "! grep -q SessionStart '$C'"
 
@@ -61,7 +62,7 @@ for f in "$C" "$ROOT/CLAUDE.md" "$ROOT/README.md" "$ROOT/tests/acceptance.sh"; d
   check "$n に「harness が SessionStart で手順を入れる」の記述が無い" \
     sh -c "! grep -Eq 'SessionStart で(入れる|コンテキストに入れる|読み込む)' '$f'"
 done
-check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q superpowers "$ROOT/CLAUDE.md"
+check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q '開発の手順はプラグイン superpowers' "$ROOT/CLAUDE.md"
 check "README の「使わないもの」に superpowers が無い" sh -c "! sed -n '/^### 使わないもの/,/^#/p' '$ROOT/README.md' | grep -q superpowers"
 check "README に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md"
 
@@ -83,7 +84,7 @@ if [ -n "${LIVE:-}" ]; then
     echo 'print(1)' > "$D/app.py" && $g add app.py )
   (cd "$D" && claude -p 'このリポジトリで `git commit -m live` を 1 回だけ実行し、その出力をそのまま答えて。ほかのコマンドは実行しない。' \
      --model haiku --permission-mode dontAsk --allowedTools 'Bash(git commit:*)' \
-     --strict-mcp-config --no-session-persistence --output-format stream-json --verbose > "$L" 2>/dev/null)
+     --strict-mcp-config --no-session-persistence --output-format stream-json --verbose > "$L" 2> "$D/stderr.txt" </dev/null)
   init="$(jq -c 'select(.type == "system" and .subtype == "init")' "$L")"
   has() { printf '%s' "$init" | jq -e --arg x "$2" "$1 | index(\$x)" >/dev/null; }
   for p in superpowers harness; do check "（LIVE）新しいセッションにプラグイン $p がある" has '.plugins | map(.name)' "$p"; done
@@ -95,7 +96,8 @@ if [ -n "${LIVE:-}" ]; then
   done
   check "（LIVE）Claude の git commit を harness の関門が止めた（「harness: コミットできない」）" grep -q 'harness: コミットできない' "$L"
   check "（LIVE）作業ブランチのコミットは増えていない" [ "$(git -C "$D" rev-list --count HEAD)" = 1 ]
-  rm -rf "$D"
+  # 失敗したら、原因（未ログイン・プラグイン未導入・関門の不発など）を見られるように記録を残す
+  if [ "$fail" = 0 ]; then rm -rf "$D"; else echo "（LIVE）記録を残した: $L と $D/stderr.txt"; fi
 fi
 
 [ "$fail" = 0 ] && echo "acceptance plugin-switch: ok"
