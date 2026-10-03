@@ -68,7 +68,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せ、自作のプラグイン harness（[arkrtm/harness](https://github.com/arkrtm/harness)）は関門（コミット前の検証・main を守る・迂回の拒否）と記録の skill（`/harness:issue`・`/harness:wrap-up`）だけを持つ（ARK-63。経緯は ARK-30・ARK-52・ARK-61）。関門の仕組みと限界は harness の README にある。dotfiles が受け持つのは次の 3 つ:
 
-- `config/claude/settings.json` の宣言（`extraKnownMarketplaces.harness` と、`enabledPlugins` の `harness@harness`・`superpowers@claude-plugins-official`）。新しい端末では `install.sh` の後に `claude plugin marketplace add arkrtm/harness` → `claude plugin install harness@harness` → `claude plugin install superpowers@claude-plugins-official` → Claude Code のセッションを 1 回始める（harness の SessionStart が data に git の共通 hooks を置く）
+- `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `harness`・`claude-plugins-official` と、`enabledPlugins` の `harness@harness`・`superpowers@claude-plugins-official`）。新しい端末では `install.sh` の後に `claude plugin marketplace add arkrtm/harness` → `claude plugin install harness@harness` → `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → Claude Code のセッションを 1 回始める（harness の SessionStart が data に git の共通 hooks を置く）
 - `config/git/config` の `core.hooksPath = ~/.claude/plugins/data/harness-harness/git-hooks`（git の共通 hooks。最初のセッションの前は無いので、それまで pre-commit の関門は効かない）
 - `install.sh` が置く `~/.local/libexec/uv`（harness の hook の起動部が使う）
 

@@ -1,9 +1,10 @@
 #!/bin/sh
 # dotfiles をプラグインに切り替えた後の状態の受け入れ検査: ARK-52 D（ハーネスをプラグイン harness に）と
-# ARK-63 AC8（開発の手順は superpowers、harness は関門と記録の skill だけ）。
+# ARK-63 AC8（開発の手順は superpowers、harness は関門と記録の skill だけ）と ARK-64（公式の marketplace の宣言と入れ方）。
 # 検証一式（sh tests/install.sh・DOCKER='ssh nas docker' sh tests/install-nosudo.sh）は別に実行する。
-# LIVE=1 のときだけ、本物の claude -p の新しいセッションで、プラグインと skill の見え方とコミットの関門（AC8-5）も確かめる
-# （haiku を 1 回呼ぶので数十秒・数セントの課金あり）
+# LIVE=1 のときだけ、本物の claude -p の新しいセッションで、プラグインと skill の見え方とコミットの関門（AC8-5）も、
+# 空の設定の置き場で README の新しい端末の手順が通ること（ARK-64 AC3）も確かめる
+# （haiku を 1 回呼び、marketplace を取得するので数十秒・数セントの課金あり）
 #   sh tests/acceptance/plugin-switch.sh
 #   LIVE=1 sh tests/acceptance/plugin-switch.sh
 set -u
@@ -26,6 +27,8 @@ for p in superpowers@claude-plugins-official harness@harness tinymemory@tinymemo
 done
 check "extraKnownMarketplaces.harness は github の arkrtm/harness" \
   [ "$(jq -r '.extraKnownMarketplaces.harness.source | "\(.source) \(.repo)"' "$S")" = "github arkrtm/harness" ]
+check "extraKnownMarketplaces.claude-plugins-official は github の anthropics/claude-plugins-official" \
+  [ "$(jq -r '.extraKnownMarketplaces["claude-plugins-official"].source | "\(.source) \(.repo)"' "$S")" = "github anthropics/claude-plugins-official" ]
 
 # 旧ハーネスのファイルが無い
 for p in bin/harness-hook config/claude/skills config/claude/agents config/git/hooks docs/harness.md \
@@ -65,6 +68,10 @@ done
 check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q '開発の手順はプラグイン superpowers' "$ROOT/CLAUDE.md"
 check "README の「使わないもの」に superpowers が無い" sh -c "! sed -n '/^### 使わないもの/,/^#/p' '$ROOT/README.md' | grep -q superpowers"
 check "README に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md"
+# README の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
+steps="$(grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md" | grep -o '`claude plugin [^`]*`' | tr -d '`')"
+add_before_install() { printf '%s\n' "$steps" | sed -n '/marketplace add anthropics\/claude-plugins-official/,$p' | grep -q 'install superpowers@claude-plugins-official'; }
+check "README の新しい端末の手順で、公式の marketplace の add が superpowers の install より前にある" add_before_install
 
 # git の共通 hooks の場所: dotfiles の設定がプラグインの data の git-hooks を指し、この端末で効いていて、run-hook がある
 G="$ROOT/config/git/config"
@@ -96,8 +103,17 @@ if [ -n "${LIVE:-}" ]; then
   done
   check "（LIVE）Claude の git commit を harness の関門が止めた（「harness: コミットできない」）" grep -q 'harness: コミットできない' "$L"
   check "（LIVE）作業ブランチのコミットは増えていない" [ "$(git -C "$D" rev-list --count HEAD)" = 1 ]
+  # README の新しい端末の手順（ARK-64 AC3）: 空の設定の置き場に settings.json の写しを置き、手順の `claude plugin …` を順に実行する
+  N="$D/newterm"; mkdir -p "$N"; cp "$S" "$N/settings.json"
+  check "（LIVE）README の新しい端末の手順を読み取れた（4 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 4 ]
+  # 手順の 1 つずつを語に分けて渡す（シェルを通さない）
+  ran() { printf '%s\n' "$steps" | while read -r cmd; do CLAUDE_CONFIG_DIR="$N" $cmd </dev/null >> "$N/steps.log" 2>&1 || exit 1; done; }
+  check "（LIVE）新しい端末の手順のコマンドがすべて成功する" ran
+  check "（LIVE）新しい端末の手順で harness と superpowers が入る" \
+    jq -e '.plugins | has("harness@harness") and has("superpowers@claude-plugins-official")' "$N/plugins/installed_plugins.json"
+  check "（LIVE）新しい端末の手順で settings.json は変わらない" [ "$(jq -S . "$S")" = "$(jq -S . "$N/settings.json")" ]
   # 失敗したら、原因（未ログイン・プラグイン未導入・関門の不発など）を見られるように記録を残す
-  if [ "$fail" = 0 ]; then rm -rf "$D"; else echo "（LIVE）記録を残した: $L と $D/stderr.txt"; fi
+  if [ "$fail" = 0 ]; then rm -rf "$D"; else echo "（LIVE）記録を残した: $L・$D/stderr.txt・$N/steps.log"; fi
 fi
 
 [ "$fail" = 0 ] && echo "acceptance plugin-switch: ok"
