@@ -69,7 +69,8 @@ check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書�
 check "README の「使わないもの」に superpowers が無い" sh -c "! sed -n '/^### 使わないもの/,/^#/p' '$ROOT/README.md' | grep -q superpowers"
 check "README に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md"
 # README の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
-steps="$(grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md" | grep -o '`claude plugin [^`]*`' | tr -d '`')"
+steps="$(grep -F '新しい端末では' "$ROOT/README.md" | grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' | grep -o '`claude plugin [^`]*`' | tr -d '`')"
+check "README の新しい端末の手順を読み取れた（claude plugin が 4 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 4 ]
 add_before_install() { printf '%s\n' "$steps" | sed -n '/marketplace add anthropics\/claude-plugins-official/,$p' | grep -q 'install superpowers@claude-plugins-official'; }
 check "README の新しい端末の手順で、公式の marketplace の add が superpowers の install より前にある" add_before_install
 
@@ -104,14 +105,14 @@ if [ -n "${LIVE:-}" ]; then
   check "（LIVE）Claude の git commit を harness の関門が止めた（「harness: コミットできない」）" grep -q 'harness: コミットできない' "$L"
   check "（LIVE）作業ブランチのコミットは増えていない" [ "$(git -C "$D" rev-list --count HEAD)" = 1 ]
   # README の新しい端末の手順（ARK-64 AC3）: 空の設定の置き場に settings.json の写しを置き、手順の `claude plugin …` を順に実行する
-  N="$D/newterm"; mkdir -p "$N"; cp "$S" "$N/settings.json"
-  check "（LIVE）README の新しい端末の手順を読み取れた（4 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 4 ]
+  # 比べる基準は写しを取った時点の内容（実行中に本物の settings.json が書き換わっても誤って落ちないように）
+  N="$D/newterm"; mkdir -p "$N"; cp "$S" "$D/settings.before.json"; cp "$D/settings.before.json" "$N/settings.json"
   # 手順の 1 つずつを語に分けて渡す（シェルを通さない）
   ran() { printf '%s\n' "$steps" | while read -r cmd; do CLAUDE_CONFIG_DIR="$N" $cmd </dev/null >> "$N/steps.log" 2>&1 || exit 1; done; }
   check "（LIVE）新しい端末の手順のコマンドがすべて成功する" ran
   check "（LIVE）新しい端末の手順で harness と superpowers が入る" \
     jq -e '.plugins | has("harness@harness") and has("superpowers@claude-plugins-official")' "$N/plugins/installed_plugins.json"
-  check "（LIVE）新しい端末の手順で settings.json は変わらない" [ "$(jq -S . "$S")" = "$(jq -S . "$N/settings.json")" ]
+  check "（LIVE）新しい端末の手順で settings.json は変わらない" [ "$(jq -S . "$D/settings.before.json")" = "$(jq -S . "$N/settings.json")" ]
   # 失敗したら、原因（未ログイン・プラグイン未導入・関門の不発など）を見られるように記録を残す
   if [ "$fail" = 0 ]; then rm -rf "$D"; else echo "（LIVE）記録を残した: $L・$D/stderr.txt・$N/steps.log"; fi
 fi

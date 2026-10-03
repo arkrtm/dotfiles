@@ -72,7 +72,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `config/git/config` の `core.hooksPath = ~/.claude/plugins/data/harness-harness/git-hooks`（git の共通 hooks。最初のセッションの前は無いので、それまで pre-commit の関門は効かない）
 - `install.sh` が置く `~/.local/libexec/uv`（harness の hook の起動部が使う）
 
-更新は、harness が `claude plugin marketplace update harness` → `claude plugin update harness@harness`、superpowers が `claude plugin marketplace update claude-plugins-official` → `claude plugin update superpowers@claude-plugins-official`。どちらも新しいセッションから効く。`sh tests/install.sh` は、この端末に入れた harness で、空の HOME に置いた git 設定経由の関門が効くことを確かめる（プラグインを入れた端末で実行する）。`LIVE=1 sh tests/acceptance/plugin-switch.sh` は、本物の `claude -p` の新しいセッションで、superpowers と harness の skill が見え、検証なしのコードのコミットが止まることを確かめる（haiku を 1 回呼ぶ。課金あり）。
+更新は、harness が `claude plugin marketplace update harness` → `claude plugin update harness@harness`、superpowers が `claude plugin marketplace update claude-plugins-official` → `claude plugin update superpowers@claude-plugins-official`。どちらも新しいセッションから効く。`sh tests/install.sh` は、この端末に入れた harness で、空の HOME に置いた git 設定経由の関門が効くことを確かめる（プラグインを入れた端末で実行する）。`LIVE=1 sh tests/acceptance/plugin-switch.sh` は、本物の `claude -p` の新しいセッションで、superpowers と harness の skill が見え、検証なしのコードのコミットが止まることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
 
 ## 端末ごとの注意
 
