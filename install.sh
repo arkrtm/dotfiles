@@ -18,6 +18,8 @@ config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
 config/claude/CLAUDE.md  .claude/CLAUDE.md
+config/claude/skills/issue    .claude/skills/issue
+config/claude/skills/wrap-up  .claude/skills/wrap-up
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync
 bin/lan-reachable        .local/bin/lan-reachable
@@ -91,16 +93,6 @@ fi
 export FNM_DIR="$HOME/.local/share/fnm"
 "$MISE" exec -- fnm install --lts
 "$MISE" exec -- fnm default lts-latest
-
-# プラグイン harness（arkrtm/harness）の harness-hook は ~/.local/libexec/uv を直接使う（mise の shim は cwd の mise 設定で
-# 壊れうるため）。uv の実体（global 設定の latest 経由なので mise の更新に追随）をリンクする。PATH には入れない
-# （日常の uv はプロジェクトの版の固定に従わせる）
-mkdir -p "$HOME/.local/libexec"
-ln -sfn "$("$MISE" which uv)" "$HOME/.local/libexec/uv"
-# Python が無い端末では初回の hook 実行（timeout 15 秒）で
-# ダウンロードが走らないよう、ここで入れておく（>=3.9 はプラグインの src/hook.py の requires-python と同じ）。
-# Python は uv 経由で実行する方針なので、~/.local/bin に python 実行ファイルは置かない（--no-bin）
-"$MISE" exec -- uv python find '>=3.9' >/dev/null 2>&1 || "$MISE" exec -- uv python install --no-bin '>=3.9'
 
 # tinymemory の hook は PATH + ~/.local/bin + ~/.cargo/bin しか探さない（hook 文字列は Codex の
 # 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く

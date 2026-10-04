@@ -22,9 +22,8 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 3. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
 4. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ、`config/mise/config.toml` のツール（tmux を含む）を全部入れる
 5. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
-6. プラグイン harness の hook 用に uv の実体を `~/.local/libexec/uv`（PATH には入れない）にリンクし、Python を用意する（システムに 3.9 以上が無い時だけ）
-7. Neovim プラグインを `lazy-lock.json` の版に揃える
-8. mac のみ: `mac/setup.sh`（Brewfile、スクリーンショット設定、launchd 登録）
+6. Neovim プラグインを `lazy-lock.json` の版に揃える
+7. mac のみ: `mac/setup.sh`（Brewfile、スクリーンショット設定、launchd 登録）
 
 install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
@@ -48,9 +47,10 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・harness は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の指示: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
-| `config/git/config` | `~/.config/git/config` | user / defaultBranch / `core.hooksPath`（プラグイン harness の data の `git-hooks`）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
+| `config/claude/skills/issue` `config/claude/skills/wrap-up` | `~/.claude/skills/issue` `~/.claude/skills/wrap-up` | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
+| `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale |
@@ -64,15 +64,14 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png` に改名して送信先の `~/screenshots/` へ `scp -O`（7 日で削除）
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
 
-## Claude Code ハーネス
+## Claude Code の手順
 
-開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せ、自作のプラグイン harness（[arkrtm/harness](https://github.com/arkrtm/harness)）は関門（コミット前の検証・main を守る・迂回の拒否）と記録の skill（`/harness:issue`・`/harness:wrap-up`）だけを持つ（ARK-63。経緯は ARK-30・ARK-52・ARK-61）。関門の仕組みと限界は harness の README にある。dotfiles が受け持つのは次の 3 つ:
+開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せる。Linear の記録は dotfiles の skill（`/issue`・`/wrap-up`）。自作のハーネス（プラグイン harness）はやめた（ARK-67。経緯は ARK-30・52・63〜66）。dotfiles が受け持つのは次の 2 つ:
 
-- `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `harness`・`claude-plugins-official` と、`enabledPlugins` の `harness@harness`・`superpowers@claude-plugins-official`）。新しい端末では `install.sh` の後に `claude plugin marketplace add arkrtm/harness` → `claude plugin install harness@harness` → `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → Claude Code のセッションを 1 回始める（harness の SessionStart が data に git の共通 hooks を置く）
-- `config/git/config` の `core.hooksPath = ~/.claude/plugins/data/harness-harness/git-hooks`（git の共通 hooks。最初のセッションの前は無いので、それまで pre-commit の関門は効かない）
-- `install.sh` が置く `~/.local/libexec/uv`（harness の hook の起動部が使う）
+- `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `claude-plugins-official` と、`enabledPlugins` の `superpowers@claude-plugins-official`）。新しい端末では `install.sh` の後に `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official`
+- skill の `issue`・`wrap-up`（`install.sh` が `~/.claude/skills` にリンクする）
 
-更新は、harness が `claude plugin marketplace update harness` → `claude plugin update harness@harness`、superpowers が `claude plugin marketplace update claude-plugins-official` → `claude plugin update superpowers@claude-plugins-official`。どちらも新しいセッションから効く。`sh tests/install.sh` は、この端末に入れた harness で、空の HOME に置いた git 設定経由の関門が効くことを確かめる（プラグインを入れた端末で実行する）。`LIVE=1 sh tests/acceptance/plugin-switch.sh` は、本物の `claude -p` の新しいセッションで、superpowers と harness の skill が見え、検証なしのコードのコミットが止まることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
+更新は `claude plugin marketplace update claude-plugins-official` → `claude plugin update superpowers@claude-plugins-official`（新しいセッションから効く）。`LIVE=1 sh tests/acceptance/plugin-switch.sh` は、本物の `claude -p` の新しいセッションで superpowers と skill の issue・wrap-up が見えることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
 
 ## 端末ごとの注意
 

@@ -1,28 +1,20 @@
 #!/bin/sh
 # install.sh の検査: 空の HOME に対して実行し、(1) LINKS 表の全項目がリンクされること、(2) 既存ファイルが
-# 退避されること、(3) 配置した git 設定とこの端末に入れたプラグイン harness でコミットの関門（作業ブランチでの
-# 検証なしのコードのコミットと、main の上のコミット）が効くこと、
-# (4) 再実行しても同じ結果になること、(5) ハーネスの旧来のリンクを置かないこと
-#   sh tests/install.sh   （プラグイン harness を入れた端末で）
+# 退避されること、(3) Claude Code の skill は issue と wrap-up だけを置き（ほかの skill には触らない）、
+# git の共通 hooks の設定と旧来のハーネスのものを置かないこと（ARK-67）、(4) 再実行しても同じ結果になること
+#   sh tests/install.sh
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
-# プラグインの harness-hook は $HOME/.local/libexec/uv で動く。空の HOME では mise の shim が使えないので、先に uv の実体を控える
-UV="$HOME/.local/libexec/uv"; [ -x "$UV" ] || UV="$(mise which uv 2>/dev/null || true)"
-[ -x "$UV" ] || { echo "FAIL uv の実体が見つからない（dotfiles の install.sh を実行すること）"; exit 1; }
-# この端末に入れたプラグイン harness の場所（Claude Code が installed_plugins.json に記録する）も、空の HOME に替える前に控える
-PLUGIN="$(jq -r '.plugins["harness@harness"][0].installPath // empty' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null || true)"
-[ -x "$PLUGIN/bin/harness-hook" ] || { echo "FAIL プラグイン harness が入っていない（claude plugin install harness@harness）"; exit 1; }
-export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}" # uv 管理の Python も元の HOME のものを使う（毎回ダウンロードしない）
 export HOME="$(mktemp -d)"
-unset XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM CLAUDECODE 2>/dev/null || true
+unset XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM 2>/dev/null || true
 trap 'rm -rf "$HOME"' EXIT
-mkdir -p "$HOME/.local/libexec"; ln -s "$UV" "$HOME/.local/libexec/uv"
 fail=0
 ok() { echo "ok   $1"; }
 ng() { echo "FAIL $1"; fail=1; }
 
-# 既存ファイルがある状態で実行 → 退避されてリンクに置き換わる
-mkdir -p "$HOME/.config/tmux"; echo old > "$HOME/.config/tmux/tmux.conf"
+# 既存ファイルがある状態で実行 → 退避されてリンクに置き換わる。ほかの skill は残る
+mkdir -p "$HOME/.config/tmux" "$HOME/.claude/skills/other"; echo old > "$HOME/.config/tmux/tmux.conf"
+echo other > "$HOME/.claude/skills/other/SKILL.md"
 DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh" >/dev/null
 
 # LINKS 表の全項目がリンクされているか（install.sh から表を読み取る）
@@ -39,35 +31,20 @@ sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -vE '^(LINKS="|")$' | wh
   [ -n "$src" ] && [ ! -e "$DOTFILES/$src" ] && echo "NOSRC $src"
 done | grep NOSRC && ng "リンク元が存在しない項目がある" || ok "全リンク元が存在する"
 
-# ハーネスはプラグインから入る。dotfiles の旧来のハーネスのリンクは置かない（プラグインと二重にしない）
-for p in .local/bin/harness-hook .config/git/hooks .claude/skills .claude/agents; do
-  if [ -e "$HOME/$p" ] || [ -L "$HOME/$p" ]; then echo "STALE $p"; fi
-done | grep STALE && ng "ハーネスの旧来のリンクがある" || ok "ハーネスの旧来のリンク（harness-hook・git hooks・skills・agents）を置かない"
+# Claude Code の skill: issue と wrap-up を置き、ほかの skill はそのまま残す。本文は harness・関門に触れない
+[ "$(ls "$HOME/.claude/skills" | tr '\n' ' ')" = "issue other wrap-up " ] && [ "$(cat "$HOME/.claude/skills/other/SKILL.md")" = other ] \
+  && ok "skill は issue と wrap-up を置き、ほかの skill には触らない" || ng "skill の置き方: $(ls "$HOME/.claude/skills" | tr '\n' ' ')"
+grep -qx 'name: issue' "$HOME/.claude/skills/issue/SKILL.md" && grep -qx 'name: wrap-up' "$HOME/.claude/skills/wrap-up/SKILL.md" \
+  && ok "skill の issue と wrap-up が読める" || ng "skill の issue・wrap-up の SKILL.md が無い"
+grep -nE 'harness|関門|\.harness-' "$DOTFILES"/config/claude/skills/*/SKILL.md && ng "skill に harness・関門の記述が残っている" \
+  || ok "skill は harness・関門に触れない"
 
-# 配置した git 設定（~/.config/git/config の core.hooksPath = プラグインの data の git-hooks）経由で、コミットの関門が実際に効く。
-# data の git-hooks はプラグインの SessionStart が置く。ここでは入れたプラグインの session-start を、空の HOME の data に向けて動かす
-export XDG_STATE_HOME="$HOME/.state"
-out="$(CLAUDE_PLUGIN_DATA="$HOME/.claude/plugins/data/harness-harness" "$PLUGIN/bin/harness-hook" session-start </dev/null)"
-case "$out" in
-  *systemMessage*) ng "git 設定の core.hooksPath が、プラグインが置く data の git-hooks を指していない: $out" ;;
-  *) if [ -x "$HOME/.claude/plugins/data/harness-harness/git-hooks/run-hook" ]; then
-       ok "git 設定の core.hooksPath が、プラグインが置く data の git-hooks を指す（SessionStart が警告を出さずに run-hook を置く）"
-     else ng "プラグインの session-start が data に git の共通 hooks を置かない: $out"; fi ;;
-esac
-R="$HOME/repo"; mkdir -p "$R"; g="git -C $R -c user.name=t -c user.email=t@t"
-$g init -q -b main; $g commit -q --allow-empty -m init; $g switch -q -c feat/x
-# Claude Code がこのリポジトリで Bash を実行した状態にする（一時ディレクトリの中のリポジトリは、Bash の後の hook が関門の対象に登録する）
-printf '{"session_id":"t","cwd":"%s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git status"},"tool_response":{"stdout":"","stderr":"","interrupted":false}}' "$R" \
-  | "$PLUGIN/bin/harness-hook" bash
-echo doc > "$R/README.md"; $g add -A
-if CLAUDECODE=1 $g commit -q -m docs 2>/dev/null; then ok "インストール後: ドキュメントだけのコミットは通る"; else ng "ドキュメントのコミットが止められた"; fi
-echo code > "$R/app.py"; $g add -A
-if CLAUDECODE=1 $g commit -q -m code 2>/dev/null; then ng "インストール後: 証拠なしのコード変更がコミットできてしまった"; else ok "インストール後: Claude Code からの、証拠なしのコード変更のコミットは止まる"; fi
-if $g commit -q -m code 2>/dev/null; then ok "インストール後: 人の手動コミットは止めない"; else ng "人の手動コミットが止められた"; fi
-$g switch -q main; echo doc > "$R/NOTES.md"; $g add -A
-if err="$(CLAUDECODE=1 $g commit -q -m main-docs 2>&1)"; then ng "インストール後: main の上の Claude の文書だけのコミットが通ってしまった"
-else case "$err" in *"harness: コミットできない"*) ok "インストール後: main の上の Claude のコミットは文書だけでも止まる" ;;
-  *) ng "main の上のコミットが関門以外の理由で失敗した: $err" ;; esac; fi
+# 旧来のハーネスのものを置かない。git の設定は共通 hooks の場所を指さない（各リポジトリの .git/hooks がそのまま効く）
+for p in .local/bin/harness-hook .local/libexec/uv .config/git/hooks .claude/agents; do
+  if [ -e "$HOME/$p" ] || [ -L "$HOME/$p" ]; then echo "STALE $p"; fi
+done | grep STALE && ng "ハーネスのものが置かれている" || ok "ハーネスのもの（harness-hook・uv のリンク・git hooks・agents）を置かない"
+[ -z "$(git config --file "$HOME/.config/git/config" --get core.hooksPath || true)" ] \
+  && ok "git の設定は共通 hooks の場所を指さない" || ng "git の設定に共通 hooks の場所が残っている"
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
 out=$(DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh")

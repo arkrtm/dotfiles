@@ -41,21 +41,6 @@ if [ "${1:-}" = --check ]; then
   u="$(zq 'command -v uv' || true)"
   [ "$u" = "$HOME/.local/share/mise/shims/uv" ] && ok "日常の uv は mise の shim（プロジェクトの版の固定に従う）" || ng "日常の uv が mise の shim でない（${u:-なし}）"
 
-  # プラグイン harness（arkrtm/harness）の harness-hook は、install.sh が置く ~/.local/libexec/uv で動く（システムに python3 が
-  # 無くても判定できる）。コンテナには Claude Code が無いので、GitHub の main を clone して起動部を直接動かす
-  H="$HOME/harness"
-  [ -d "$H" ] || git clone -q --depth 1 https://github.com/arkrtm/harness.git "$H"
-  hook_in() { # $1 = hook を起動する cwd、$2 = PATH
-    printf '{"session_id":"t","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit --no-verify -m x"}}' "$1" |
-      (cd "$1" && env -i HOME="$HOME" PATH="$2" "$H/bin/harness-hook" guard-bash) 2>&1 || true
-  }
-  out="$(hook_in /tmp "$HOME/.local/bin:/usr/bin:/bin")"
-  case "$out" in *'"deny"'*) ok "harness-hook が uv 経由で動き、迂回を拒否する" ;; *) ng "harness-hook が動かない: $out" ;; esac
-  # 作業中のリポジトリの mise 設定（未信頼・未導入の版の固定）でも、PATH で mise の shim が先にあっても動く（shim を使わない）
-  mkdir -p /tmp/proj && printf '[tools]\nuv = "0.1.0"\n' > /tmp/proj/mise.toml
-  out="$(hook_in /tmp/proj "$HOME/.local/share/mise/shims:/usr/bin:/bin:$HOME/.local/bin")"
-  case "$out" in *'"deny"'*) ok "cwd に未信頼の mise 設定があり、PATH で shim が先でも harness-hook は動く" ;; *) ng "cwd の mise 設定で harness-hook が動かない: $out" ;; esac
-
   # 対話 zsh（zsh-bin の 5.8）で zshrc がエラーなく読まれ、fnm env が効く（端末が無いと zle が使えないので script で疑似端末を付ける）
   i="$(clean script -qec "$HOME/.local/bin/zsh -ic 'echo fnm=\${FNM_MULTISHELL_PATH:+ok}'" /dev/null 2>&1 | tr -d '\r' | sed "s/$(printf '\033')\[[?0-9;]*[a-zA-Z]//g" || true)" # 端末の制御シーケンスは除く
   [ "$i" = "fnm=ok" ] && ok "対話 zsh で zshrc がエラーなく読まれ、fnm env が効く" || ng "対話 zsh の zshrc: $i"

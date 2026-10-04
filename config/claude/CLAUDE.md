@@ -8,16 +8,16 @@
 - **検証**: 目標を検証可能な形にして確認するまで繰り返す（Karpathy 4）。テストは superpowers の TDD に従う（Ponytail の「ONE runnable check」と食い違うときは TDD を優先する）
 - **リファクタ**: 無関係な箇所は触らない（Karpathy 3）。ただし**触った箇所は触る前より整った状態で終える**（TDD の REFACTOR）。それを超える整理は別 issue に切り出して提案する
 
-開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は superpowers の skill に従う。プラグイン harness（arkrtm/harness）は、関門（コミット前の検証・main を守る・迂回の拒否）と記録の skill（`/harness:issue`・`/harness:wrap-up`）だけを持つ。ここには手順を書かない（二重にしない）。
+開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は superpowers の skill に従う。ここには手順を書かない（二重にしない）。Linear の記録の手順は skill の `/issue`・`/wrap-up`（dotfiles）。自作のハーネス（harness）は、superpowers より良い結果を示せなかったのでやめた（ARK-67）。
 
 ## Linear（タスク管理）
 
 会話はあとから見返せないので、**後から Linear だけ見れば作業内容と状況が分かる**状態を保つ。遠慮せず issue を作り、状態を更新してよい。
 
-- 作業の起点に issue が無ければ作る（数分で終わる小さな修正だけは任意。issue が無ければコミットメッセージが記録）。issue があれば `/harness:issue ARK-nn` で始める（「ARK-nn をやって」と言われたときも）
+- 作業の起点に issue が無ければ作る（数分で終わる小さな修正だけは任意。issue が無ければコミットメッセージが記録）。issue があれば `/issue ARK-nn` で始める（「ARK-nn をやって」と言われたときも）
 - 要件と受け入れ条件、superpowers の設計（spec）と計画（plan）は、コメントではなく issue の**本文**に書く（最新が 1 か所で分かるように）。リポジトリに `docs/superpowers/` のファイルは作らない
 - 状態: 着手で In Progress。コミット済み・未マージの間はそのまま（コメントに「未マージ」と書く）。マージした、または統合しないと決めた後に Done（統合の判断と一緒に確認してよい）。手を止める理由があれば Blocked や Backlog に戻す
-- コメントは節目だけ: 要件・計画の合意、方針変更、詰まった点、途中で止めるとき（状態と次の手順。tinymemory は端末ごとなので、別の端末で続けるにはここが要る）、完了（統合の前に、作業ブランチの上で `/harness:wrap-up`。superpowers の finishing-a-development-branch で統合するより先）
+- コメントは節目だけ: 要件・計画の合意、方針変更、詰まった点、途中で止めるとき（状態と次の手順。tinymemory は端末ごとなので、別の端末で続けるにはここが要る）、完了（統合の前に、作業ブランチの上で `/wrap-up`。superpowers の finishing-a-development-branch で統合するより先）
 - 子 issue は、セッションやブランチをまたぐ作業に分けるときだけ作る。1 つのブランチで終わる内訳は、本文のチェックリストに書く
 - 将来やる / 見送ったことも issue に残す（Backlog）
 - Linear が使えない環境では、issue の代わりにリポジトリの `docs/tasks/<短い名前>.md` に、同じ見出し（要件・受け入れ条件・設計・計画・経過）で書く

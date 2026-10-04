@@ -126,7 +126,6 @@
   },
   "enabledPlugins": {
     "tinymemory@tinymemory": true,
-    "harness@harness": true,
     "superpowers@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
@@ -134,12 +133,6 @@
       "source": {
         "source": "github",
         "repo": "arkrtm/tinymemory"
-      }
-    },
-    "harness": {
-      "source": {
-        "source": "github",
-        "repo": "arkrtm/harness"
       }
     },
     "claude-plugins-official": {

@@ -3,8 +3,3 @@
 	email = arkrithm@gmail.com
 [init]
 	defaultBranch = main
-[core]
-	# 全リポジトリ共通の hooks（プラグイン harness の run-hook: pre-commit でハーネスの関門を通し、各 hook 名を
-	# リポジトリ自身の .git/hooks に委譲する）。プラグインの SessionStart がこの場所に置き直す（arkrtm/harness の README の「入れ方」）。
-	# リポジトリ側で hooksPath を設定しているとそちらが優先され、関門は効かない
-	hooksPath = ~/.claude/plugins/data/harness-harness/git-hooks
