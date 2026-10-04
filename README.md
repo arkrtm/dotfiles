@@ -18,18 +18,19 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 `install.sh` がやること:
 
 1. 下表のファイルをシンボリックリンクで配置
-2. zsh プラグイン 2 つを clone（プラグインマネージャなし）
-3. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
-4. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ、`config/mise/config.toml` のツール（tmux を含む）を全部入れる
-5. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
-6. Neovim プラグインを `lazy-lock.json` の版に揃える
-7. mac のみ: `mac/setup.sh`（Brewfile、スクリーンショット設定、launchd 登録）
+2. `~/.ssh` を 700、`ssh/config` を 600 にする（ssh は他ユーザーが書ける設定ファイルを拒むため）
+3. zsh プラグイン 2 つを clone（プラグインマネージャなし。版は固定せず再実行で最新に）
+4. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
+5. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ（インストーラは取得してから版を固定して実行）、`config/mise/config.toml` のツール（tmux を含む）を全部入れる
+6. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
+7. Neovim プラグインを `lazy-lock.json` の版に揃える
+8. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定、launchd 登録）
 
 install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
 | | mac | Ubuntu / WSL | NAS (UGOS) |
 |---|---|---|---|
-| Ghostty | Brewfile | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows Terminal | 不要 |
+| Ghostty | Brewfile（Homebrew が無ければ省略されるので、先に Homebrew を入れる） | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows Terminal | 不要 |
 | フォント | Hack Nerd Font（手動導入済み） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` | 不要 |
 | Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` | Docker（下記） |
 | GitHub | `gh auth login` | `gh auth login` | `gh auth login` |
@@ -41,7 +42,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 |---|---|---|
 | `shell/zshenv` `shell/zshrc` | `~/.zshenv` `~/.zshrc` | vi キー、fzf（Ctrl-R/T, Alt-C）、starship、mise、fnm（既定の Node を PATH に、対話シェルでは `fnm env`）、エイリアス `ll la lt lg lzd cw` |
 | `shell/bashrc` `shell/bash_profile` | `~/.bashrc` `~/.bash_profile` | zsh が無い端末用。対話ログインで zsh があれば `exec zsh`（`NO_ZSH=1` で抑止） |
-| `config/mise/config.toml` | `~/.config/mise/config.toml` | rg fd bat eza fzf starship gh uv fnm tmux lazygit lazydocker neovim tree-sitter yazi tinymemory |
+| `config/mise/config.toml` | `~/.config/mise/config.toml` | rg fd bat eza fzf starship gh jq uv fnm tmux lazygit lazydocker neovim tree-sitter yazi tinymemory |
 | `config/starship.toml` | `~/.config/starship.toml` | 2 行・最小、One Dark |
 | `config/tmux/tmux.conf` | `~/.config/tmux/tmux.conf` | prefix `C-g`、hjkl、`-` `\|` 分割、passthrough（画像）、extended-keys、OSC52、エージェント状態表示 |
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |

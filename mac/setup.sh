@@ -6,6 +6,8 @@ DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 # Homebrew（GUI アプリ等）
 if command -v brew >/dev/null 2>&1; then
   brew bundle --file="$DOTFILES/Brewfile" || echo "warning: brew bundle に失敗（以降の設定は続行）"
+else
+  echo "Homebrew が無いので Brewfile（ghostty）は省略"
 fi
 
 # スクリーンショット: ~/Screenshots に保存、撮影後のサムネイル（保存が約 5 秒遅れる）を無効化
@@ -26,6 +28,6 @@ new=$(sed "s|@HOME@|$HOME|g" "$DOTFILES/mac/$label.plist")
 if [ ! -f "$plist" ] || [ "$new" != "$(cat "$plist")" ]; then
   printf '%s\n' "$new" >"$plist"
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
-  echo "launchd: $label を登録"
+  # GUI セッションが無い時（ssh 越しなど）は登録できない。plist は置いたので次回ログインで launchd が読む
+  launchctl bootstrap "gui/$(id -u)" "$plist" && echo "launchd: $label を登録" || echo "warning: launchd の登録に失敗（次回ログインで有効になる）"
 fi

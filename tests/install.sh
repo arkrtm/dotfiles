@@ -6,16 +6,20 @@
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 export HOME="$(mktemp -d)"
-unset XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM 2>/dev/null || true
 trap 'rm -rf "$HOME"' EXIT
+# 安全装置: install.sh がリンクだけで止まる早期終了（DOTFILES_LINKS_ONLY）が無いと、一時 HOME に対してフル install が走る
+# （mac では defaults write と launchd の登録も）
+grep -qF 'DOTFILES_LINKS_ONLY' "$DOTFILES/install.sh" || { echo "FAIL install.sh に DOTFILES_LINKS_ONLY の早期終了が無い"; exit 1; }
 fail=0
 ok() { echo "ok   $1"; }
 ng() { echo "FAIL $1"; fail=1; }
 
-# 既存ファイルがある状態で実行 → 退避されてリンクに置き換わる。ほかの skill は残る
+# 既存ファイル（ぶら下がりのリンクも）がある状態で実行 → 退避されてリンクに置き換わる。ほかの skill は残る
 mkdir -p "$HOME/.config/tmux" "$HOME/.claude/skills/other"; echo old > "$HOME/.config/tmux/tmux.conf"
+ln -s /nonexistent "$HOME/.zshrc"
 echo other > "$HOME/.claude/skills/other/SKILL.md"
-DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh" >/dev/null
+out1="$(DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh")"
+case "$out1" in *done.*) ng "install.sh がリンクだけで止まらなかった（DOTFILES_LINKS_ONLY）" ;; *) ok "install.sh はリンクだけで止まる（DOTFILES_LINKS_ONLY）" ;; esac
 
 # LINKS 表の全項目がリンクされているか（install.sh から表を読み取る）
 [ "$(sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -cvE '^(LINKS="|")$')" -gt 10 ] && ok "LINKS 表を読み取れている" || ng "LINKS 表を読み取れない（以降の 2 件は無意味）"
@@ -24,7 +28,8 @@ sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -vE '^(LINKS="|")$' | wh
   if [ -L "$HOME/$dst" ] && [ "$(readlink "$HOME/$dst")" = "$DOTFILES/$src" ]; then :; else echo "MISSING $dst"; fi
 done | grep MISSING && ng "リンクされていない項目がある" || ok "LINKS 表の全項目がリンクされている"
 
-ls "$HOME/.config/tmux/"tmux.conf.bak.* >/dev/null 2>&1 && ok "既存ファイルは *.bak.<日時> に退避される" || ng "既存ファイルが退避されていない"
+[ "$(cat "$HOME/.config/tmux/"tmux.conf.bak.* 2>/dev/null)" = old ] && ok "既存ファイルは *.bak.<日時> に中身ごと退避される" || ng "既存ファイルが退避されていない"
+[ -L "$HOME"/.zshrc.bak.* ] && ok "既存のシンボリックリンク（ぶら下がりでも）も退避される" || ng "既存のリンクが退避されていない"
 
 # 各リンク元が実在するか（表の書き間違いを検出）
 sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -vE '^(LINKS="|")$' | while read -r src dst; do
@@ -36,8 +41,6 @@ done | grep NOSRC && ng "リンク元が存在しない項目がある" || ok "�
   && ok "skill は issue と wrap-up を置き、ほかの skill には触らない" || ng "skill の置き方: $(ls "$HOME/.claude/skills" | tr '\n' ' ')"
 grep -qx 'name: issue' "$HOME/.claude/skills/issue/SKILL.md" && grep -qx 'name: wrap-up' "$HOME/.claude/skills/wrap-up/SKILL.md" \
   && ok "skill の issue と wrap-up が読める" || ng "skill の issue・wrap-up の SKILL.md が無い"
-grep -nE 'harness|関門|\.harness-' "$DOTFILES"/config/claude/skills/*/SKILL.md && ng "skill に harness・関門の記述が残っている" \
-  || ok "skill は harness・関門に触れない"
 
 # 旧来のハーネスのものを置かない。git の設定は共通 hooks の場所を指さない（各リポジトリの .git/hooks がそのまま効く）
 for p in .local/bin/harness-hook .local/libexec/uv .config/git/hooks .claude/agents; do

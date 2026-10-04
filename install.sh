@@ -61,13 +61,14 @@ chmod 600 "$DOTFILES/ssh/config"
 # （存在しないと ~/.config/git/config = リポジトリ側が書き換わる）
 touch "$HOME/.gitconfig"
 
-# zsh プラグイン（プラグインマネージャは使わず clone のみ。再実行で更新）
+# zsh プラグイン（プラグインマネージャは使わず clone のみ。あえて版は固定せず、再実行で最新に追随する: mise の道具と同じ方針。
+# zsh-bin を固定するのはインストーラを実行するから）。更新の失敗は致命にしない（オフラインでも後段を通す）
 ZPLUGINS="$HOME/.local/share/zsh/plugins"
 mkdir -p "$ZPLUGINS"
 for repo in zsh-users/zsh-autosuggestions zsh-users/zsh-syntax-highlighting; do
   dir="$ZPLUGINS/${repo#*/}"
   if [ -d "$dir/.git" ]; then
-    git -C "$dir" pull -q --ff-only
+    git -C "$dir" pull -q --ff-only || echo "warning: $repo の更新に失敗（続行）"
   else
     git clone -q --depth 1 "https://github.com/$repo.git" "$dir"
   fi
@@ -84,7 +85,10 @@ fi
 cd "$HOME"
 MISE="$HOME/.local/bin/mise"
 if [ ! -x "$MISE" ]; then
-  curl -fsSL https://mise.run | sh
+  # インストーラは取得してから実行する（パイプだと curl の失敗を sh が空入力の成功で隠す。取得失敗は set -e で止める）。
+  # 版を固定すると、インストーラがその版の SHASUMS256.txt で配布物を検証する（zsh-bin と同じ方針。版は mise のリリースに合わせて上げる）
+  mise_install="$(curl -fsSL https://mise.run)"
+  MISE_VERSION=v2026.10.1 sh -c "$mise_install"
 fi
 "$MISE" install --yes
 
@@ -98,10 +102,10 @@ export FNM_DIR="$HOME/.local/share/fnm"
 # 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く
 ln -sfn "$HOME/.local/share/mise/shims/tinymemory" "$HOME/.local/bin/tinymemory"
 
-# Neovim プラグインを lazy-lock.json のバージョンに揃える（端末間の差分を防ぐ）
-NVIM="$("$MISE" which nvim 2>/dev/null || true)"
-if [ -n "$NVIM" ]; then
-  "$NVIM" --headless "+Lazy! restore" +qa >/dev/null 2>&1 || echo "warning: nvim プラグインの restore に失敗"
+# Neovim プラグインを lazy-lock.json のバージョンに揃える（端末間の差分を防ぐ）。mise exec で tree-sitter も PATH に載せ、
+# init.lua の treesitter の有効・無効が install.sh を呼んだシェルの PATH で変わらないようにする
+if "$MISE" which nvim >/dev/null 2>&1; then
+  "$MISE" exec -- nvim --headless "+Lazy! restore" +qa >/dev/null 2>&1 || echo "warning: nvim プラグインの restore に失敗"
 fi
 
 # mac 専用（Homebrew、スクリーンショット設定、launchd）
