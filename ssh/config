@@ -1,4 +1,6 @@
 # 共通設定（mac / linux 共通で使える内容のみ）
+# 端末固有の Host は ~/.ssh/config.local に書く（リポジトリ外。無ければ無視される）
+Include config.local
 
 # NAS: 自宅 LAN に居れば直接、外出先では tailnet（Tailscale）経由
 #   LAN 判定 = 192.168.0.49:22 に 1 秒以内につながるか

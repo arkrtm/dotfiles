@@ -56,7 +56,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
-| `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale |
+| `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale。端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |
 | `bin/*` | `~/.local/bin/*` | 下記 |
 | `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ, launchd） |
 | `tests/` | — | コミット前の検査（何を通すかは `CLAUDE.md`）。`static.sh` は構文と設定、`install.sh` はリンク、`acceptance/*.sh` は受け入れ、`install-nosudo.sh` はコンテナでのフル install、`nvim.sh` は Neovim |
@@ -94,6 +94,7 @@ EOF
 登録済みの端末がすべて使えなくなった時: UGOS の SSH 設定ではパスワード認証を戻せない（オフ・オンしてもこのファイルは残る）。
 UGOS の Docker アプリで `/etc/ssh` をマウントしたコンテナを作り、`10-no-password.conf` を削除 → UGOS で SSH をオフ・オンすると、パスワードで入れるようになる。
 NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w`（ssh config で `HostKeyAlias nas`）。
+自宅外で同じ IP（192.168.0.49）に別の sshd がいると LAN 経路が選ばれ、ホスト鍵の検証で拒否される（Tailscale には切り替わらない。安全側。その場で使うなら `ssh nas.tail9542af.ts.net`）。
 
 ### スクリーンショット → NAS の Claude Code
 

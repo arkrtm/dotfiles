@@ -43,6 +43,7 @@ fi
 
 # ---- ssh/config: 構文（Match の exec を走らせないホスト名で評価する）
 ssh -G -F "$ROOT/ssh/config" example.invalid >/dev/null 2>&1 && ok "ssh/config が読める" || ng "ssh/config にエラーがある"
+grep -q '^Include config.local$' "$ROOT/ssh/config" && ok "ssh/config は端末固有の Host を ~/.ssh/config.local から読む" || ng "ssh/config に Include config.local が無い"
 
 # ---- Claude Code の skill: frontmatter（---、name がディレクトリ名、description）
 for f in "$ROOT"/config/claude/skills/*/SKILL.md; do
