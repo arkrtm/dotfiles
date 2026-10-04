@@ -22,8 +22,10 @@ local function checks()
   local lock = vim.json.decode(table.concat(vim.fn.readfile(vim.fn.stdpath("config") .. "/lazy-lock.json"), "\n"))
   for _, name in ipairs({ "noice.nvim", "nui.nvim" }) do
     check(name .. " が lazy.nvim の spec にある", plugins[name] ~= nil)
-    check(name .. " の版が lazy-lock.json に記録されている", lock[name] ~= nil)
   end
+  -- install.sh の Lazy! restore で端末間の版が揃うのは、spec の全 plugin が lock にある時だけ（足して lock を更新し忘れた、消して lock に残った、を検出）
+  for name in pairs(plugins) do check(name .. " の版が lazy-lock.json に記録されている", lock[name] ~= nil) end
+  for name in pairs(lock) do check(name .. " は lazy.nvim の spec にある（lock の孤児でない）", plugins[name] ~= nil) end
   -- headless では VeryLazy が来ないので明示的に読み込む。lazy.nvim は config の例外を握りつぶし、noice の setup は
   -- vim.schedule で後回しになるので、読み込めただけでは足りない。動き出すまで待って確かめる
   require("lazy").load({ plugins = { "noice.nvim" } })

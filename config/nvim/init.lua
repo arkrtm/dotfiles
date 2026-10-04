@@ -108,8 +108,9 @@ require("lazy").setup({
         local map = function(lhs, rhs, desc)
           vim.keymap.set("n", lhs, rhs, { buffer = buf, desc = desc })
         end
-        map("]c", function() gs.nav_hunk("next") end, "次の変更")
-        map("[c", function() gs.nav_hunk("prev") end, "前の変更")
+        -- diff モード（<leader>hd、nvim -d）では組み込みの ]c [c（差分間の移動）をそのまま使う（gitsigns の README の推奨）
+        map("]c", function() if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) else gs.nav_hunk("next") end end, "次の変更")
+        map("[c", function() if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else gs.nav_hunk("prev") end end, "前の変更")
         map("<leader>hp", gs.preview_hunk, "変更内容を表示")
         map("<leader>hb", function() gs.blame_line({ full = true }) end, "この行の blame")
         map("<leader>hd", gs.diffthis, "ファイル全体の diff")
@@ -121,6 +122,8 @@ require("lazy").setup({
     "mikavilpas/yazi.nvim",
     dependencies = { "nvim-lua/plenary.nvim" },
     event = "VeryLazy",
+    -- ディレクトリは yazi で開くので netrw は読まない（yazi.nvim の README の推奨。VeryLazy より先に netrw が読まれるのを防ぐ）
+    init = function() vim.g.loaded_netrwPlugin = 1 end,
     keys = {
       { "<leader>e", "<cmd>Yazi<cr>", desc = "yazi（現在のファイルの場所）" },
       { "<leader>E", "<cmd>Yazi cwd<cr>", desc = "yazi（作業ディレクトリ）" },

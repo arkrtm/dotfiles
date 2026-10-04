@@ -23,7 +23,8 @@ function M:seek() end
 
 function M:preload(job)
 	local cache = ya.file_cache(job)
-	if not cache or fs.cha(cache) then
+	local stat = fs.stat or fs.cha -- fs.cha は yazi 26.10 以降 deprecated（fs.stat に。古い版では無いので両対応）
+	if not cache or stat(cache) then
 		return true
 	end
 

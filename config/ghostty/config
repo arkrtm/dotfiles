@@ -11,5 +11,5 @@ shell-integration-features = ssh-terminfo,ssh-env
 # mac: Option を Alt として扱う（シェル・Neovim のショートカット用）
 macos-option-as-alt = true
 
-# Claude Code の完了・入力待ち通知（OSC 777）を表示
+# Claude Code の完了・入力待ち通知（OSC 777）を表示（既定値。通知を使う意図の明示）
 desktop-notifications = true
