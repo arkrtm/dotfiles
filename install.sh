@@ -88,7 +88,9 @@ cd "$HOME"
 MISE="$HOME/.local/bin/mise"
 if [ ! -x "$MISE" ]; then
   # インストーラは取得してから実行する（パイプだと curl の失敗を sh が空入力の成功で隠す。取得失敗は set -e で止める）。
-  # 版を固定すると、インストーラがその版の SHASUMS256.txt で配布物を検証する（zsh-bin と同じ方針。版は mise のリリースに合わせて上げる）
+  # 版を固定すると、インストーラは配布物をその release の SHASUMS256.txt で検証する（現行版は埋め込みの sha256）。インストーラ自体は mise.run の
+  # その時点のものなので、信頼の根は TLS + mise.run + GitHub（zsh-bin と違い鎖の全体は固定していない。固定するなら raw の URL をコミットで指す）。
+  # 版は mise のリリースに合わせて上げる
   mise_install="$(curl -fsSL https://mise.run)"
   MISE_VERSION=v2026.10.1 sh -c "$mise_install"
 fi
