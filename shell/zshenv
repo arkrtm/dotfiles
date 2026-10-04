@@ -1,10 +1,15 @@
-# 全ての zsh（非対話含む: スクリプト、Claude Code のコマンド実行等）で読まれる
+# 全ての zsh（非対話含む: スクリプト、Claude Code のコマンド実行等）で読まれる。bash の起動ファイル（shell/bashrc）も
+# これを読むので、POSIX sh で読める書き方にする（zsh だけの行は ZSH_VERSION で囲む）
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 # Node は fnm の既定版（install.sh が入れる）。非対話でも使えるよう PATH に直接置く（fnm env は対話シェルだけ）
 # Node は fnm に一本化するので mise の shims より前（非対話ではプロジェクトの mise.toml で固定した node より優先。
 # 対話 zsh では zshrc の mise activate と fnm env が PATH の先頭を置き直すので、mise で固定した node があればそちらが使われる）
-# FNM_DIR は install.sh・shell/bashrc と同じ値にする
+# FNM_DIR は install.sh と同じ値にする
 export FNM_DIR="$HOME/.local/share/fnm"
 export PATH="$FNM_DIR/aliases/default/bin:$PATH"
+# 入れ子の zsh（tmux → nvim → :terminal など）や mac のログイン（zprofile が前置をやり直す）で同じディレクトリが積まれないように
+[ -n "${ZSH_VERSION:-}" ] && typeset -U path
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+# UGOS の /etc/profile.d/go.sh が設定する廃止済み GODEBUG を外す（Go 1.24 以降のツール = fzf, gh 等が起動時に fatal error になるため）
+if [ "${GODEBUG:-}" = "tlskyber=0" ]; then unset GODEBUG; fi
 export EDITOR=nvim VISUAL=nvim

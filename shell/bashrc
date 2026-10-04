@@ -1,15 +1,7 @@
 # bash 用（zsh が入っていない linux のログインシェル向け）
 
-export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
-# Node は fnm の既定版（shell/zshenv と同じ）
-export FNM_DIR="$HOME/.local/share/fnm"
-export PATH="$FNM_DIR/aliases/default/bin:$PATH"
-[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-export EDITOR=nvim VISUAL=nvim
-
-# UGOS の /etc/profile.d/go.sh が設定する廃止済み GODEBUG を外す
-# （Go 1.24 以降のツール = fzf, gh 等が起動時に fatal error になるため）
-[ "${GODEBUG:-}" = "tlskyber=0" ] && unset GODEBUG
+# 環境変数（PATH・FNM_DIR・EDITOR・GODEBUG の除去）は shell/zshenv と共通（POSIX sh で読める書き方にしてある）
+[ -f "$HOME/.zshenv" ] && . "$HOME/.zshenv"
 
 # 以降は対話シェルのみ
 case $- in

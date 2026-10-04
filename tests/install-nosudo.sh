@@ -15,8 +15,9 @@ if [ "${1:-}" = --check ]; then
   under_home() { case "$1" in "$HOME"/*) return 0 ;; *) return 1 ;; esac; }
   # 検査は環境を空にして行う（su の中では bashrc が作った PATH を引き継いでいて、zshenv 等を検査できないため）
   clean() { env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=xterm-256color "$@"; }
-  # 非対話の zsh（スクリプトや Claude Code のコマンド実行と同じ条件。zshenv だけが読まれる）で実行する
-  zq() { clean "$HOME/.local/bin/zsh" -c "$1"; }
+  # 非対話の zsh（スクリプトや Claude Code のコマンド実行と同じ条件。zshenv だけが読まれる）で実行する。
+  # stderr も拾う（起動ファイルがエラーを出せば値に混ざって、後の比較が落ちる）
+  zq() { clean "$HOME/.local/bin/zsh" -c "$1" 2>&1; }
 
   command -v sudo >/dev/null 2>&1 && ng "前提: sudo が無いこと" || ok "前提: sudo が無い"
   [ ! -e /usr/bin/python3 ] && ok "前提: システムの python3 が無い" || ng "前提: システムの python3 が無いこと"
@@ -28,14 +29,15 @@ if [ "${1:-}" = --check ]; then
   case "$s" in *shell=zsh*) ok "対話ログインの bash は zsh に切り替わる" ;; *) ng "対話ログインの bash が zsh に切り替わらない（$s）" ;; esac
 
   t="$(zq 'command -v tmux' || true)"
-  under_home "$t" && zq 'tmux -L t new-session -d "sleep 5" && tmux -L t kill-server' &&
-    ok "tmux がユーザー領域に入り、セッションを作れる（$t）" || ng "tmux がユーザー領域に無いか動かない（${t:-なし}）"
+  # new-session は conf が壊れていても 0 を返すので、source-file で conf も確かめる
+  under_home "$t" && zq 'tmux -L t new-session -d "sleep 5" && tmux -L t source-file "$HOME/.config/tmux/tmux.conf" && tmux -L t kill-server' &&
+    ok "tmux がユーザー領域に入り、セッションを作れ、tmux.conf が読める（$t）" || ng "tmux がユーザー領域に無いか、動かないか、tmux.conf にエラーがある（${t:-なし}）"
 
   n="$(zq 'command -v node' || true)"
   case "$n" in "$HOME"/*/fnm/*) v="$(zq 'node --version' || true)"; [ -n "$v" ] && ok "非対話 zsh の node は fnm の既定版（$v）" || ng "node が動かない（$n）" ;;
     *) ng "非対話 zsh の node が fnm 管理でない（${n:-なし}）" ;; esac
   # ssh 経由のコマンドなど、非対話のログイン bash（bash_profile → bashrc）
-  b="$(clean env NO_ZSH=1 bash -lc 'command -v node' 2>/dev/null || true)"
+  b="$(clean env NO_ZSH=1 bash -lc 'command -v node' 2>&1 || true)"
   case "$b" in "$HOME"/*/fnm/*) ok "bash でも node は fnm の既定版" ;; *) ng "bash で node が fnm 管理でない（${b:-なし}）" ;; esac
 
   u="$(zq 'command -v uv' || true)"
@@ -44,6 +46,13 @@ if [ "${1:-}" = --check ]; then
   # 対話 zsh（zsh-bin の 5.8）で zshrc がエラーなく読まれ、fnm env が効く（端末が無いと zle が使えないので script で疑似端末を付ける）
   i="$(clean script -qec "$HOME/.local/bin/zsh -ic 'echo fnm=\${FNM_MULTISHELL_PATH:+ok}'" /dev/null 2>&1 | tr -d '\r' | sed "s/$(printf '\033')\[[?0-9;]*[a-zA-Z]//g" || true)" # 端末の制御シーケンスは除く
   [ "$i" = "fnm=ok" ] && ok "対話 zsh で zshrc がエラーなく読まれ、fnm env が効く" || ng "対話 zsh の zshrc: $i"
+
+  g="$(clean env GODEBUG=tlskyber=0 "$HOME/.local/bin/zsh" -c 'echo "g=${GODEBUG:-none}"' 2>&1 || true)"
+  [ "$g" = "g=none" ] && ok "廃止済みの GODEBUG を zshenv が外す（NAS の go.sh 対策）" || ng "GODEBUG が残る: $g"
+  p="$(clean "$HOME/.local/bin/zsh" -lc 'echo "$PATH"' 2>&1 || true)"
+  case "$p" in "$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.local/share/mise/shims:"*) ok "ログイン zsh（zprofile）でも PATH の先頭はユーザー領域で重複が無い" ;; *) ng "ログイン zsh の PATH: $p" ;; esac
+  sh="$(clean sh -c 'PATH="$HOME/.local/bin:$PATH"; command -v tinymemory' 2>&1 || true)"
+  [ "$sh" = "$HOME/.local/bin/tinymemory" ] && ok "tinymemory の shim が ~/.local/bin にある（Claude Code の hook が探す場所）" || ng "tinymemory の shim: ${sh:-なし}"
 
   exit "$fail"
 fi
@@ -64,6 +73,8 @@ fi
 
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
+# 削除済みの追跡ファイルがあると tar が失敗するが、パイプの終了コードは base64 のものなので先に止める
+[ -z "$(git -C "$DOTFILES" ls-files --deleted)" ] || { echo "FAIL 削除済みの追跡ファイルがある（コミットするか戻す）"; exit 1; }
 
 # コンテナへは標準入力だけで渡す（ssh 経由でも引数の引用が崩れないように）: 作業ツリーの tar を埋め込んだ sh スクリプト
 {

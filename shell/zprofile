@@ -1,0 +1,5 @@
+# ログイン zsh で zshenv の後に読まれる。mac の /etc/zprofile（path_helper）が PATH を system → user の順に組み替えるので、
+# ユーザー領域を先頭に戻す（zshenv と同じ順）。Homebrew があればここで PATH に入れる（以前はリポジトリ外の ~/.zprofile にあった）
+[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv zsh)"
+export PATH="$FNM_DIR/aliases/default/bin:$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+typeset -U path # 前置で重なったものを畳む（typeset -U は宣言した時点の重複だけ畳むので、代入の後に置く）

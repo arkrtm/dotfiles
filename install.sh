@@ -7,6 +7,7 @@ DOTFILES="$(cd "$(dirname "$0")" && pwd)"
 # リンク定義: <リポジトリ内パス> <$HOME からの配置先>
 LINKS="
 shell/zshenv             .zshenv
+shell/zprofile           .zprofile
 shell/zshrc              .zshrc
 shell/bashrc             .bashrc
 shell/bash_profile       .bash_profile
