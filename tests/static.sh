@@ -32,9 +32,17 @@ done
 if command -v tmux >/dev/null 2>&1; then
   S="dotfiles-static-$$"
   if tmux -L "$S" -f "$ROOT/config/tmux/tmux.conf" new-session -d -x 80 -y 24 2>/dev/null; then
+    n0="$(tmux -L "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')" # 起動直後の要素数（この後の source-file より前に取る）
     tmux -L "$S" source-file "$ROOT/config/tmux/tmux.conf" 2>/dev/null && ok "tmux.conf が読み込める" || ng "tmux.conf にエラーがある"
     r="$(tmux -L "$S" list-keys -T prefix 2>/dev/null | grep -E '^bind-key +-T prefix +r ' || true)"
     case "$r" in *'set-option -su terminal-features'*) ok "prefix r は terminal-features を戻してから読み直す" ;; *) ng "prefix r が terminal-features を戻さない: $r" ;; esac
+    # bind の中身を実際に実行して、terminal-features が起動直後の数に戻ることを見る（文字列でなく振る舞い）。list-keys の行からコマンド部分を取り、
+    # \; は eval で tmux の区切りに、conf のパス（tmux が ~ を $HOME に展開済み）はリポジトリのファイルに置き換えて、リンクの有無に依らず同じものを読む。
+    # 末尾の display-message はクライアントが無く失敗してよい
+    cmd="$(printf '%s\n' "$r" | sed -e 's/^bind-key *-T prefix *r *//' -e "s|$HOME/.config/tmux/tmux.conf|$ROOT/config/tmux/tmux.conf|")"
+    eval "tmux -L \"\$S\" $cmd" >/dev/null 2>&1 || true
+    n1="$(tmux -L "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')"
+    [ -n "$cmd" ] && [ "$n1" = "$n0" ] && ok "prefix r を実行しても terminal-features が増えない（$n0 → $n1）" || ng "prefix r で terminal-features が $n0 → $n1 になる"
     tmux -L "$S" kill-server 2>/dev/null || true
   else
     ng "tmux.conf でサーバを起こせない"
@@ -42,7 +50,7 @@ if command -v tmux >/dev/null 2>&1; then
 fi
 
 # ---- ssh/config: 構文（Match の exec を走らせないホスト名で評価する）
-ssh -G -F "$ROOT/ssh/config" example.invalid >/dev/null 2>&1 && ok "ssh/config が読める" || ng "ssh/config にエラーがある"
+ssh -G -F "$ROOT/ssh/config" example.invalid >/dev/null 2>&1 && ok "ssh/config が読める" || ng "ssh/config か ~/.ssh/config.local（Include で読む）にエラーがある"
 grep -q '^Include config.local$' "$ROOT/ssh/config" && ok "ssh/config は端末固有の Host を ~/.ssh/config.local から読む" || ng "ssh/config に Include config.local が無い"
 
 # ---- Claude Code の skill: frontmatter（---、name がディレクトリ名、description）
