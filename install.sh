@@ -15,6 +15,7 @@ config/mise/config.toml  .config/mise/config.toml
 config/starship.toml     .config/starship.toml
 config/bat/config        .config/bat/config
 config/git/config        .config/git/config
+config/git/ignore        .config/git/ignore
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json

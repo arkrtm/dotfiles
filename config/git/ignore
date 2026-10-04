@@ -1,0 +1,3 @@
+# 全リポジトリ共通の除外（git の core.excludesFile の既定の場所 ~/.config/git/ignore）
+# superpowers の plan と台帳。plan は Linear の issue 本文が正本（~/.claude/CLAUDE.md の Linear の節）
+.superpowers/

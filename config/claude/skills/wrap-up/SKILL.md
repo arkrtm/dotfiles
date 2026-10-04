@@ -35,7 +35,7 @@ argument-hint: "[ARK-nn]"
 - Linear: 上の見出しでコメントする
 - CLAUDE.md: Edit で追記する（プロジェクトのものは別コミット。グローバルは提案まで）
 - README: 仕組みが変わったのに直っていなければ Edit で直す（CLAUDE.md と同じく別コミット）。コミットメッセージは直さない（書き写しもしない）
-- tinymemory: remember の手順どおり `tinymemory save --type session --title "…"` と `--type fact` を quoted heredoc で実行する
+- tinymemory: `tinymemory save --type session --title "…"` と `--type fact` を quoted heredoc で実行する（remember skill の保存のコマンドと同じ形。remember の最後の「/clear してよい」の案内は出さない）
 
 ## 4. 報告
-残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べ、最後に `/clear` してよいことを伝える。
+残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べる。次は superpowers の finishing-a-development-branch で統合し、Linear を Done にしてから `/clear`（この skill は統合の前に走るので、ここでは `/clear` を促さない）。
