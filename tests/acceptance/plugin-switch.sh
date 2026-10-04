@@ -32,7 +32,7 @@ check "extraKnownMarketplaces.claude-plugins-official は github の anthropics/
 
 # skill は issue と wrap-up だけ。旧ハーネスのファイルが無い
 check "config/claude/skills は issue と wrap-up だけ" [ "$(ls "$ROOT/config/claude/skills" | tr '\n' ' ')" = "issue wrap-up " ]
-for p in bin/harness-hook config/claude/agents config/git/hooks docs/harness.md \
+for p in bin/harness-hook config/claude/agents config/git/hooks docs/harness.md .harness-verify .harness-code \
          tests/harness-hook.sh tests/e2e-flow.sh tests/skills.sh tests/review-snapshot.sh; do
   check "旧ハーネスの $p が無い" absent "$p"
 done

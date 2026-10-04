@@ -1,4 +1,0 @@
-# コードを変えたら、同じ内容に対してすべて通す（プラグイン harness の harness-hook が確かめる。1 つでも失敗すると証拠は消える）
-# install.sh・shell・mise の設定を変えたら DOCKER='ssh nas docker' sh tests/install-nosudo.sh も、config/nvim を変えたら sh tests/nvim.sh も（CLAUDE.md）
-sh tests/install.sh
-sh tests/acceptance.sh
