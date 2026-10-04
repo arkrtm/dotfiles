@@ -3,6 +3,7 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear|fork",
         "hooks": [
           {
             "type": "command",
@@ -36,17 +37,6 @@
     "PreToolUse": [
       {
         "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/agent-status waiting",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
         "hooks": [
           {
             "type": "command",
@@ -106,7 +96,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.local/bin/agent-status idle",
+            "command": "$HOME/.local/bin/agent-status waiting",
             "timeout": 5
           }
         ]

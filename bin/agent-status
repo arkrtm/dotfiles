@@ -4,19 +4,19 @@
 # ペインごとの状態を @agent_pane に持ち、ウィンドウ単位で集約して @agent に入れる
 # （優先度: waiting > working > done）。waiting / done になった時はデスクトップ通知も送る。
 
-cat >/dev/null # hooks が stdin に渡す JSON は使わない
+[ -t 0 ] || cat >/dev/null # hooks が stdin に渡す JSON は使わない（手で叩いた時は端末なので読まない）
 
 [ -n "${TMUX_PANE:-}" ] || exit 0
 command -v tmux >/dev/null 2>&1 || exit 0
 
 state="$1"
 pane="$TMUX_PANE"
-prev=$(tmux display -p -t "$pane" '#{@agent_pane}' 2>/dev/null) || exit 0
-
+# 前の状態を読んでから新しい状態を書く。別々の呼び出しだと、同時に 2 本走った時に両方が前の状態を読んで通知が二重になるので、
+# tmux の 1 回の呼び出しにする（サーバは単一スレッドで、; で連ねたコマンドは別のクライアントと交錯しない。出力は display -p の分だけ）
 if [ "$state" = idle ]; then
-  tmux set -p -t "$pane" -u @agent_pane
+  prev=$(tmux display -p -t "$pane" '#{@agent_pane}' \; set -p -t "$pane" -u @agent_pane 2>/dev/null) || exit 0
 else
-  tmux set -p -t "$pane" @agent_pane "$state"
+  prev=$(tmux display -p -t "$pane" '#{@agent_pane}' \; set -p -t "$pane" @agent_pane "$state" 2>/dev/null) || exit 0
 fi
 
 win=$(tmux display -p -t "$pane" '#{window_id}')
