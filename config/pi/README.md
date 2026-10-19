@@ -18,8 +18,7 @@ the package list) — not symlinked, because Pi rewrites `~/.pi/agent/settings.j
 runtime (deviceId, installed packages, powerline preset).
 
 Not versioned (machine-local / secret): `~/.pi/agent/auth.json` (API keys / OAuth),
-`~/.pi/remote/` (remote-pi pairing keys), the `~/.tinymemory` memory store, and all Pi
-runtime dirs (sessions, npm, caches).
+the `~/.tinymemory` memory store, and all Pi runtime dirs (sessions, npm, caches).
 
 ## Bootstrap (binaries + packages)
 
@@ -45,9 +44,10 @@ curl -fsSL https://herdr.dev/install.sh | sh   # then: herdr integration install
 
 - Export `POWERLINE_NERD_FONTS=1` in your shell — tmux/WSL terminals are not auto-detected,
   so the powerline footer needs it to render Nerd Font glyphs.
-- remote-pi pairing: run `/remote-pi` in Pi and scan the QR with the mobile app.
-- `remote-pi` and `pi-herdsman` both register a `list_peers` tool and cannot load together;
-  this setup keeps `remote-pi` + `pi-subagents` (mobile + parallel) and omits `pi-herdsman`.
+- Mobile control (when needed): use [paseo](https://paseo.sh) — multi-agent, with an
+  E2E relay / LAN / own-tunnel. (remote-pi was dropped: its public relay is dead and it is non-E2E.)
+- `pi-herdsman` is omitted — `pi-subagents` already covers parallel, worktree-isolated work;
+  add herdsman only if you specifically want the herdr-pane fleet view.
 - `pi-tinymemory` is loaded with `"skills": []` (settings.sample.json) — `tinymemory init codex`
   already installs remember/recall/dream into `~/.agents/skills` (shared by Pi and Codex), so
   disabling the package's bundled copies avoids a skill-name collision. The package's extension

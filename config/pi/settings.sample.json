@@ -21,7 +21,6 @@
     "npm:pi-cache-optimizer",
     "npm:@dietrichgebert/ponytail",
     "npm:@micka33/pi-karpathy-skill",
-    "npm:pi-powerline-footer",
-    "npm:remote-pi"
+    "npm:pi-powerline-footer"
   ]
 }

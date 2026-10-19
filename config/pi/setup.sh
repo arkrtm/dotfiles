@@ -18,7 +18,7 @@ for p in \
   pi-subagents pi-web-access billion-context @narumitw/pi-usage \
   @juicesharp/rpiv-todo @juicesharp/rpiv-ask-user-question cc-safety-net \
   pi-tinymemory pi-lens bigpowers pi-cache-optimizer \
-  @dietrichgebert/ponytail @micka33/pi-karpathy-skill pi-powerline-footer remote-pi; do
+  @dietrichgebert/ponytail @micka33/pi-karpathy-skill pi-powerline-footer; do
   pi install "npm:$p"
 done
 
