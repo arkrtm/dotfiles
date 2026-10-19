@@ -1,0 +1,25 @@
+onboarding = false
+
+# Keybindings ported from ~/.config/tmux/tmux.conf (same keys as tmux).
+[keys]
+prefix = "ctrl+g"
+
+# Splits (match tmux: "\" = side-by-side, "-" = stacked)
+split_vertical = "prefix+backslash"   # tmux: bind \ split-window -h  (left/right)
+split_horizontal = "prefix+minus"     # tmux: bind - split-window -v  (top/bottom)
+
+# Focus panes: h/j/k/l (tmux: select-pane -L/-D/-U/-R)
+focus_pane_left = "prefix+h"
+focus_pane_down = "prefix+j"
+focus_pane_up = "prefix+k"
+focus_pane_right = "prefix+l"
+
+# Resize panes: H/J/K/L direct one-keystroke (tmux: resize-pane -L/-D/-U/-R)
+resize_pane_left = "prefix+shift+h"
+resize_pane_down = "prefix+shift+j"
+resize_pane_up = "prefix+shift+k"
+resize_pane_right = "prefix+shift+l"
+resize_mode = ""                      # unbind default prefix+r so r is free for reload
+
+# Reload config: r (tmux: bind r source-file)
+reload_config = "prefix+r"

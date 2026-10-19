@@ -1,0 +1,27 @@
+{
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-6.1-sol",
+  "powerline": {
+    "preset": "nerd",
+    "disabledSegments": [
+      "extension_statuses"
+    ]
+  },
+  "packages": [
+    "npm:pi-subagents",
+    "npm:pi-web-access",
+    "npm:billion-context",
+    "npm:@narumitw/pi-usage",
+    "npm:@juicesharp/rpiv-todo",
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:cc-safety-net",
+    "npm:pi-tinymemory",
+    "npm:pi-lens",
+    "npm:bigpowers",
+    "npm:pi-cache-optimizer",
+    "npm:@dietrichgebert/ponytail",
+    "npm:@micka33/pi-karpathy-skill",
+    "npm:pi-powerline-footer",
+    "npm:remote-pi"
+  ]
+}

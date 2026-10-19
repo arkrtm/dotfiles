@@ -22,6 +22,11 @@ config/claude/settings.json  .claude/settings.json
 config/claude/CLAUDE.md  .claude/CLAUDE.md
 config/claude/skills/issue    .claude/skills/issue
 config/claude/skills/wrap-up  .claude/skills/wrap-up
+config/pi/AGENTS.md                       .pi/agent/AGENTS.md
+config/pi/extensions/format-json-yaml.ts  .pi/agent/extensions/format-json-yaml.ts
+config/herdr/config.toml                  .config/herdr/config.toml
+config/claude/skills/issue                .pi/agent/skills/issue
+config/claude/skills/wrap-up              .pi/agent/skills/wrap-up
 config/ss-sync           .config/ss-sync
 bin/ss-sync              .local/bin/ss-sync
 bin/lan-reachable        .local/bin/lan-reachable
