@@ -26,24 +26,19 @@ runtime dirs (sessions, npm, caches).
 `tinymemory` is already handled by `config/mise/config.toml` + `install.sh` (mise install
 + `~/.local/bin` shim) — nothing to do here.
 
+Run the sudo-less agent bootstrap (Pi + packages + yamlfix + Codex memory hook). It installs
+only into `$HOME` (npm global via the fnm prefix, `~/.pi`, `~/.local`) — no sudo, no system
+packages. Safe on a no-sudo dev box like geotwin, after `install.sh`:
+
 ```sh
-# Pi itself (npm global; Node comes from fnm via install.sh)
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+sh config/pi/setup.sh
+```
 
-# Pi packages (keep in sync with settings.sample.json "packages")
-for p in pi-subagents pi-web-access billion-context @narumitw/pi-usage \
-         @juicesharp/rpiv-todo @juicesharp/rpiv-ask-user-question cc-safety-net \
-         pi-tinymemory pi-lens bigpowers pi-cache-optimizer \
-         @dietrichgebert/ponytail @micka33/pi-karpathy-skill pi-powerline-footer remote-pi; do
-  pi install "npm:$p"
-done
+herdr is optional and kept separate (its installer is an unpinned remote script); install it
+by hand when wanted — still sudo-less, into `~/.local/bin`:
 
-uv tool install yamlfix            # YAML formatter used by the format extension
-tinymemory init codex              # shared memory hook for Codex (Claude Code uses the tinymemory plugin)
-
-# herdr (terminal multiplexer) + its Pi state integration
-curl -fsSL https://herdr.dev/install.sh | sh
-herdr integration install pi
+```sh
+curl -fsSL https://herdr.dev/install.sh | sh   # then: herdr integration install pi
 ```
 
 ## Notes
