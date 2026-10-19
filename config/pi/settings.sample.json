@@ -15,7 +15,7 @@
     "npm:@juicesharp/rpiv-todo",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:cc-safety-net",
-    "npm:pi-tinymemory",
+    { "source": "npm:pi-tinymemory", "skills": [] },
     "npm:pi-lens",
     "npm:bigpowers",
     "npm:pi-cache-optimizer",

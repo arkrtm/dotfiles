@@ -53,3 +53,7 @@ herdr integration install pi
 - remote-pi pairing: run `/remote-pi` in Pi and scan the QR with the mobile app.
 - `remote-pi` and `pi-herdsman` both register a `list_peers` tool and cannot load together;
   this setup keeps `remote-pi` + `pi-subagents` (mobile + parallel) and omits `pi-herdsman`.
+- `pi-tinymemory` is loaded with `"skills": []` (settings.sample.json) — `tinymemory init codex`
+  already installs remember/recall/dream into `~/.agents/skills` (shared by Pi and Codex), so
+  disabling the package's bundled copies avoids a skill-name collision. The package's extension
+  (session-start auto-load) still loads.
