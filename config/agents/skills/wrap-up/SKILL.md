@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: 作業をコミットした後、統合（マージ）の前に、作業ブランチの上で使う。このセッションで得た情報を、Linear・CLAUDE.md・README・tinymemory のどこに残すかを決めて保存する
+description: 作業をコミットした後、統合（マージ）の前に、作業ブランチの上で使う。このセッションで得た情報を、Linear・指示ファイル・README・tinymemory のどこに残すかを決めて保存する
 allowed-tools: Bash(tinymemory:*), Bash(git status:*), Bash(git log:*)
 argument-hint: "[ARK-nn]"
 ---
@@ -8,7 +8,7 @@ argument-hint: "[ARK-nn]"
 タスクの締め。順に行う。補足: $ARGUMENTS
 
 ## 1. 前提の確認
-- 作業ブランチの上で、統合（マージ）の前に行う（ここでの CLAUDE.md・README の変更は作業ブランチの別コミットにして、一緒に統合する）
+- 作業ブランチの上で、統合（マージ）の前に行う（ここでの指示ファイル・README の変更は作業ブランチの別コミットにして、一緒に統合する）
 - `git status --porcelain` でコード変更が残っていないこと（残っていれば先にコミットを終える）
 - 状態（Done）と session の「現在の状態」は統合の後に決まる。統合の後に Linear を Done にし、必要なら session を 1 行直す
 
@@ -17,9 +17,9 @@ argument-hint: "[ARK-nn]"
 
 | 置き場所 | 入れるもの | 読む人・タイミング |
 |---|---|---|
-| **Linear**（起点の issue。本文に要件・受け入れ条件・計画、コメントに経過） | 経緯と状態: やったこと、検証（コマンドと結果）、決定と理由、計測の値、残件・判断待ち、見送ったこと。**決定と理由の詳細はここ** | 人が後から経緯を追う。状態は CLAUDE.md の Linear の節（Done は統合の後、確認してから） |
-| **プロジェクトの `CLAUDE.md`**（リポジトリ、Edit で追記して別コミット） | 毎セッション最初から必要なこと: ビルド・テスト・実行のコマンド、守るべき不変条件、規約、「これはやらない」。短く安定したものだけ | そのリポジトリで動く全エージェントが毎回 |
-| **グローバルの `~/.claude/CLAUDE.md`**（dotfiles） | 全プロジェクトに効く規則・好み。**追記はユーザーに提案し、合意してから** | 全プロジェクトで毎回 |
+| **Linear**（起点の issue。本文に要件・受け入れ条件・計画、コメントに経過） | 経緯と状態: やったこと、検証（コマンドと結果）、決定と理由、計測の値、残件・判断待ち、見送ったこと。**決定と理由の詳細はここ** | 人が後から経緯を追う。状態はグローバル指示の Linear の節（Done は統合の後、確認してから） |
+| **プロジェクトの指示ファイル**（リポジトリの `CLAUDE.md` / `AGENTS.md`、Edit で追記して別コミット） | 毎セッション最初から必要なこと: ビルド・テスト・実行のコマンド、守るべき不変条件、規約、「これはやらない」。短く安定したものだけ | そのリポジトリで動く全エージェントが毎回 |
+| **グローバル指示**（dotfiles の `config/agents/AGENTS.md`。CC・Pi・Codex 共通） | 全プロジェクトに効く規則・好み。**追記はユーザーに提案し、合意してから** | 全プロジェクトで毎回 |
 | **README・設計メモ** | 仕組みと限界（今どうなっているか）。理由や経緯は書かず issue 番号で指す | 人・エージェントが仕組みを知りたいとき |
 | **コミットメッセージ** | その差分の理由だけ（経緯・計測は issue へ） | git log・blame を読むとき |
 | **tinymemory `fact`** | 毎回は要らないが関連時に効く知識: ハマりどころ、環境・道具の癖。プロジェクトに依らない好み・端末や道具の癖は `--global` | 関連するときに recall / search で |
@@ -27,15 +27,15 @@ argument-hint: "[ARK-nn]"
 | **残さない** | デバッグの途中経過、試行錯誤の履歴、一時的な状態、他の場所にあるもの | — |
 
 降格・更新:
-- 既存の fact を `tinymemory search` で確認し、**同じ話題があれば同じタイトルで保存し直す**（supersede）。間違いになったもの、CLAUDE.md や README と重なるものは `tinymemory delete <id>`
+- 既存の fact を `tinymemory search` で確認し、**同じ話題があれば同じタイトルで保存し直す**（supersede）。間違いになったもの、指示ファイルや README と重なるものは `tinymemory delete <id>`
 - 以前の session（`tinymemory list`）の「次の手順」を今回ですべて終え、状態も古くなったなら、`tinymemory archive <id>` で recall から外す（未完了や判断待ちの状態が次のセッションに残らないように。ARK-35 の試用で判明）。このセッションの途中で保存した session（区切りの remember）も、最終の session を保存したら外す
-- CLAUDE.md の記述が状況依存になっていたら、fact に降格する
+- 指示ファイルの記述が状況依存になっていたら、fact に降格する
 
 ## 3. 保存
 - Linear: 上の見出しでコメントする
-- CLAUDE.md: Edit で追記する（プロジェクトのものは別コミット。グローバルは提案まで）
-- README: 仕組みが変わったのに直っていなければ Edit で直す（CLAUDE.md と同じく別コミット）。コミットメッセージは直さない（書き写しもしない）
+- 指示ファイル: Edit で追記する（プロジェクトのものは別コミット。グローバルは提案まで）
+- README: 仕組みが変わったのに直っていなければ Edit で直す（指示ファイルと同じく別コミット）。コミットメッセージは直さない（書き写しもしない）
 - tinymemory: `tinymemory save --type session --title "…"` と `--type fact` を quoted heredoc で実行する（remember skill の保存のコマンドと同じ形。remember の最後の「/clear してよい」の案内は出さない）
 
 ## 4. 報告
-残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べる。次は superpowers の finishing-a-development-branch で統合し、Linear を Done にしてから `/clear`（この skill は統合の前に走るので、ここでは `/clear` を促さない）。
+残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べる。次は開発手順の skill（CC・Codex: superpowers、Pi: bigpowers）のブランチの仕上げ（finishing-a-development-branch）で統合し、Linear を Done にしてから `/clear`（Pi・Codex は `/new`。この skill は統合の前に走るので、ここでは区切りを促さない）。

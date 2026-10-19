@@ -8,7 +8,20 @@
 - **検証**: 目標を検証可能な形にして確認するまで繰り返す（Karpathy 4）。テストは superpowers の TDD に従う（Ponytail の「ONE runnable check」と食い違うときは TDD を優先する）
 - **リファクタ**: 無関係な箇所は触らない（Karpathy 3）。ただし**触った箇所は触る前より整った状態で終える**（TDD の REFACTOR）。それを超える整理は別 issue に切り出して提案する
 
-開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は superpowers の skill に従う。ここには手順を書かない（二重にしない）。Linear の記録の手順は skill の `/issue`・`/wrap-up`（dotfiles）。
+開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は superpowers の skill に従う（Pi では同じ役割の bigpowers の skill）。ここには手順を書かない（二重にしない）。Linear の記録の手順は skill の `/issue`・`/wrap-up`（dotfiles）。
+
+この指示は Claude Code・Pi・Codex の共通（dotfiles の `config/agents/AGENTS.md`）。以下は Claude Code の書き方で記す。ツールごとの読み替え:
+
+- skill の呼び出し: CC は `/issue`、Pi は `/skill:issue`、Codex は `$issue`
+- 選択肢での質問: CC は AskUserQuestion、Pi は ask_user_question、Codex は選択肢に番号を付けて尋ねる
+- 会話の区切り: CC は `/clear`、Pi と Codex は `/new`
+
+## 規約
+
+- 応答は日本語。コミットメッセージは英語で数行のシンプルなものにし、AI・モデルのクレジットや署名は付けない
+- Python は `uv` で実行・管理する（`uv run`・`uv add`）
+- ファイルは今の内容を読んでから編集・実行する（思い込みで変更しない）
+- 長期記憶は tinymemory（全ツール共通）。作業の節目（タスクの完了、大きな寄り道の前、文脈が埋まる前）には頼まれなくても remember skill で保存する。セッション開始時の記憶ブロックが整理を促したら、ほかの作業の前に dream skill を実行する
 
 ## Linear（タスク管理）
 
@@ -121,7 +134,7 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 ## スクリーンショット
 
-ユーザーが「スクショ」「スクリーンショット」「今撮った画像」などと言ったら、`~/screenshots/` の最新ファイルを Read ツールで見る（`ls -t ~/screenshots | head` で確認）。
+ユーザーが「スクショ」「スクリーンショット」「今撮った画像」などと言ったら、`~/screenshots/` の最新ファイルをファイルを読むツールで見る（`ls -t ~/screenshots | head` で確認）。
 
 - ユーザーのローカル端末で撮影したものが自動で転送されている。ファイル名は `ss-YYYYmmdd-HHMMSS.png`（保存時刻。同じ秒は `-2`。撮影から数秒ずれるので、時刻で探すときは幅を持たせる）
 - 「さっきの 2 枚」なら新しい順に 2 枚。時刻の指定があればファイル名で探す

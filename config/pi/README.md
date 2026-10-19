@@ -8,10 +8,10 @@ packages are installed separately (steps at the bottom).
 
 | repo | → | $HOME |
 |---|---|---|
-| `config/pi/AGENTS.md` | | `.pi/agent/AGENTS.md` — always-on engineering principles |
+| `config/agents/AGENTS.md` | | `.pi/agent/AGENTS.md` (also `.claude/CLAUDE.md`, `.codex/AGENTS.md`) — the one global instruction file shared by CC, Pi and Codex |
 | `config/pi/extensions/format-json-yaml.ts` | | `.pi/agent/extensions/…` — format JSON (jq) / YAML (yamlfix) on write/edit |
 | `config/herdr/config.toml` | | `.config/herdr/config.toml` — keybindings ported from tmux (prefix `C-g`) |
-| `config/claude/skills/issue`, `wrap-up` | | `.pi/agent/skills/…` — the Linear skills, shared with Pi (also linked into `.claude/skills`) |
+| `config/agents/skills/issue`, `wrap-up` | | `.agents/skills/…` — the Linear skills, read by Pi and Codex (also linked into `.claude/skills`) |
 
 `config/pi/settings.sample.json` is a **reference** (default model/provider, powerline,
 the package list) — not symlinked, because Pi rewrites `~/.pi/agent/settings.json` at

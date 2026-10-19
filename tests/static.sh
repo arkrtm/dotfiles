@@ -54,7 +54,7 @@ ssh -G -F "$ROOT/ssh/config" example.invalid >/dev/null 2>&1 && ok "ssh/config �
 grep -q '^Include config.local$' "$ROOT/ssh/config" && ok "ssh/config は端末固有の Host を ~/.ssh/config.local から読む" || ng "ssh/config に Include config.local が無い"
 
 # ---- Claude Code の skill: frontmatter（---、name がディレクトリ名、description）
-for f in "$ROOT"/config/claude/skills/*/SKILL.md; do
+for f in "$ROOT"/config/agents/skills/*/SKILL.md; do
   n="$(basename "$(dirname "$f")")"
   if [ "$(sed -n 1p "$f")" = "---" ] && sed -n '2,/^---$/p' "$f" | grep -q "^name: $n\$" && sed -n '2,/^---$/p' "$f" | grep -q '^description: .'; then
     ok "skill の frontmatter: $n"

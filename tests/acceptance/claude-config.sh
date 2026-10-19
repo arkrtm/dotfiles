@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code の構成の受け入れ検査: settings.json（プラグインの宣言と hook の配線）、skill（issue・wrap-up のリンク）、
-# グローバル CLAUDE.md と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、README の新しい端末の手順。
+# グローバル指示（config/agents/AGENTS.md。CC・Pi・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、README の新しい端末の手順。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・DOCKER='ssh nas docker' sh tests/install-nosudo.sh）は別に実行する。
 # LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で README の
 # 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
@@ -29,17 +29,22 @@ check "extraKnownMarketplaces.tinymemory は github の arkrtm/tinymemory" \
   [ "$(jq -r '.extraKnownMarketplaces.tinymemory.source | "\(.source) \(.repo)"' "$S")" = "github arkrtm/tinymemory" ]
 
 # ---- skill は issue と wrap-up だけ。install.sh の LINKS（tests/install.sh と同じ読み方）にある。グローバルの gitignore も
-check "config/claude/skills は issue と wrap-up だけ" [ "$(ls "$ROOT/config/claude/skills" | tr '\n' ' ')" = "issue wrap-up " ]
+check "config/agents/skills は issue と wrap-up だけ" [ "$(ls "$ROOT/config/agents/skills" | tr '\n' ' ')" = "issue wrap-up " ]
 links="$(sed -n '/^LINKS="/,/^"/p' "$ROOT/install.sh" | grep -vE '^(LINKS="|")$')"
 check "install.sh の LINKS 表を読めた" [ -n "$links" ]
 for s in issue wrap-up; do
-  check "install.sh の LINKS 表に skill の $s がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/claude/skills/$s  *\.claude/skills/$s\$'" _ "$links"
+  for d in .claude/skills .agents/skills; do
+    check "install.sh の LINKS 表に skill の $s（$d）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/skills/$s  *$d/$s\$'" _ "$links"
+  done
+done
+for d in .claude/CLAUDE.md .pi/agent/AGENTS.md .codex/AGENTS.md; do
+  check "install.sh の LINKS 表にグローバル指示（$d）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/AGENTS.md  *$d\$'" _ "$links"
 done
 check "install.sh の LINKS 表にグローバルの gitignore（config/git/ignore）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/git/ignore  *\.config/git/ignore\$'" _ "$links"
 check "config/git/ignore は .superpowers/ を除外する" grep -qx '\.superpowers/' "$ROOT/config/git/ignore"
 
 # ---- グローバルの CLAUDE.md: 手順は superpowers、Linear の記録は /issue・/wrap-up、plan の置き場所
-C="$ROOT/config/claude/CLAUDE.md"
+C="$ROOT/config/agents/AGENTS.md"
 for h in 作業の哲学 Linear Karpathy Ponytail スクリーンショット; do
   check "グローバルの CLAUDE.md に「$h」の節がある" grep -Eq "^#+ .*$h" "$C"
 done
@@ -52,9 +57,9 @@ check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
 check "グローバルの CLAUDE.md: スクショの名前の時刻は保存時刻" grep -q 'HHMMSS.png`（保存時刻' "$C"
 
-# ---- skill: wrap-up は統合の前に /clear を促さない。issue はコメントの規則を CLAUDE.md に委ねる
-check "wrap-up の締めは、統合して Done にしてから /clear" grep -q 'Done にしてから `/clear`' "$ROOT/config/claude/skills/wrap-up/SKILL.md"
-check "issue のコメントの節目は CLAUDE.md の Linear の節に従う（書き写さない）" grep -q 'コメントの節目は CLAUDE.md の Linear の節に従う' "$ROOT/config/claude/skills/issue/SKILL.md"
+# ---- skill: wrap-up は統合の前に /clear を促さない。issue はコメントの規則をグローバル指示に委ねる
+check "wrap-up の締めは、統合して Done にしてから /clear" grep -q 'Done にしてから `/clear`' "$ROOT/config/agents/skills/wrap-up/SKILL.md"
+check "issue のコメントの節目はグローバル指示の Linear の節に従う（書き写さない）" grep -q 'コメントの節目はグローバル指示の Linear の節に従う' "$ROOT/config/agents/skills/issue/SKILL.md"
 
 # ---- dotfiles の文書
 check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q '開発の手順はプラグイン superpowers' "$ROOT/CLAUDE.md"
