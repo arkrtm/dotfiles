@@ -7,7 +7,10 @@ local act = wezterm.action
 local config = wezterm.config_builder()
 
 local wsl = 'wsl'
-local pwsh = { 'pwsh.exe', '-NoLogo' }
+-- PowerShell 7 は Store 版（WindowsApps の実行エイリアス）で、WezTerm は名前だけだと見つけられない（os error 2）のでフルパスで指す
+local pwsh = { wezterm.home_dir .. '\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe', '-NoLogo' }
+-- 新しいタブは今のペインの cwd を引き継ぐので、WSL のパス（/home/…）のまま Windows のプロセスを起動して失敗しないよう明示する
+local win_home = wezterm.home_dir
 
 config.ssh_domains = {
   {
@@ -20,7 +23,7 @@ config.ssh_domains = {
 }
 config.default_domain = wsl
 config.launch_menu = {
-  { label = 'PowerShell', domain = { DomainName = 'local' }, args = pwsh },
+  { label = 'PowerShell', domain = { DomainName = 'local' }, args = pwsh, cwd = win_home },
 }
 
 -- 見た目は config/ghostty/config に合わせる
@@ -35,7 +38,7 @@ config.enable_kitty_graphics = true
 -- 数字は物理キーで指定（JIS 配列でも Shift+数字の記号に依らない）。既定の Ctrl+Shift+1・2（タブの切り替え）を置き換える
 config.keys = {
   { key = 'phys:1', mods = 'CTRL|SHIFT', action = act.SpawnTab { DomainName = wsl } },
-  { key = 'phys:2', mods = 'CTRL|SHIFT', action = act.SpawnCommandInNewTab { domain = { DomainName = 'local' }, args = pwsh } },
+  { key = 'phys:2', mods = 'CTRL|SHIFT', action = act.SpawnCommandInNewTab { domain = { DomainName = 'local' }, args = pwsh, cwd = win_home } },
   { key = 'o', mods = 'CTRL|SHIFT', action = act.ShowLauncherArgs { flags = 'FUZZY|LAUNCH_MENU_ITEMS|DOMAINS' } },
 }
 
