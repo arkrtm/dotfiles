@@ -47,7 +47,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/starship.toml` | `~/.config/starship.toml` | 2 行・最小、One Dark |
 | `config/tmux/tmux.conf` | `~/.config/tmux/tmux.conf` | prefix `C-g`、hjkl、`-` `\|` 分割、passthrough（画像）、extended-keys、OSC52、エージェント状態表示 |
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |
-| `config/wezterm/wezterm.lua` | `~/.config/wezterm/wezterm.lua`（WSL のサーバー用。Windows は `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
+| `config/wezterm/wezterm.lua` | —（Windows の `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
 | `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
@@ -102,18 +102,18 @@ NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w
 
 WSL では Windows Terminal ではなく WezTerm を使う。herdr は画像を kitty 方式でしか外へ通さず、Windows Terminal は sixel しか表示できないため、herdr の中の yazi で画像が見えない（`config/herdr/config.toml` の `[experimental] kitty_graphics` と `wezterm.lua` の `enable_kitty_graphics` で通す）。
 
-WSL へは ConPTY を通らずにつなぐ: Windows の WezTerm が `wsl.exe` の標準入出力越しに WSL の `wezterm cli proxy` へ中継し、WSL の中の `wezterm-mux-server` が端末を受け持つ（ConPTY は kitty 方式の画像を落とし、iTerm2 方式でも位置がずれる。公式の unix_domains の方法は WSL1 専用）。
+WSL へは ConPTY を通らずに、WezTerm 内蔵の SSH で localhost の sshd につなぐ（ConPTY は kitty 方式の画像を落とし、iTerm2 方式でも位置がずれる。公式の unix_domains の方法は WSL1 専用で、`wsl.exe` 越しの `wezterm cli proxy` は Windows の GUI からだと応答が返らない）。前提: WSL の mirrored networking と、WSL で動く sshd。一度だけ:
 
-1. WSL に Windows と**同じ版**の WezTerm の Linux 版（`wezterm`・`wezterm-mux-server`）を `~/.local/bin` に置く（sudo 不要）。版は `"/mnt/c/Program Files/WezTerm/wezterm.exe" --version` で見る:
-   ```sh
-   V=20240203-110809-5046fc22; F=wezterm-$V.Ubuntu22.04.tar.xz
-   curl -fsSLO https://github.com/wez/wezterm/releases/download/$V/$F && curl -fsSL https://github.com/wez/wezterm/releases/download/$V/$F.sha256 | sha256sum -c \
-     && tar -xJf $F wezterm/usr/bin/wezterm wezterm/usr/bin/wezterm-mux-server && install -m755 wezterm/usr/bin/wezterm* ~/.local/bin/
-   ```
-2. Windows の PowerShell で一度だけ（WSL が止まっていると読めず既定の設定になる）:
+1. Windows の PowerShell で、この接続専用の鍵を作り、設定ファイルを指す（WSL が止まっていると設定を読めず既定の設定になる）:
    ```powershell
+   ssh-keygen -t ed25519 -N '""' -C wezterm-wsl -f $env:USERPROFILE\.ssh\wezterm_wsl
    setx WEZTERM_CONFIG_FILE "\\wsl.localhost\Ubuntu-22.04\home\<ユーザー>\dotfiles\config\wezterm\wezterm.lua"
    ```
+2. WSL で、その鍵を localhost からの接続に限って許可する（`<Windows のユーザー>` は Windows 側の名前）:
+   ```sh
+   printf 'from="127.0.0.1,::1" %s\n' "$(cat /mnt/c/Users/<Windows のユーザー>/.ssh/wezterm_wsl.pub)" >> ~/.ssh/authorized_keys
+   ```
+3. WezTerm を起動し、初回はホスト鍵の確認に答える
 
 ### スクリーンショット → NAS の Claude Code
 
