@@ -158,7 +158,7 @@ require("lazy").setup({
     config = function()
       require("nvim-treesitter").install({
         "bash", "css", "dockerfile", "go", "html", "javascript", "json", "lua",
-        "markdown", "markdown_inline", "python", "rust", "sql", "toml", "tsx",
+        "markdown", "markdown_inline", "python", "regex", "rust", "sql", "toml", "tsx",
         "typescript", "yaml",
       })
     end,
