@@ -53,6 +53,11 @@ fi
 ssh -G -F "$ROOT/ssh/config" example.invalid >/dev/null 2>&1 && ok "ssh/config が読める" || ng "ssh/config か ~/.ssh/config.local（Include で読む）にエラーがある"
 grep -q '^Include config.local$' "$ROOT/ssh/config" && ok "ssh/config は端末固有の Host を ~/.ssh/config.local から読む" || ng "ssh/config に Include config.local が無い"
 
+# ---- wezterm.lua: Lua の構文（luac が無い端末では省く）
+if command -v luac >/dev/null 2>&1; then
+  luac -p "$ROOT/config/wezterm/wezterm.lua" && ok "wezterm.lua の構文" || ng "wezterm.lua の構文"
+fi
+
 # ---- Claude Code の skill: frontmatter（---、name がディレクトリ名、description）
 for f in "$ROOT"/config/agents/skills/*/SKILL.md; do
   n="$(basename "$(dirname "$f")")"

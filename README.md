@@ -30,7 +30,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 | | mac | Ubuntu / WSL | NAS (UGOS) |
 |---|---|---|---|
-| Ghostty | Brewfile（Homebrew が無ければ省略されるので、先に Homebrew を入れる） | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows Terminal | 不要 |
+| Ghostty | Brewfile（Homebrew が無ければ省略されるので、先に Homebrew を入れる） | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows の WezTerm（`winget install wez.wezterm`。設定は下の「WezTerm（Windows）」） | 不要 |
 | フォント | Hack Nerd Font（手動導入済み） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` | 不要 |
 | Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` | Docker（下記） |
 | GitHub | `gh auth login` | `gh auth login` | `gh auth login` |
@@ -47,6 +47,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/starship.toml` | `~/.config/starship.toml` | 2 行・最小、One Dark |
 | `config/tmux/tmux.conf` | `~/.config/tmux/tmux.conf` | prefix `C-g`、hjkl、`-` `\|` 分割、passthrough（画像）、extended-keys、OSC52、エージェント状態表示 |
 | `config/ghostty/config` | `~/.config/ghostty/config` | Hack Nerd Font Mono、Atom One Dark、ssh-terminfo、通知 |
+| `config/wezterm/wezterm.lua` | —（Windows の `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
 | `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
@@ -96,6 +97,14 @@ EOF
 UGOS の Docker アプリで `/etc/ssh` をマウントしたコンテナを作り、`10-no-password.conf` を削除 → UGOS で SSH をオフ・オンすると、パスワードで入れるようになる。
 NAS のホスト鍵: `ED25519 SHA256:+v6I4BkYicGHnmjlo25WTLr2iKmaMgkdbYdt6oWwu/w`（ssh config で `HostKeyAlias nas`）。
 自宅外で同じ IP（192.168.0.49）に別の sshd がいると LAN 経路が選ばれ、ホスト鍵の検証で拒否される（Tailscale には切り替わらない。安全側。その場で使うなら `ssh nas.tail9542af.ts.net`）。
+
+### WezTerm（Windows）
+
+WSL では Windows Terminal ではなく WezTerm を使う。herdr は画像を kitty 方式でしか外へ通さず、Windows Terminal は sixel しか表示できないため、herdr の中の yazi で画像が見えない（`config/herdr/config.toml` の `[experimental] kitty_graphics` と `wezterm.lua` の `enable_kitty_graphics` で通す）。設定は dotfiles の `config/wezterm/wezterm.lua` を Windows から直接読ませる（PowerShell で一度だけ。WSL が止まっていると読めず既定の設定になる）:
+
+```powershell
+setx WEZTERM_CONFIG_FILE "\\wsl.localhost\Ubuntu-22.04\home\<ユーザー>\dotfiles\config\wezterm\wezterm.lua"
+```
 
 ### スクリーンショット → NAS の Claude Code
 

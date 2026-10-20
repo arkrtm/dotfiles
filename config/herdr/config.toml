@@ -23,3 +23,7 @@ resize_mode = ""                      # unbind default prefix+r so r is free for
 
 # Reload config: r (tmux: bind r source-file)
 reload_config = "prefix+r"
+
+# yazi などの画像を外の端末へ通す（kitty 方式だけ。WezTerm は enable_kitty_graphics、Windows Terminal は sixel のみで非対応）
+[experimental]
+kitty_graphics = true
