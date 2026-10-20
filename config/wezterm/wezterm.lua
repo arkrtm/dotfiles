@@ -1,13 +1,31 @@
--- WezTerm（Windows）。Windows の環境変数 WEZTERM_CONFIG_FILE でこのファイルを指す（README の Windows の節）
--- 既定は WSL。Ctrl+Shift+1 で WSL、Ctrl+Shift+2 で PowerShell のタブ、Ctrl+Shift+O でランチャー
+-- WezTerm。Windows の GUI と、WSL の中のサーバー（wezterm-mux-server）の両方がこのファイルを読む
+--   Windows: 環境変数 WEZTERM_CONFIG_FILE でこのファイルを指す。WSL: install.sh が ~/.config/wezterm/wezterm.lua にリンクする
+-- WSL へは ConPTY を通らずにつなぐ（ConPTY は kitty 方式の画像を落とし、iTerm2 方式でも位置がずれる）。
+-- WSL2 では公式の unix_domains の方法（AF_UNIX の共有）が使えないので、wsl.exe の標準入出力で `wezterm cli proxy` に中継する
+-- （WSL 側に ~/.local/bin/wezterm と wezterm-mux-server が要る。README の WezTerm の節）
 local wezterm = require 'wezterm'
 local act = wezterm.action
 local config = wezterm.config_builder()
 
-local wsl = 'WSL:Ubuntu-22.04'
+-- herdr の中の yazi の画像プレビュー（herdr は kitty 方式だけを通す。config/herdr/config.toml の experimental.kitty_graphics）。
+-- 画像を解釈するのは WSL のサーバーなので、両方で有効にする
+config.enable_kitty_graphics = true
+
+if not wezterm.target_triple:find 'windows' then
+  return config
+end
+
+-- ここから Windows の GUI。既定は WSL。Ctrl+Shift+1 で WSL、Ctrl+Shift+2 で PowerShell のタブ、Ctrl+Shift+O でランチャー
+local wsl = 'wsl'
 local pwsh = { 'pwsh.exe', '-NoLogo' }
 
-config.default_domain = wsl
+config.unix_domains = {
+  {
+    name = wsl,
+    proxy_command = { 'wsl.exe', '-d', 'Ubuntu-22.04', '--exec', 'sh', '-lc', 'exec ~/.local/bin/wezterm cli proxy' },
+  },
+}
+config.default_gui_startup_args = { 'connect', wsl }
 config.launch_menu = {
   { label = 'PowerShell', domain = { DomainName = 'local' }, args = pwsh },
 }
@@ -17,9 +35,6 @@ config.font = wezterm.font_with_fallback { 'Hack Nerd Font Mono', 'Hack Nerd Fon
 config.font_size = 12
 config.color_scheme = 'OneDark (base16)'
 config.window_padding = { left = 6, right = 6, top = 4, bottom = 4 }
-
--- herdr の中の yazi の画像プレビュー（herdr は kitty 方式だけを通す。config/herdr/config.toml の experimental.kitty_graphics）
-config.enable_kitty_graphics = true
 
 -- 数字は物理キーで指定（JIS 配列でも Shift+数字の記号に依らない）。既定の Ctrl+Shift+1・2（タブの切り替え）を置き換える
 config.keys = {

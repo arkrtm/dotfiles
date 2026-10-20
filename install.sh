@@ -18,6 +18,7 @@ config/git/config        .config/git/config
 config/git/ignore        .config/git/ignore
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
+config/wezterm/wezterm.lua  .config/wezterm/wezterm.lua
 config/claude/settings.json  .claude/settings.json
 config/agents/AGENTS.md         .claude/CLAUDE.md
 config/agents/AGENTS.md         .pi/agent/AGENTS.md
