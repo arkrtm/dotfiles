@@ -1,0 +1,7 @@
+#!/bin/sh
+# dotfiles の検査（Stop フックの check.sh と integrate・bare の pre-receive が呼ぶ）: 静的な検査・install.sh・受け入れ検査。
+# 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1
+cd "$(dirname "$0")/.." || exit 1
+for t in static install acceptance; do
+  out="$(sh "tests/$t.sh" 2>&1)" || { printf '%s\n' "$out" | grep -v '^ok '; exit 1; }
+done

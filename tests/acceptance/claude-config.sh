@@ -33,7 +33,8 @@ check "extraKnownMarketplaces.ponytail は github の DietrichGebert/ponytail" \
 for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)' 'Bash(codex-review:*)'; do
   check "permissions.allow に $r" jq -e --arg r "$r" '.permissions.allow | index($r)' "$S"
 done
-for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(./.env)' 'Read(./.env.*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)'; do
+for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(./.env)' 'Read(./.env.*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)' \
+  'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)'; do
   check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
 done
 check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.type) \(.command)"' "$S")" = 'command $HOME/.claude/statusline.sh' ]
@@ -84,9 +85,10 @@ check "グローバルの CLAUDE.md: スクショの名前の時刻は保存時�
 check "wrap-up の締めは、統合して Done にしてから /clear" grep -q 'Done にしてから `/clear`' "$ROOT/config/agents/skills/wrap-up/SKILL.md"
 check "issue のコメントの節目はグローバル指示の Linear の節に従う（書き写さない）" grep -q 'コメントの節目はグローバル指示の Linear の節に従う' "$ROOT/config/agents/skills/issue/SKILL.md"
 
-# ---- Git の運用（ARK-88）: 1 issue = 1 ブランチ = 1 worktree、統合は origin で決める、relay は統合の後に片づける
-for w in 'feature/' '.worktrees/' '--no-track' 'origin/main' 'refactor:' 'issue 番号' '最初の push の前だけ' \
-  'gh pr merge --rebase' 'git push origin HEAD:main' 'git rebase origin/main' '強制 push'; do
+# ---- Git の運用（ARK-88）: 1 issue = 1 ブランチ = 1 worktree、統合は origin で決める、relay は統合の後に片づける。
+#      統合は integrate だけ（ARK-89）: GitHub は PR まで（マージは人）、テストを弱めるときは人が --human-approved
+for w in 'feature/' '.worktrees/' '--no-track' 'origin/main' 'refactor:' 'issue 番号' 'PR を出す前だけ' \
+  'gh pr merge --rebase' 'git rebase origin/main' '強制 push' 'codex-review branch origin/main' '`integrate`' 'integrate --human-approved'; do
   check "グローバルの CLAUDE.md の「Git」に「$w」" sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF -- '$w'"
 done
 check "グローバルの CLAUDE.md: 作業中の保存は relay のタグ" grep -qF -- '--tags relay' "$C"
