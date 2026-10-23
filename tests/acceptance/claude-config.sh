@@ -54,8 +54,9 @@ check "remoteControlAtStartup が true" [ "$(jq -r '.remoteControlAtStartup' "$S
 check "PostToolUse（全ツール）に context-nudge" [ "$(jq -r '.hooks.PostToolUse[] | select(.matcher == null) | .hooks[].command' "$S" | grep -c '^\$HOME/.local/bin/context-nudge$')" = 1 ]
 check "SubagentStart に agent-pane start" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane start'" _ "$(hk SubagentStart)"
 check "SubagentStop に agent-pane stop" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane stop'" _ "$(hk SubagentStop)"
-check "SessionStart（clear）に handoff --session-start と agent-pane cleanup" \
-  [ "$(jq -r '.hooks.SessionStart[] | select(.matcher == "clear") | .hooks[].command' "$S" | tr '\n' ' ')" = '$HOME/.local/bin/handoff --session-start $HOME/.local/bin/agent-pane cleanup ' ]
+check "SessionStart（startup・resume・clear）に handoff --session-start（compact は同じセッションなので含めない）" \
+  sh -c "jq -r '.hooks.SessionStart[] | select(.matcher == \"startup|resume|clear\") | .hooks[].command' '$S' | grep -qx '\$HOME/.local/bin/handoff --session-start'"
+check "SessionStart（clear）に agent-pane cleanup" [ "$(jq -r '.hooks.SessionStart[] | select(.matcher == "clear") | .hooks[].command' "$S")" = '$HOME/.local/bin/agent-pane cleanup' ]
 check "SessionEnd に agent-pane cleanup" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane cleanup'" _ "$(hk SessionEnd)"
 
 # ---- skill は issue・wrap-up・handoff。install.sh の LINKS（tests/install.sh と同じ読み方）にある。グローバルの gitignore も

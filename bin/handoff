@@ -3,7 +3,7 @@
 # clear の後の SessionStart（handoff --session-start が印を書く）を待ってから、続きの指示をユーザーの入力として送る。
 # 裏の処理は切り離して動かす（呼んだターンが終わらないと /clear を受け付けないため）。引き継ぎの保存は呼ぶ前に済ませる（handoff skill）
 #   usage: handoff <続きの指示>       herdr の外では 1（人が /clear して続きを送る）
-#          handoff --session-start    SessionStart（clear）のフック
+#          handoff --session-start    SessionStart（startup・resume・clear）のフック。この pane でセッションが始まった印を書く
 # 待ちの上限: ターンの終わりは HANDOFF_TIMEOUT_MS（既定 30 分）、clear の印は HANDOFF_CLEAR_WAIT_S 秒（既定 60）
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}"
 pane="${HERDR_PANE_ID:-}"
@@ -34,11 +34,13 @@ case "${1:-}" in
     # 同じ pane で動く handoff は 1 つだけ（二重に /clear を送らない）
     exec 9>>"$lock"
     lockfd || { log "ほかの handoff が動いているので何もしない"; exit 0; }
+    # この後に同じ pane で SessionStart（人の /clear・/resume、claude の起動し直し）が走ったら、呼んだ会話ではなくなったので取り消す
+    rm -f "$mark"
     st="$(herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
       | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null)"
     case "$st" in idle|done) ;; *) stop "ターンの終わりを待てなかった（状態: ${st:-不明}）" ;; esac
+    [ ! -e "$mark" ] || stop "待っている間にこの pane のセッションが替わった"
     # /clear は working にならないことがあるので herdr の --wait は使わず、clear の後の SessionStart の印を待つ
-    rm -f "$mark"
     herdr agent prompt "$pane" /clear >/dev/null 2>&1 || stop "/clear を送れない"
     log "/clear を送った"
     i=0

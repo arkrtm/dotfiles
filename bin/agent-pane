@@ -54,7 +54,7 @@ case "${1:-}" in
       [ -f "$f" ] || continue
       if gone get "$(sed -n 1p "$f")"; then rm -f "$f"; continue; fi
       r="$(sed -n 2p "$f")"
-      if [ "$(jq -r '.finished // false' "${r%.jsonl}.meta.json" 2>/dev/null)" = true ]; then close "$f"; continue; fi
+      if [ "$(jq -r '.finished // false' "${r%.jsonl}.meta.json" 2>/dev/null)" = true ]; then close "$f"; [ -e "$f" ] || continue; fi
       n=$((n + 1))
     done
     [ "$n" -lt "$MAX" ] || exit 0

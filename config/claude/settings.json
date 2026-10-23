@@ -58,13 +58,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.local/bin/handoff --session-start",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "$HOME/.local/bin/agent-pane cleanup",
             "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/handoff --session-start",
+            "timeout": 5
           }
         ]
       }

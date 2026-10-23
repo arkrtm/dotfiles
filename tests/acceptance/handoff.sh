@@ -24,7 +24,10 @@ cat > "$T/bin/herdr" <<SH
 #!/bin/sh
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
-  "agent wait") [ -e "$T/wait_sleep" ] && sleep 1; printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
+  "agent wait") [ -e "$T/wait_sleep" ] && sleep 1
+    # $T/switch があれば、待っている間に人が同じ pane で /clear・/resume した（SessionStart が走った）ことにする
+    [ -e "$T/switch" ] && HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start </dev/null
+    printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
   "agent prompt") [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start </dev/null ;;
 esac
 exit 0
@@ -73,6 +76,11 @@ for x in 1 2; do HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev
 i=0; while [ "$(done_lines)" -lt $((d0 + 2)) ] && [ "$i" -lt 80 ]; do sleep 0.1; i=$((i + 1)); done; sleep 0.2
 [ "$(grep -c 'prompt w1:p2 /clear' "$LOG")" = 1 ] && ok "同時に 2 つ呼んでも /clear は 1 回" || ng "二重: $(cat "$LOG")"
 rm -f "$T/wait_sleep"
+
+# 待っている間にセッションが替わったら（同じ pane で SessionStart）、替わった後の会話に /clear も続きも送らない
+touch "$T/switch"; n0="$(nlines)"; run
+! grep -q 'agent prompt' "$LOG" && [ "$(nlines)" -gt "$n0" ] && ok "待っている間にセッションが替わったら取り消して notify" || ng "切り替え: $(cat "$LOG")"
+rm -f "$T/switch"
 
 # ---- session-start は herdr の外では何もしない
 rm -f "$XDG_STATE_HOME"/handoff-*.cleared; handoff --session-start </dev/null; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \

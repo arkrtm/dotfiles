@@ -71,6 +71,11 @@ reset; start e1; touch "$T/broken"; stop e1
 start e2; rm -f "$T/broken"; start e3
 [ "$(splits)" = 2 ] && ok "get が通信の失敗なら pane を数えたままにする" || ng "通信の失敗: splits=$(splits)"
 
+# finished でも閉じられなかった（通信の失敗）pane は数える
+reset; start f1; start f2; echo '{"finished":true}' > "$T/proj/s1/subagents/agent-f1.meta.json"; touch "$T/broken"; start f3; rm -f "$T/broken"
+[ "$(splits)" = 2 ] && ok "finished でも閉じられなかった pane は数える" || ng "finished と close の失敗: splits=$(splits)"
+rm -f "$T/proj/s1/subagents"/*.meta.json
+
 # ---- 並行の開始でも上限を守る
 reset; for a in d1 d2 d3 d4; do start "$a" & done; wait
 [ "$(splits)" = 2 ] && ok "4 つ同時に開始しても開くのは 2 つ" || ng "並行: $(splits)"
