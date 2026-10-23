@@ -1,11 +1,11 @@
 ---
 name: wrap-up
-description: 作業をコミットした後、統合（マージ）の前に、作業ブランチの上で使う。このセッションで得た情報を、Linear・指示ファイル・README・tinymemory のどこに残すかを決めて保存する
-allowed-tools: Bash(tinymemory:*), Bash(git status:*), Bash(git log:*)
+description: 作業をコミットした後、統合（マージ）の前に、作業ブランチの上で使う。このセッションで得た情報を、Linear・指示ファイル・README・tinymemory のどこに残すかを決めて保存する。統合の後にもう一度使い、Linear の完了・relay・worktree を片づける
+allowed-tools: Bash(tinymemory:*), Bash(git status:*), Bash(git log:*), Bash(git worktree:*), Bash(git branch:*), Bash(gh pr view:*)
 argument-hint: "[ARK-nn]"
 ---
 
-タスクの締め。順に行う。補足: $ARGUMENTS
+タスクの締め。統合の前は 1〜4 を順に行う。統合の後に呼ばれたら 5 だけを行う。補足: $ARGUMENTS
 
 ## 1. 前提の確認
 - 作業ブランチの上で、統合（マージ）の前に行う（ここでの指示ファイル・README の変更は作業ブランチの別コミットにして、一緒に統合する）
@@ -28,7 +28,7 @@ argument-hint: "[ARK-nn]"
 
 降格・更新:
 - 既存の fact を `tinymemory search` で確認し、**同じ話題があれば同じタイトルで保存し直す**（supersede）。間違いになったもの、指示ファイルや README と重なるものは `tinymemory delete <id>`
-- 以前の session（`tinymemory list`）の「次の手順」を今回ですべて終え、状態も古くなったなら、`tinymemory archive <id>` で recall から外す（未完了や判断待ちの状態が次のセッションに残らないように。ARK-35 の試用で判明）。このセッションの途中で保存した session（区切りの remember）も、最終の session を保存したら外す
+- 以前の session（`tinymemory list`）の「次の手順」を今回ですべて終え、状態も古くなったなら、`tinymemory archive <id>` で recall から外す（未完了や判断待ちの状態が次のセッションに残らないように。ARK-35 の試用で判明）。作業中の中継の記憶（relay）は 5 で外す
 - 指示ファイルの記述が状況依存になっていたら、fact に降格する
 
 ## 3. 保存
@@ -38,4 +38,14 @@ argument-hint: "[ARK-nn]"
 - tinymemory: `tinymemory save --type session --title "…"` と `--type fact` を quoted heredoc で実行する（remember skill の保存のコマンドと同じ形。remember の最後の「/clear してよい」の案内は出さない）
 
 ## 4. 報告
-残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べる。次は開発手順の skill（CC・Codex: superpowers、Pi: bigpowers）のブランチの仕上げ（finishing-a-development-branch）で統合し、Linear を Done にしてから `/clear`（Pi・Codex は `/new`。この skill は統合の前に走るので、ここでは区切りを促さない）。
+残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べる。次はグローバル指示の Git の節の方法で統合し、統合の後にもう一度この skill を使う（5. 統合の後。この skill は統合の前に走るので、ここでは区切りを促さない）。
+
+## 5. 統合の後
+統合が済んだ後に呼ばれたときは、1〜4 をせずこれだけを順に行う。`<作業内容>` は issue の本文の `ブランチ: feature/<作業内容>`、`<元>` は `git worktree list --porcelain` の先頭（元のチェックアウト）。
+1. 統合の確認。満たさなければ 2 以降をせず、止めて人に聞く
+   - GitHub: `gh pr view feature/<作業内容> --json url,state,headRefOid` の `state` が `MERGED`、かつ `headRefOid` が `git rev-parse feature/<作業内容>` と一致する（一致しなければ PR に入っていないローカルのコミットがある）
+   - bare: `git fetch` の後、`git merge-base --is-ancestor feature/<作業内容> origin/main` が成功する
+2. 結果を Linear にコメントして Done にする: GitHub は PR の url、bare は main に入ったコミット（`git log --oneline` の該当範囲）
+3. relay の片づけ: `tinymemory list --json | jq -r '.[] | select((.tags | index("relay")) and (.title | test("^ARK-nn([^0-9]|$)"))) | .id'`（`ARK-nn` はこの issue の番号）の各 id を `tinymemory archive <id>`
+4. worktree とブランチ: `<元>` に移って `git pull --ff-only`（失敗したら止めて人に聞く）、`git worktree remove <元>/.worktrees/<作業内容>`（未コミット・未追跡のファイルで拒まれたら消さずに人に聞く）、ブランチを消す（bare は `git branch -d feature/<作業内容>`。GitHub は rebase マージでコミットが作り直され `-d` では消せないので、1 で一致を確かめたうえで `git branch -D feature/<作業内容>`）
+5. 残したものを 1 行ずつ報告し、Linear を Done にしてから `/clear`（Pi・Codex は `/new`）を促す

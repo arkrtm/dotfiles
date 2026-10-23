@@ -78,7 +78,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 ## Claude Code の手順
 
-開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せる。Linear の記録は dotfiles の skill（`/issue`・`/wrap-up`）。自作のハーネス（プラグイン harness）はやめた（ARK-67。経緯は ARK-30・52・63〜66）。dotfiles が受け持つのは次の 3 つ:
+開発の手順（設計・計画・TDD・レビュー）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せる。ブランチ・worktree・統合の方法はグローバル指示（`config/agents/AGENTS.md`）の「Git」の節で、統合の後の片づけ（Linear の完了・relay・worktree）は `/wrap-up` の「統合の後」。Linear の記録は dotfiles の skill（`/issue`・`/wrap-up`）。自作のハーネス（プラグイン harness）はやめた（ARK-67。経緯は ARK-30・52・63〜66）。dotfiles が受け持つのは次の 3 つ:
 
 - `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `claude-plugins-official`・`tinymemory`・`ponytail` と、`enabledPlugins` の `superpowers@claude-plugins-official`・`tinymemory@tinymemory`・`ponytail@ponytail`。ponytail は node で動き、コードを最小にする指示を毎ターン入れる）。宣言だけでは入らないので、新しい端末では `install.sh` の後に `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → `claude plugin marketplace add arkrtm/tinymemory` → `claude plugin install tinymemory@tinymemory` → `claude plugin marketplace add DietrichGebert/ponytail` → `claude plugin install ponytail@ponytail`
 - skill の `issue`・`wrap-up`（`install.sh` が `~/.claude/skills` と `~/.agents/skills` にリンクする）
