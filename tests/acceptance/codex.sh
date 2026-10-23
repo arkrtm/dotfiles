@@ -22,6 +22,8 @@ cat > "$T/stdin"
 while [ \$# -gt 0 ]; do [ "\$1" = -o ] && printf '指摘なし\nVERDICT: PASS\n' > "\$2"; shift; done
 # MOVE があれば、レビューの途中で HEAD を動かす
 [ -z "\${MOVE:-}" ] || git commit -q --allow-empty -m moved
+# FAILRC があれば、結果を書いた後に異常終了する
+[ -z "\${FAILRC:-}" ] || exit 1
 SH
 chmod +x "$T/bin/codex"
 export PATH="$T/bin:$PATH"
@@ -50,13 +52,17 @@ rm -f "$T/args"; sh "$CR" branch
 common && grep -qF "$(git merge-base main HEAD)...$(git rev-parse HEAD)" "$T/args" && grep -q 'VERDICT: PASS' "$T/args" \
   && ok "branch は <merge-base>...<HEAD> を SHA で固定して VERDICT と渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
 saved="$(ls "$T/.git/codex-review/"*-branch-"$(git merge-base main HEAD)-$(git rev-parse HEAD)".md 2>/dev/null)"
-[ "$(printf '%s\n' "$saved" | grep -c .)" = 1 ] && [ "$(tail -n 1 "$saved")" = 'VERDICT: PASS' ] && has "$saved" \
+[ "$(printf '%s\n' "$saved" | grep -c .)" = 1 ] && [ "$(tail -n 1 "$saved")" = 'VERDICT: PASS' ] \
   && ok "branch は結果を codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存する" || ng "branch の結果の保存: $(ls -R "$T/.git/codex-review" 2>&1)"
 rm -f "$T/args"; echo leaked | sh "$CR" branch
 [ -e "$T/stdin" ] && [ ! -s "$T/stdin" ] && ok "codex に標準入力を渡さない（入力の終わりを待って止まらない）" || ng "codex に標準入力が渡る: $(cat "$T/stdin" 2>/dev/null)"
 rm -f "$T/args"; sh "$CR" branch dev
 grep -q 'dev との差分' "$T/args" && ok "branch <ベース> はそのベースを使う" || ng "branch dev: $(cat "$T/args" 2>/dev/null)"
 
+# Codex が結果を書いた後に異常終了したら、結果を残さない（統合に使わせない）
+rm -rf "$T/.git/codex-review"; FAILRC=1 sh "$CR" branch 2>"$T/err"; rc=$?
+[ "$rc" != 0 ] && [ -z "$(ls -A "$T/.git/codex-review" 2>/dev/null)" ] \
+  && ok "Codex が異常終了したら結果を残さない" || ng "異常終了: rc=$rc $(ls -A "$T/.git/codex-review" 2>&1)"
 # 未コミットの変更があると、レビューする内容がコミットと違うので実行しない
 echo dirty > d; rm -f "$T/args"; sh "$CR" branch 2>"$T/err"; rc=$?
 [ "$rc" != 0 ] && [ ! -e "$T/args" ] && ok "未コミットの変更があれば branch のレビューをしない" || ng "未コミットの変更: rc=$rc $(cat "$T/err")"

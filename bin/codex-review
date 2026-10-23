@@ -7,6 +7,7 @@
 set -eu
 skip=""
 out=""
+tmp=""
 usage() { echo "usage: codex-review plan <file> | branch [base]" >&2; exit 2; }
 case "${1:-}" in
   plan)
@@ -24,16 +25,21 @@ case "${1:-}" in
     dir="$(git rev-parse --path-format=absolute --git-common-dir)/codex-review"
     mkdir -p "$dir"
     out="$dir/$(date +%Y%m%d-%H%M%S)-branch-$from-$head.md"
+    # Codex には一時ファイルに書かせ、正常に終わって作業ツリーも確かめた後でだけ正式な名前にする
+    tmp="$out.partial"
+    trap 'rm -f "$tmp"' EXIT
     prompt="厳しいレビュアーとして、git diff $from...$head（$base との差分）の変更をレビューしてください。バグ、壊れやすい箇所、不要な複雑さ、テストの不足を、重要度順にファイルと行を添えて挙げてください。
 テストを削除・無効化して検査を通していないかも確かめてください。最後の行には、直すべき指摘がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」とだけ書いてください。" ;;
   *) usage ;;
 esac
 # フックは止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる。ponytail のフックも止まる）。
 # codex exec は標準入力が端末でないと入力の終わりを待って止まるので、標準入力は渡さない
-codex exec $skip ${out:+-o "$out"} --sandbox read-only -c model_reasoning_effort=xhigh -c features.hooks=false "$prompt" </dev/null || exit
+codex exec $skip ${tmp:+-o "$tmp"} --sandbox read-only -c model_reasoning_effort=xhigh -c features.hooks=false "$prompt" </dev/null || exit
 # レビューの途中で HEAD か作業ツリーが変わったら、レビューした内容とコミットが合わないので保存しない
-if [ -n "$out" ] && { [ "$(git rev-parse HEAD)" != "$head" ] || ! clean; }; then
-  rm -f "$out"
-  echo "レビューの途中で HEAD か作業ツリーが変わったので、結果を保存しません。やり直してください" >&2
-  exit 1
+if [ -n "$out" ]; then
+  if [ "$(git rev-parse HEAD)" != "$head" ] || ! clean; then
+    echo "レビューの途中で HEAD か作業ツリーが変わったので、結果を保存しません。やり直してください" >&2
+    exit 1
+  fi
+  mv "$tmp" "$out"
 fi

@@ -134,6 +134,9 @@ add a 2; review PASS; integrate >/dev/null 2>"$T/err"
   && ok "GitHub: 開いた PR があれば push だけ" || ng "GitHub: 2 回目: $(cat "$T/gh.log") $(cat "$T/err")"
 rm -f "$T/pr"; add a 3; review PASS; integrate >/dev/null 2>"$T/err"
 [ "$(grep -c '^pr create' "$T/gh.log")" = 2 ] && ok "GitHub: PR が閉じていれば新しく作る" || ng "GitHub: 閉じた PR: $(cat "$T/gh.log")"
+# ポート付きの ssh の URL（ssh://git@ssh.github.com:443/o/r.git の形）でも、PR の対象は o/r
+setup "$T/ssh.github.com:443/o/r.git"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?
+[ "$rc" = 0 ] && grep -q -- '^pr create --repo o/r ' "$T/gh.log" && ok "GitHub: ポート付きの URL でも PR の対象は o/r" || ng "GitHub: ポート付きの URL: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
 # push 先が複数あると、どこへ送るか決められないので通さない（GitHub に混ざっていても main を直接変えない）
 setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BARE" "$G"
 git remote set-url --add --push origin "$BARE"; git remote set-url --add --push origin "$G"; review PASS; g0="$(git -C "$G" rev-parse main)"
