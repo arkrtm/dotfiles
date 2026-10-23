@@ -48,8 +48,18 @@ check "PreToolUse の Edit|Write|NotebookEdit に integrate-hook pre-edit" \
 check "config/claude/hooks・pre-receive とその検査が無い" \
   sh -c "[ ! -e '$ROOT/config/claude/hooks' ] && [ ! -e '$ROOT/config/git/hooks/pre-receive' ] && [ ! -e '$ROOT/tests/acceptance/pre-receive.sh' ]"
 
-# ---- skill は issue と wrap-up だけ。install.sh の LINKS（tests/install.sh と同じ読み方）にある。グローバルの gitignore も
-check "config/agents/skills は issue と wrap-up だけ" [ "$(ls "$ROOT/config/agents/skills" | tr '\n' ' ')" = "issue wrap-up " ]
+# ---- herdr 連携（ARK-90）: モバイルは remote-control を常に、文脈の合図、サブエージェントの pane、clear の後の印と片づけ
+hk() { jq -r --arg e "$1" '.hooks[$e][]? | .hooks[].command' "$S"; }
+check "remoteControlAtStartup が true" [ "$(jq -r '.remoteControlAtStartup' "$S")" = true ]
+check "PostToolUse（全ツール）に context-nudge" [ "$(jq -r '.hooks.PostToolUse[] | select(.matcher == null) | .hooks[].command' "$S" | grep -c '^\$HOME/.local/bin/context-nudge$')" = 1 ]
+check "SubagentStart に agent-pane start" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane start'" _ "$(hk SubagentStart)"
+check "SubagentStop に agent-pane stop" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane stop'" _ "$(hk SubagentStop)"
+check "SessionStart（clear）に handoff --session-start と agent-pane cleanup" \
+  [ "$(jq -r '.hooks.SessionStart[] | select(.matcher == "clear") | .hooks[].command' "$S" | tr '\n' ' ')" = '$HOME/.local/bin/handoff --session-start $HOME/.local/bin/agent-pane cleanup ' ]
+check "SessionEnd に agent-pane cleanup" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane cleanup'" _ "$(hk SessionEnd)"
+
+# ---- skill は issue・wrap-up・handoff。install.sh の LINKS（tests/install.sh と同じ読み方）にある。グローバルの gitignore も
+check "config/agents/skills は handoff・issue・wrap-up だけ" [ "$(ls "$ROOT/config/agents/skills" | tr '\n' ' ')" = "handoff issue wrap-up " ]
 links="$(sed -n '/^LINKS="/,/^"/p' "$ROOT/install.sh" | grep -vE '^(LINKS="|")$')"
 check "install.sh の LINKS 表を読めた" [ -n "$links" ]
 for s in issue wrap-up; do
@@ -57,6 +67,9 @@ for s in issue wrap-up; do
     check "install.sh の LINKS 表に skill の $s（$d）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/skills/$s  *$d/$s\$'" _ "$links"
   done
 done
+# handoff は Claude Code の skill（herdr と Claude Code の clear に依る）なので ~/.claude/skills だけ
+check "install.sh の LINKS 表に skill の handoff（.claude/skills）があり、.agents/skills には無い" \
+  sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/skills/handoff  *.claude/skills/handoff\$' && ! printf '%s\n' \"\$1\" | grep -qF ' .agents/skills/handoff'" _ "$links"
 for d in .claude/CLAUDE.md .pi/agent/AGENTS.md .codex/AGENTS.md; do
   check "install.sh の LINKS 表にグローバル指示（$d）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/AGENTS.md  *$d\$'" _ "$links"
 done

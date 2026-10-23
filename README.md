@@ -51,7 +51,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/wezterm/wezterm.lua` | —（Windows の `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、permissions（`git push`・`gh pr merge`・`integrate --human-approved`・`integrate setup --force` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取り、`~/.config/integrate/` の編集を禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` や `bin/integrate setup --force` などは捕らえない。機械的な関門は integrate 自身。設定の上書きは integrate が端末からだけ受け付ける）、ステータスライン、ログ 365 日 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、remote-control を常に（`remoteControlAtStartup`）、hooks（状態表示 + compact・resume 後の記憶の注入 + integrate-hook・handoff・context-nudge・agent-pane）、permissions（`git push`・`gh pr merge`・`integrate --human-approved`・`integrate setup --force` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取り、`~/.config/integrate/` の編集を禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` や `bin/integrate setup --force` などは捕らえない。機械的な関門は integrate 自身。設定の上書きは integrate が端末からだけ受け付ける）、ステータスライン、ログ 365 日 |
 | `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。Claude のモデルと effort → Codex のモデルと effort（`~/.codex/config.toml` から）→ ブランチと、コンテキスト・5 時間・週の上限のメーター。Nerd Font のアイコン。Claude・OpenAI のアイコン（`nf-cod-claude`・`nf-cod-openai`）は Nerd Fonts 3.5.0 以降のフォントが要る） |
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、レビュー（計画と最終は codex-review）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/codex/config.toml.tmpl` | —（`~/.codex/config.toml` を生成） | Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分は install.sh の再実行で消える。ただしフックの承認（`hooks.state`）・プロジェクトの信頼（`projects`）・表示（`tui`）の表は引き継ぐ |
@@ -78,6 +78,9 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `integrate [--human-approved]` — 統合はこれだけで行う。関門（`integrate setup` の設定がある・最上位のブランチ（base）の最新を含む・未コミットの変更が無い・設定の test が通る・今のコミットの origin/<base> との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（設定の remote が origin と違う・origin の push 先が取得先と違う設定でも止まる）。kind が `bare`・`github` なら base へ push（早送りだけ）、`pr` ならブランチを push して base に向けた PR を作るだけ（マージはチーム）。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
 - `integrate setup` — リポジトリごとの設定（下の「integrate setup」）
 - `integrate-hook <session-start|pre-edit>` — Claude Code のフック。origin があって `integrate setup` の設定が無いリポジトリでは、会話の始まりに setup を案内し、編集（Edit・Write・NotebookEdit）を拒む（終了コード 2）。読む・調べる・Bash は止めない（Bash での書き換えは捕らえない抑止）。設定がある・origin が無い・git の外では何もしない
+- `handoff <続きの指示>` — herdr の中で、このターンの後に自分の pane へ `/clear` と続きの指示を送る（下の「常時起動サーバー」）。Claude が handoff skill の手順で呼ぶ。herdr の外では 1
+- `context-nudge` — PostToolUse のフック。ステータスラインが書いた文脈の使用率が 60% 以上なら、10% 刻みに 1 回 handoff を促す（サブエージェントの中では出さない）
+- `agent-pane <start|stop|cleanup|view>` — サブエージェントのフック。herdr の中で、サブエージェントの進みを別の pane に出す（同時に 2 つまで）
 - `notify MESSAGE` — エージェントが止めた理由を `~/.local/state/agent-notify.log` に記録して標準エラーに出す（外部には送らない。スマホへは Claude Code mobile が届ける）
 
 ## Claude Code の手順
@@ -132,6 +135,20 @@ rm ~/.claude/hooks                 # check・fmt のフックのリンク（リ�
 DOTFILES_LINKS_ONLY=1 sh install.sh  # bin/integrate-hook のリンクを足す
 cd <各リポジトリ> && integrate setup  # 端末なら推測を既定値に尋ねる
 ```
+
+### 常時起動サーバー（herdr と Claude Code）
+
+常時起動のサーバー（どの端末でも同じ）で herdr を立ち上げ、その中で Claude Code を動かす。PC からは herdr に入って見る。モバイルからは Claude アプリの remote-control でメインの会話を見て指示する（ARK-90）:
+
+```sh
+herdr                       # サーバーの persistent session に入る（無ければ作る）
+claude                      # メインの pane で。初回は /login（claude.ai）と remote-control の確認
+```
+
+- remote-control: settings.json の `remoteControlAtStartup: true` で、対話のセッションはすべて最初からモバイルにつながる（Pro/Max の claude.ai ログインが要る。`DISABLE_TELEMETRY`・`DO_NOT_TRACK` などを設定すると使えない）。モバイルからも `/clear` を送れる
+- 自分で clear して続ける: 文脈が 60% を超えると context-nudge が促し、Claude は handoff skill の手順で引き継ぎ（relay の記憶と Linear）を保存して `handoff` を呼ぶ。`handoff` はターンの終わりを待って `/clear` を送り、clear の後の SessionStart を待って続きの指示を送る。続きの指示は普通の入力として入るので、PC でもモバイルでも見える。経過は `~/.local/state/handoff.log`、止めたときは notify
+- サブエージェントの進み（PC だけ）: 開始でメインの pane を右に分けて `agent-pane view` を動かし、終了で閉じる。同時に 2 つまで（workflow のように数が多いときはバックグラウンドのまま）
+- 限界: workflow のエージェントを見分ける情報がフックに無いので数で近似している。チームのメンバー（agent teams）の split pane は tmux・iTerm2 だけで、herdr には出ない（in-process のメンバーは SubagentStart で上と同じ pane に出る）。`/clear` の後もモバイルの接続が続くことは資料の記述から読み取ったもの
 
 ### GitHub の main の保護
 

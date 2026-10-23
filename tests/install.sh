@@ -37,9 +37,9 @@ sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -vE '^(LINKS="|")$' | wh
   [ -n "$src" ] && [ ! -e "$DOTFILES/$src" ] && echo "NOSRC $src"
 done | grep NOSRC && ng "リンク元が存在しない項目がある" || ok "全リンク元が存在する"
 
-# Claude Code の skill: issue と wrap-up を置き、ほかの skill はそのまま残す
-[ "$(ls "$HOME/.claude/skills" | tr '\n' ' ')" = "issue other wrap-up " ] && [ "$(cat "$HOME/.claude/skills/other/SKILL.md")" = other ] \
-  && ok "skill は issue と wrap-up を置き、ほかの skill には触らない" || ng "skill の置き方: $(ls "$HOME/.claude/skills" | tr '\n' ' ')"
+# Claude Code の skill: issue・wrap-up・handoff を置き、ほかの skill はそのまま残す
+[ "$(ls "$HOME/.claude/skills" | tr '\n' ' ')" = "handoff issue other wrap-up " ] && [ "$(cat "$HOME/.claude/skills/other/SKILL.md")" = other ] \
+  && ok "skill は issue・wrap-up・handoff を置き、ほかの skill には触らない" || ng "skill の置き方: $(ls "$HOME/.claude/skills" | tr '\n' ' ')"
 grep -qx 'name: issue' "$HOME/.claude/skills/issue/SKILL.md" && grep -qx 'name: wrap-up' "$HOME/.claude/skills/wrap-up/SKILL.md" \
   && ok "skill の issue と wrap-up が読める" || ng "skill の issue・wrap-up の SKILL.md が無い"
 

@@ -31,6 +31,7 @@ config/agents/AGENTS.md         .pi/agent/AGENTS.md
 config/agents/AGENTS.md         .codex/AGENTS.md
 config/agents/skills/issue      .claude/skills/issue
 config/agents/skills/wrap-up    .claude/skills/wrap-up
+config/agents/skills/handoff    .claude/skills/handoff
 config/agents/skills/issue      .agents/skills/issue
 config/agents/skills/wrap-up    .agents/skills/wrap-up
 config/pi/extensions/format-json-yaml.ts  .pi/agent/extensions/format-json-yaml.ts
