@@ -76,7 +76,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png`（保存時刻。同じ秒は `-2`）の名前で送信先の `~/screenshots/` へ `scp -O`（送信のたびに 7 日より古いものを削除。元のファイルはそのまま）。送信先は `config/ss-sync/targets`（1 行 1 ホスト、`#` はコメント）。失敗は `~/.local/state/ss-sync/log`（mac は `launchd.err` も）。`BatchMode` なので、新しい端末では一度手で `ssh nas` して known_hosts に入れる
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
-- `integrate [--human-approved]` — 統合はこれだけで行う。関門（main の最新を含む・未コミットの変更が無い・`scripts/check` が通る・今のコミットの origin/main との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1。origin の push 先が GitHub ならブランチを push して PR を作るだけ（マージは人）、それ以外（bare）は main へ push。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
+- `integrate [--human-approved]` — 統合はこれだけで行う。関門（main の最新を含む・未コミットの変更が無い・`scripts/check` が通る・今のコミットの origin/main との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（origin の push 先が取得先と違う設定でも止まる）。origin が GitHub ならブランチを push して PR を作るだけ（マージは人）、それ以外（bare）は main へ push。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
 - `notify MESSAGE` — エージェントが止めた理由を `~/.local/state/agent-notify.log` に記録して標準エラーに出す（外部には送らない。スマホへは Claude Code mobile が届ける）
 
 ## Claude Code の手順

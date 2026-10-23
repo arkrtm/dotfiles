@@ -45,6 +45,11 @@ if push HEAD:main; then ng "scripts/check が無いコミットが main に入�
 else [ "$(main)" = "$m0" ] && grep -q scripts/check "$T/err" && ok "scripts/check が無いコミットは拒否する" || ng "拒否の後: $(cat "$T/err")"; fi
 
 [ -z "$(ls -A "$T/tmp")" ] && ok "一時ディレクトリを残さない" || ng "一時ディレクトリが残った: $(ls -A "$T/tmp")"
+# 検査が受け取ったファイルを書き換えて通っても、検査した内容と受け付けるコミットが違うので拒否する
+mkdir -p scripts; printf '#!/bin/sh\necho y >> ignored.sh\n' > scripts/check; chmod +x scripts/check; echo x > ignored.sh
+git add -A; git commit -qm rewrite; m0="$(main)"
+if push HEAD:main; then ng "検査が書き換えたコミットが main に入った"
+else [ "$(main)" = "$m0" ] && ok "検査がファイルを書き換えたら拒否する" || ng "書き換えの拒否の後: $(cat "$T/err")"; fi
 # 検査の途中でフックが TERM で止められても、一時ディレクトリを残さない（検査 → サブシェル → フックの順の親）
 mkdir -p scripts; printf '#!/bin/sh\nkill -TERM "$(ps -o ppid= -p $PPID | tr -d " ")"\nexit 0\n' > scripts/check; chmod +x scripts/check
 git add -A; git commit -qm term

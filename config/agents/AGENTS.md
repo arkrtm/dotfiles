@@ -41,7 +41,7 @@
 - issue 番号はコミット・PR・ブランチ名に入れない（対応は Linear の issue の本文にだけ書く）
 - 統合の前の順番: `git fetch` → `git rebase origin/main`（PR を出す前だけ）→ リポジトリの指示ファイルにある検査 → `codex-review branch origin/main` → `integrate`。レビューの後に変えたら、検査とレビューをやり直す
 - 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（main の最新を含む、未コミットの変更が無い、`scripts/check` が通る、今のコミットへの `codex-review branch origin/main` の最後の行が `VERDICT: PASS`、テストを削除・移動していない、skip・xfail・`type: ignore`・`noqa` を足していない）を確かめ、1 つでも欠けたら統合せず `notify` して止まる。直せる理由だけ直して検査・レビューからやり直し、直せなければ人を待つ。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
-- integrate の統合は push 先（`git remote get-url --push origin`）で変わる:
+- integrate の統合は `git remote get-url origin` で変わる（push 先が取得先と違う設定では止まる）:
   - github.com: ブランチを push して PR を作るところまで。マージは人が確かめて行う（`gh pr merge --rebase --delete-branch`。squash しない）。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（main が進んで止まったら人に聞く）
   - それ以外（bare）: main へ push する（bare 側の pre-receive でも `scripts/check` を確かめる）。main が進んで止まったら fetch・rebase・検査・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
 - 強制 push はしない

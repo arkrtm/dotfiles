@@ -109,10 +109,10 @@ integrate --foo >/dev/null 2>"$T/err"; rc=$?
 
 # ---- AC8: すべて満たせば bare の main へ push する。worktree の中でも（レビューは共通ディレクトリ）
 accepted "すべて満たす（bare。AC8）"
-# macOS の wc -l は数字の前に空白を付ける
-setup "$T/r.git"; review PASS; mkdir -p "$T/padbin"
-printf '#!/bin/sh\n%s "$@" | sed "s/^/       /"\n' "$(command -v wc)" > "$T/padbin/wc"; chmod +x "$T/padbin/wc"
-PATH="$T/padbin:$PATH" accepted "wc -l の出力に空白が付く環境（macOS）でも統合する"
+# 差分を取れなければ、無効化の記述が無いとは言えないので通さない（diff --no-color だけ失敗する git）
+setup "$T/r.git"; review PASS; mkdir -p "$T/failbin"
+printf '#!/bin/sh\ncase " $* " in *" diff --no-color "*) exit 128 ;; esac\nexec %s "$@"\n' "$(command -v git)" > "$T/failbin/git"; chmod +x "$T/failbin/git"
+PATH="$T/failbin:$PATH" refused "差分を取れない"
 setup "$T/r.git"; git worktree add -q -b feature/wt "$T/wt" && cd "$T/wt"; add c 1; review PASS
 accepted "worktree の中ですべて満たす"
 
@@ -133,11 +133,11 @@ setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BA
 git remote set-url --add --push origin "$BARE"; git remote set-url --add --push origin "$G"; review PASS; g0="$(git -C "$G" rev-parse main)"
 refused "push 先（pushurl）が複数ある"
 [ "$(git -C "$G" rev-parse main)" = "$g0" ] && ok "push 先が複数でも GitHub の main を変えない" || ng "push 先が複数で GitHub の main が変わった"
-# 取得は bare、push は GitHub（remote.origin.pushurl）なら、push 先に合わせて PR を作るだけ（GitHub の main を直接変えない）
+# push 先が取得先と違う（pushurl）と、main の判定と PR の対象が push 先とずれるので通さない
 setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BARE" "$G"
-git remote set-url --push origin "$G"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?
-[ "$rc" = 0 ] && [ "$(git -C "$G" rev-parse main)" = "$(git -C "$BARE" rev-parse main)" ] && grep -q '^pr create' "$T/gh.log" \
-  && ok "GitHub: push 先（pushurl）で判定する" || ng "GitHub: pushurl: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
+git remote set-url --push origin "$G"; review PASS; g0="$(git -C "$G" rev-parse main)"
+refused "push 先（pushurl）が取得先と違う"
+[ "$(git -C "$G" rev-parse main)" = "$g0" ] && [ ! -e "$T/gh.log" ] && ok "push 先が取得先と違えば GitHub を変えない" || ng "pushurl が違うのに GitHub を変えた: $(cat "$T/gh.log" 2>/dev/null)"
 
 [ "$fail" = 0 ] && echo "acceptance integrate: ok"
 [ "$fail" = 0 ]
