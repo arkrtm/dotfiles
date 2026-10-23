@@ -1,0 +1,24 @@
+#!/bin/sh
+# bare リポジトリの最後の関門: main への push は、受け取ったコミットで scripts/check が通るときだけ受け付ける。
+# 入れ方: ln -s ~/dotfiles/config/git/hooks/pre-receive <repo>.git/hooks/pre-receive
+# 受け取ったコミットそのものを、一時的な git のリポジトリに checkout して検査する（git archive は export-ignore の
+# ファイルが欠ける）。まだ取り込み前（quarantine）のオブジェクトは alternates で読む
+set -eu
+objects="$(cd "$(git rev-parse --git-dir)" && pwd)/objects"
+quarantine="${GIT_QUARANTINE_PATH:-}"
+zero=0000000000000000000000000000000000000000
+while read -r old new ref; do
+  [ "$ref" = refs/heads/main ] || continue
+  [ "$new" != "$zero" ] || continue # 削除は receive.denyDeletes が拒む
+  tmp="$(mktemp -d)"
+  # if の条件の中では set -e が効かないので、失敗は 1 つずつ exit 1 にする
+  if (
+    unset GIT_DIR GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    cd "$tmp" && git init -q || exit 1
+    { echo "$objects"; [ -z "$quarantine" ] || echo "$quarantine"; } > .git/objects/info/alternates || exit 1
+    git checkout -q --detach "$new" || exit 1
+    [ -x scripts/check ] || { echo "scripts/check が無いので受け付けません" >&2; exit 1; }
+    scripts/check >&2 || { echo "検査（scripts/check）が通らないので受け付けません" >&2; exit 1; }
+  ); then rm -rf "$tmp"
+  else rm -rf "$tmp"; exit 1; fi
+done
