@@ -36,6 +36,9 @@ br=$(git -C "$(get .workspace.current_dir)" branch --show-current 2>/dev/null)
 # 2 行目: コンテキスト・5 時間・週のメーター
 line2=""
 ctx=$(get .context_window.used_percentage)
+# 使用率を context-nudge（PostToolUse のフック。入力に使用率が無い）に渡す（ARK-90）
+sid=$(get .session_id)
+case "$sid" in ''|.|..|*/*) ;; *) [ -n "$ctx" ] && d="${XDG_STATE_HOME:-$HOME/.local/state}/claude-context" && mkdir -p "$d" 2>/dev/null && printf '%s\n' "${ctx%.*}" > "$d/$sid" 2>/dev/null ;; esac
 [ -n "$ctx" ] && line2+="$(meter "$I_CTX" "$ctx" 50 70)   "
 h5=$(get .rate_limits.five_hour.used_percentage)
 if [ -n "$h5" ]; then

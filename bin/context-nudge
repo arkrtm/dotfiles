@@ -1,0 +1,19 @@
+#!/bin/sh
+# 文脈の合図（ARK-90。PostToolUse のフック）: ステータスラインが書いた文脈の使用率（claude-context/<session_id>）が 60% 以上なら、
+# 10% 刻みに 1 回だけ additionalContext で handoff を促す。サブエージェントの中（入力に agent_id）・値が無い・数字でないときは何もしない
+in="$(cat)"
+command -v jq >/dev/null 2>&1 || exit 0
+[ -z "$(printf '%s' "$in" | jq -r '.agent_id // empty' 2>/dev/null)" ] || exit 0
+id="$(printf '%s' "$in" | jq -r '.session_id // empty' 2>/dev/null)"
+case "$id" in ''|.|..|*/*) exit 0 ;; esac
+f="${XDG_STATE_HOME:-$HOME/.local/state}/claude-context/$id"
+p="$(cat "$f" 2>/dev/null)"
+case "$p" in ''|*[!0-9]*) exit 0 ;; esac
+[ "$p" -ge 60 ] || exit 0
+b=$((p / 10 * 10))
+last="$(cat "$f.nudged" 2>/dev/null)"
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+[ "$b" -gt "$last" ] || exit 0
+echo "$b" > "$f.nudged"
+jq -n --arg c "文脈が ${p}% 使われている。区切りのよいところで handoff skill の手順で引き継ぐ（herdr の中なら clear して自動で続く）" \
+  '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $c}}'
