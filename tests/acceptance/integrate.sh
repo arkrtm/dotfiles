@@ -77,6 +77,7 @@ setup "$T/r.git"; review PASS HEAD; refused "比較元が HEAD（空の差分）
 
 # ---- AC4・AC5: テストや検査を弱める変更は、人の承認（--human-approved）なしでは通さない
 setup "$T/r.git"; add x.py 'import os  # noqa'; review PASS; refused "noqa を足した（AC4）"
+setup "$T/r.git"; git config color.ui always; add x.py 'import os  # noqa'; review PASS; refused "色付きの diff の設定でも noqa を見つける"
 setup "$T/r.git"; add tests/test_x.py '@pytest.mark.skip'; review PASS; refused "pytest.mark.skip を足した（AC4）"
 accepted "--human-approved なら無効化の追加も通す（AC4）" --human-approved
 setup "$T/r.git"; add README.md 'skip や noqa の説明'; review PASS; accepted "Markdown の文書の説明は無効化の追加と数えない"
@@ -123,6 +124,11 @@ add a 2; review PASS; integrate >/dev/null 2>"$T/err"
   && ok "GitHub: 開いた PR があれば push だけ" || ng "GitHub: 2 回目: $(cat "$T/gh.log") $(cat "$T/err")"
 rm -f "$T/pr"; add a 3; review PASS; integrate >/dev/null 2>"$T/err"
 [ "$(grep -c '^pr create' "$T/gh.log")" = 2 ] && ok "GitHub: PR が閉じていれば新しく作る" || ng "GitHub: 閉じた PR: $(cat "$T/gh.log")"
+# push 先が複数あると、どこへ送るか決められないので通さない（GitHub に混ざっていても main を直接変えない）
+setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BARE" "$G"
+git remote set-url --add --push origin "$BARE"; git remote set-url --add --push origin "$G"; review PASS; g0="$(git -C "$G" rev-parse main)"
+refused "push 先（pushurl）が複数ある"
+[ "$(git -C "$G" rev-parse main)" = "$g0" ] && ok "push 先が複数でも GitHub の main を変えない" || ng "push 先が複数で GitHub の main が変わった"
 # 取得は bare、push は GitHub（remote.origin.pushurl）なら、push 先に合わせて PR を作るだけ（GitHub の main を直接変えない）
 setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BARE" "$G"
 git remote set-url --push origin "$G"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?

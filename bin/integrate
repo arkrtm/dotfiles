@@ -45,7 +45,7 @@ review="$(ls "$(git rev-parse --path-format=absolute --git-common-dir)/codex-rev
 
 # 3. テストや検査を弱めていない（移動も削除として数える。Markdown の文書の説明は数えない）
 if [ -z "$approved" ]; then
-  if git diff "$base...$head" -- . ':(exclude)*.md' | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
+  if git diff --no-color "$base...$head" -- . ':(exclude)*.md' | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
     fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
   fi
   git diff --quiet --no-renames --diff-filter=D "$base...$head" -- ':(glob)**/test/**' ':(glob)**/tests/**' \
@@ -57,8 +57,10 @@ clean || fail "検査の後にコミットしていない変更がある（scrip
 [ "$(git rev-parse HEAD)" = "$head" ] || fail "検査の間に HEAD が変わった"
 
 # 統合（リモートに合わせる）
-# 判定は実際の push 先（remote.origin.pushurl があればそれ）で行う
-if git remote get-url --push origin | grep -q github.com; then
+# 判定は実際の push 先（remote.origin.pushurl があればそれ）で行う。複数あると push は全部に送られるので通さない
+push_url="$(git remote get-url --push --all origin)"
+[ "$(printf '%s\n' "$push_url" | wc -l)" = 1 ] || fail "origin の push 先が複数ある（どこへ統合するか決められない）"
+if printf '%s\n' "$push_url" | grep -q github.com; then
   git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
   url="$(gh pr list --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
   [ -n "$url" ] || url="$(gh pr create --fill --base main --head "$branch")" || fail "PR を作れない"
