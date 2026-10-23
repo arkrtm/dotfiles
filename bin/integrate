@@ -1,0 +1,68 @@
+#!/bin/sh
+# 関門をすべて満たしたときだけ統合する。1 つでも欠けたら統合せず、notify で知らせて止まる（終了コード 1）
+#   usage: integrate [--human-approved]
+#   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
+# 関門: main の上でない・未コミットの変更が無い・origin/main を含む・scripts/check が通る・
+#       今のコミットの origin/main との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない
+# 統合: origin が GitHub ならブランチを push して PR を作るだけ（マージは人）。それ以外（bare）は main へ push。
+# push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
+set -eu
+usage() { echo "usage: integrate [--human-approved]" >&2; exit 2; }
+approved=""
+case "$#:${1:-}" in
+  0:) ;;
+  1:--human-approved) approved=1 ;;
+  *) usage ;;
+esac
+root="$(git rev-parse --show-toplevel)" || exit 1
+cd "$root"
+fail() {
+  notify "統合を止めました（$(basename "$root")）: $1" 2>/dev/null || true
+  echo "統合しません: $1" >&2
+  exit 1
+}
+clean() { [ -z "$(git status --porcelain)" ]; }
+
+branch="$(git branch --show-current)"
+[ -n "$branch" ] && [ "$branch" != main ] || fail "main の上（またはブランチの外）で実行された"
+clean || fail "コミットしていない変更がある"
+head="$(git rev-parse HEAD)"
+git fetch -q origin || fail "origin から fetch できない"
+base="$(git rev-parse origin/main)" || fail "origin/main が無い"
+git merge-base --is-ancestor "$base" "$head" || fail "main が進んでいる。rebase して検査・レビューからやり直す"
+
+# 1. 検査
+[ -x scripts/check ] || fail "検査（scripts/check）が無い"
+if ! out="$(scripts/check 2>&1)"; then
+  printf '%s\n' "$out" | tail -n 40 >&2
+  fail "検査（scripts/check）が通らない"
+fi
+
+# 2. このコミットの origin/main との差分への Codex のレビューが PASS
+review="$(ls "$(git rev-parse --path-format=absolute --git-common-dir)/codex-review/"*-branch-"$base-$head".md 2>/dev/null | tail -n 1)"
+[ -n "$review" ] || fail "今のコミットへの Codex のレビュー（codex-review branch origin/main）が無い"
+[ "$(tail -n 1 "$review" | tr -d '[:space:]')" = "VERDICT:PASS" ] || fail "Codex のレビューが PASS でない: $review"
+
+# 3. テストや検査を弱めていない（移動も削除として数える）
+if [ -z "$approved" ]; then
+  if git diff "$base...$head" | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
+    fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
+  fi
+  git diff --quiet --no-renames --diff-filter=D "$base...$head" -- ':(glob)**/test/**' ':(glob)**/tests/**' \
+    || fail "テストのファイルが削除・移動されている。必要なら理由を書いて人が integrate --human-approved で通す"
+fi
+
+# 検査とレビューをしたコミットのままか
+clean || fail "検査の後にコミットしていない変更がある（scripts/check が追跡ファイルを書き換えた）"
+[ "$(git rev-parse HEAD)" = "$head" ] || fail "検査の間に HEAD が変わった"
+
+# 統合（リモートに合わせる）
+if git remote get-url origin | grep -q github.com; then
+  git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
+  url="$(gh pr list --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
+  [ -n "$url" ] || url="$(gh pr create --fill --base main --head "$branch")" || fail "PR を作れない"
+  echo "PR: $url（マージは人が確認して行う）"
+else
+  git push -q origin "$head:refs/heads/main" || fail "main への push が拒否された"
+  echo "統合しました: $(git rev-parse --short "$head") → main"
+fi

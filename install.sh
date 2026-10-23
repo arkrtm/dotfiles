@@ -44,6 +44,7 @@ config/yazi              .config/yazi
 bin/agent-status         .local/bin/agent-status
 bin/notify               .local/bin/notify
 bin/codex-review         .local/bin/codex-review
+bin/integrate            .local/bin/integrate
 bin/geoview              .local/bin/geoview
 ssh/config               .ssh/config
 "
