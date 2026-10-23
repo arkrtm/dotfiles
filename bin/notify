@@ -1,0 +1,7 @@
+#!/bin/sh
+# 止めた理由を記録し、Claude に伝える（外部には送らない。スマホへは Claude Code mobile が届ける）
+#   usage: notify <メッセージ>
+log="${XDG_STATE_HOME:-$HOME/.local/state}/agent-notify.log"
+mkdir -p "$(dirname "$log")"
+echo "$(date '+%F %T') $*" >> "$log"
+echo "$*" >&2

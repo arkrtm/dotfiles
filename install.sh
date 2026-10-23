@@ -20,6 +20,7 @@ config/git/hooks-nosign  .config/git/hooks-nosign
 config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
+config/claude/hooks          .claude/hooks
 config/agents/AGENTS.md         .claude/CLAUDE.md
 config/agents/AGENTS.md         .pi/agent/AGENTS.md
 config/agents/AGENTS.md         .codex/AGENTS.md
@@ -35,6 +36,7 @@ bin/lan-reachable        .local/bin/lan-reachable
 config/nvim              .config/nvim
 config/yazi              .config/yazi
 bin/agent-status         .local/bin/agent-status
+bin/notify               .local/bin/notify
 bin/geoview              .local/bin/geoview
 ssh/config               .ssh/config
 "
