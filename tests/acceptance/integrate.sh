@@ -30,13 +30,15 @@ chmod +x "$T/bin/gh"
 export PATH="$ROOT/bin:$T/bin:$PATH"
 exec </dev/null
 
-# setup <bare>: bare の main に scripts/check（通る）と tests/ を置き、クローン $T/w で feature/x を切ってコミット 1 つ
+# setup <bare>: bare の main に scripts/check（通る）と tests/ を置き、クローン $T/w で feature/x を切ってコミット 1 つ。
+# パスに github.com を含まなければ bare のリモートとして扱う（クローンで integrate.bare を true にする）
 setup() {
   BARE="$1"
   cd "$T" && rm -rf "$T/w" "$T/wt" "$T/o" "$BARE" "$T/pr" "$T/gh.log"
   git init -q --bare -b main "$BARE"
   git clone -q "$BARE" "$T/w" 2>/dev/null
   cd "$T/w"
+  case "$BARE" in *github.com*) ;; *) git config integrate.bare true ;; esac
   mkdir -p scripts tests
   printf '#!/bin/sh\nexit 0\n' > scripts/check; chmod +x scripts/check
   echo t > tests/t.sh; echo j > tests/日本語.sh
@@ -141,19 +143,22 @@ rm -f "$T/pr"; add a 3; review PASS; integrate >/dev/null 2>"$T/err"
 # ポート付きの ssh の URL（ssh://git@ssh.github.com:443/o/r.git の形）でも、PR の対象は o/r
 setup "$T/ssh.github.com:443/o/r.git"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && grep -q -- '^pr create --repo github.com/o/r ' "$T/gh.log" && ok "GitHub: ポート付きの URL でも PR の対象は o/r" || ng "GitHub: ポート付きの URL: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
-# 大文字の GitHub の URL・GitHub を指す ssh の別名も GitHub として扱う（bare と誤って main へ push しない）。
-# 実際の送り先は insteadOf で一時的な bare に向ける。ssh の別名の解決は偽の ssh（ssh -G）で
+# integrate.bare が無ければ main へは push しない。GitHub のリポジトリは、展開した URL か書いたままの URL から
+# 大文字小文字を問わず求める（実際の送り先は insteadOf で一時的な bare に向ける）
 github_like() {
-  name="$1" url="$2"
-  setup "$T/r.git"; git remote set-url origin "$url"; git config url."$BARE".insteadOf "$url"; review PASS; m0="$(git -C "$BARE" rev-parse main)"
+  name="$1" url="$2" to="$3" prefix="${4:-$2}"
+  setup "$to"; git config --unset integrate.bare; git remote set-url origin "$url"; git config url."${5:-$BARE}".insteadOf "$prefix"
+  review PASS; m0="$(git -C "$BARE" rev-parse main)"
   integrate >/dev/null 2>"$T/err"; rc=$?
   [ "$rc" = 0 ] && [ "$(git -C "$BARE" rev-parse main)" = "$m0" ] && grep -q -- '^pr create --repo github.com/o/r ' "$T/gh.log" \
     && ok "GitHub: $name は PR を作るだけ" || ng "GitHub: $name: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
 }
-github_like "大文字の URL" https://GitHub.com/o/r.git
-printf '#!/bin/sh\n[ "$1" = -G ] && [ "$2" = ghalias ] && echo "hostname github.com"\nexit 0\n' > "$T/bin/ssh"; chmod +x "$T/bin/ssh"
-github_like "GitHub を指す ssh の別名" ghalias:o/r.git
-rm -f "$T/bin/ssh"
+github_like "大文字の URL" https://GitHub.com/o/r.git "$T/r.git"
+github_like "省略形（insteadOf で github.com の URL に展開）" gh:r.git "$T/github.com/o/r.git" gh: "$T/github.com/o/"
+# GitHub か分からないリモート（ssh の別名・core.sshCommand など）で integrate.bare が無ければ、main に push せず止まる
+setup "$T/r.git"; git config --unset integrate.bare; git remote set-url origin ghalias:o/r.git; git config url."$BARE".insteadOf ghalias:o/r.git; review PASS
+refused "GitHub か分からず integrate.bare も無い"
+[ ! -e "$T/gh.log" ] && ok "GitHub か分からなければ PR も作らない" || ng "GitHub か分からないのに gh を呼んだ: $(cat "$T/gh.log")"
 # push 先が複数あると、どこへ送るか決められないので通さない（GitHub に混ざっていても main を直接変えない）
 setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BARE" "$G"
 git remote set-url --add --push origin "$BARE"; git remote set-url --add --push origin "$G"; review PASS; g0="$(git -C "$G" rev-parse main)"

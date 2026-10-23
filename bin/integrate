@@ -4,7 +4,8 @@
 #   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
 # 関門: main の上でない・未コミットの変更が無い・origin/main を含む・scripts/check が通る・
 #       今のコミットの origin/main との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない
-# 統合: origin が GitHub ならブランチを push して PR を作るだけ（マージは人）。それ以外（bare）は main へ push。
+# 統合: クローンで integrate.bare を true にした bare のリモートは main へ push。それ以外は GitHub として
+#       ブランチを push して PR を作るだけ（マージは人）。GitHub のリポジトリが分からなければ止まる。
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
 set -eu
 usage() { echo "usage: integrate [--human-approved]" >&2; exit 2; }
@@ -64,30 +65,23 @@ clean || fail "検査の後にコミットしていない変更がある（scrip
 # push 先が取得先と違う（pushurl。複数も含む）と、main の判定と PR の対象が push 先とずれるので通さない
 remote="$(git remote get-url origin)"
 [ "$(git remote get-url --push --all origin)" = "$remote" ] || fail "origin の push 先（pushurl）が取得先と違う"
-# GitHub かどうかは安全な側（PR だけ）に倒す: 書いたままの URL と insteadOf で展開した URL のどちらかが、
-# 大文字小文字を問わず github.com を含むか、ssh の別名のホスト名（ssh -G）が github.com なら GitHub
-raw="$(git config --get remote.origin.url)"
-ssh_host() {
-  case "$1" in
-    ssh://*) h="${1#ssh://}"; h="${h#*@}"; printf '%s\n' "${h%%[:/]*}" ;;
-    *://* | /* | .*) ;;
-    *:*) h="${1%%:*}"; printf '%s\n' "${h#*@}" ;;
-  esac
-}
-github=""
-for u in "$raw" "$remote"; do
-  if printf '%s\n' "$u" | grep -qi github.com; then github=1; fi
-  h="$(ssh_host "$u")"
-  if [ -n "$h" ] && ssh -G "$h" 2>/dev/null | awk '$1 == "hostname" { print $2 }' | grep -qi github.com; then github=1; fi
-done
-if [ -n "$github" ]; then
-  # PR の対象は origin（gh の既定のリポジトリ GH_REPO・set-default と、ホストの GH_HOST には従わない）
-  repo="github.com/$(printf '%s\n' "$raw" | sed -E 's#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#')"
-  git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
-  url="$(gh pr list --repo "$repo" --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
-  [ -n "$url" ] || url="$(gh pr create --repo "$repo" --fill --base main --head "$branch")" || fail "PR を作れない"
-  echo "PR: $url（マージは人が確認して行う）"
-else
+# main へ push するのは、クローンで integrate.bare を true にした bare のリモートだけ。それ以外は GitHub として
+# PR を作るだけにする（URL からの推測は ssh の別名や接続設定で外れるので、外れても main を直接変えない側に倒す）
+if [ "$(git config --bool --get integrate.bare || true)" = true ]; then
   git push -q origin "$head:refs/heads/main" || fail "main への push が拒否された"
   echo "統合しました: $(git rev-parse --short "$head") → main"
+  exit 0
 fi
+# PR の対象は origin の GitHub のリポジトリ（gh の GH_REPO・set-default・GH_HOST には従わない）。
+# insteadOf で展開した URL、無ければ書いたままの URL のうち github.com を含むもの（大文字小文字を問わない）の、末尾の <owner>/<repo>
+repo=""
+for u in "$remote" "$(git config --get remote.origin.url)"; do
+  printf '%s\n' "$u" | grep -qi github.com || continue
+  repo="$(printf '%s\n' "$u" | sed -E 's#/*$##; s#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#' | grep -E '^[^/:]+/[^/:]+$' || true)"
+  break
+done
+[ -n "$repo" ] || fail "origin が GitHub のリポジトリか分からない（bare のリモートなら git config integrate.bare true）"
+git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
+url="$(gh pr list --repo "github.com/$repo" --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
+[ -n "$url" ] || url="$(gh pr create --repo "github.com/$repo" --fill --base main --head "$branch")" || fail "PR を作れない"
+echo "PR: $url（マージは人が確認して行う）"
