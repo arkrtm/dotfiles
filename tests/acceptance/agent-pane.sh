@@ -51,6 +51,7 @@ start a3; [ "$(splits)" = 2 ] && ok "同時に 2 つを超えたら開かない�
 start a1; [ "$(splits)" = 2 ] && ok "同じエージェントの再通知では開かない" || ng "再通知で開いた"
 stop a1; ! [ -e "$T/live/w1:p10" ] && grep -q '^pane close w1:p10' "$LOG" && ok "終了でその pane を閉じる" || ng "終了: $(cat "$LOG")"
 start a4; [ "$(splits)" = 3 ] && ok "閉じた分だけまた開ける" || ng "閉じた後: $(splits)"
+rm -f "$T/live/w1:p11"; start a2; [ "$(splits)" = 4 ] && ok "人が閉じた pane は、同じエージェントの再通知で開き直す" || ng "開き直し: $(splits)"
 
 # ---- 記録のパスに ' があっても view のコマンドが壊れない（シェルが解釈した結果がそのパス）
 reset; Q="$T/it's"; mkdir -p "$Q/s1/subagents"

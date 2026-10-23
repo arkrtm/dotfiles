@@ -3,7 +3,7 @@
 # clear の後の SessionStart（handoff --session-start が印を書く）を待ってから、続きの指示をユーザーの入力として送る。
 # 裏の処理は切り離して動かす（呼んだターンが終わらないと /clear を受け付けないため）。引き継ぎの保存は呼ぶ前に済ませる（handoff skill）
 #   usage: handoff <続きの指示>       herdr の外では 1（人が /clear して続きを送る）
-#          handoff --session-start    SessionStart（startup・resume・clear）のフック。この pane でセッションが始まった印を書く
+#          handoff --session-start    SessionStart（startup・resume・clear・fork）のフック。この pane でセッションが始まった印（理由）を書く
 # 待ちの上限: ターンの終わりは HANDOFF_TIMEOUT_MS（既定 30 分）、clear の印は HANDOFF_CLEAR_WAIT_S 秒（既定 60）
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}"
 pane="${HERDR_PANE_ID:-}"
@@ -23,9 +23,10 @@ lockfd() {
 
 case "${1:-}" in
   --session-start)
-    cat >/dev/null 2>&1
+    # 印の中身は開始の理由（clear・resume・fork・startup。読めなければ unknown）
+    src="$(jq -r '.source // empty' 2>/dev/null)"
     inside || exit 0
-    mkdir -p "$STATE" && : > "$STATE/handoff-$(key "$pane").cleared"
+    mkdir -p "$STATE" && printf '%s\n' "${src:-unknown}" > "$STATE/handoff-$(key "$pane").cleared"
     exit 0 ;;
   --worker)
     pane="$2" text="$3"
@@ -48,6 +49,7 @@ case "${1:-}" in
       i=$((i + 1)); [ "$i" -le $((${HANDOFF_CLEAR_WAIT_S:-60} * 10)) ] || stop "clear の後の SessionStart が来ない"
       sleep 0.1
     done
+    [ "$(cat "$mark" 2>/dev/null)" = clear ] || stop "/clear の後に別の会話（$(cat "$mark" 2>/dev/null)）が始まった"
     rm -f "$mark"
     herdr agent prompt "$pane" "$text" >/dev/null 2>&1 || stop "続きの指示を送れない"
     log "続きを送った: $text"

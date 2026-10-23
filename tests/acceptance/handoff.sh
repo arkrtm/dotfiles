@@ -26,9 +26,9 @@ echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "agent wait") [ -e "$T/wait_sleep" ] && sleep 1
     # $T/switch があれば、待っている間に人が同じ pane で /clear・/resume した（SessionStart が走った）ことにする
-    [ -e "$T/switch" ] && HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start </dev/null
+    [ -e "$T/switch" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start
     printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
-  "agent prompt") [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start </dev/null ;;
+  "agent prompt") [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && echo "{\"source\":\"\$(cat "$T/after_clear" 2>/dev/null || echo clear)\"}" | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start ;;
 esac
 exit 0
 SH
@@ -82,8 +82,16 @@ touch "$T/switch"; n0="$(nlines)"; run
 ! grep -q 'agent prompt' "$LOG" && [ "$(nlines)" -gt "$n0" ] && ok "待っている間にセッションが替わったら取り消して notify" || ng "切り替え: $(cat "$LOG")"
 rm -f "$T/switch"
 
+# /clear の確認を待つ間に別の理由（resume・fork）で SessionStart が来たら、続きを送らない
+for src in resume fork; do
+  echo "$src" > "$T/after_clear"; n0="$(nlines)"; run
+  grep -q 'prompt w1:p2 /clear' "$LOG" && ! grep -q 'ARK-1' "$LOG" && [ "$(nlines)" -gt "$n0" ] \
+    && ok "clear の確認の代わりに $src が来たら続きを送らず notify" || ng "clear の代わりに $src: $(cat "$LOG")"
+done
+rm -f "$T/after_clear"
+
 # ---- session-start は herdr の外では何もしない
-rm -f "$XDG_STATE_HOME"/handoff-*.cleared; handoff --session-start </dev/null; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \
+rm -f "$XDG_STATE_HOME"/handoff-*.cleared; echo '{"source":"clear"}' | handoff --session-start; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \
   && ok "--session-start は herdr の外では何もしない" || ng "--session-start が外で印を作った"
 
 [ "$fail" = 0 ] && echo "acceptance handoff: ok"

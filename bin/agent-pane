@@ -48,7 +48,8 @@ case "${1:-}" in
   start)
     [ -n "$aid" ] || exit 0
     lock
-    [ ! -e "$D/$aid" ] || exit 0
+    # 同じエージェントの pane がまだあれば何もしない。人が閉じていたら開き直す
+    if [ -e "$D/$aid" ]; then gone get "$(sed -n 1p "$D/$aid")" || exit 0; rm -f "$D/$aid"; fi
     n=0
     for f in "$D"/*; do
       [ -f "$f" ] || continue
