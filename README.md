@@ -51,13 +51,14 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/wezterm/wezterm.lua` | —（Windows の `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入 + 下の check・fmt）、permissions（強制 push と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取りを禁止）、ステータスライン、ログ 365 日 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入 + 下の check・fmt）、permissions（`git push`・`gh pr merge`・`integrate --human-approved` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取りを禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` などは捕らえない。機械的な関門は integrate 自身・bare の pre-receive・GitHub で人がマージすること）、ステータスライン、ログ 365 日 |
 | `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。Claude のモデルと effort → Codex のモデルと effort（`~/.codex/config.toml` から）→ ブランチと、コンテキスト・5 時間・週の上限のメーター。Nerd Font のアイコン。Claude・OpenAI のアイコン（`nf-cod-claude`・`nf-cod-openai`）は Nerd Fonts 3.5.0 以降のフォントが要る） |
 | `config/claude/hooks/` | `~/.claude/hooks/` | `check.sh`（Stop。リポジトリの `scripts/check` が失敗したら終了を止めて直させる。同じセッションで 3 回続けて失敗したら止めて `notify`）、`fmt.sh`（Edit・Write の後に `scripts/fmt <file>`）。`scripts/` が無いリポジトリでは何もしない |
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、レビュー（計画と最終は codex-review）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/codex/config.toml.tmpl` | —（`~/.codex/config.toml` を生成） | Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分は install.sh の再実行で消える。ただしフックの承認（`hooks.state`）・プロジェクトの信頼（`projects`）・表示（`tui`）の表は引き継ぐ |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch、rebase 中心の pull・push（`push.autoSetupRemote` は git 2.37 から）、衝突は diff3、bare の守り（この端末の bare は新旧とも、早送りでない push とブランチの削除を拒む）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
+| `config/git/hooks/pre-receive` | —（bare に入れる。下の「bare リポジトリの関門」） | main への push を、受け取ったコミットで `scripts/check` が通るときだけ受け付ける |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
 | `config/pi/` `config/herdr/` | `~/.pi/agent/…` `~/.config/herdr/…` | Pi と herdr の設定（詳細は `config/pi/README.md`） |
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`、issue ごとの worktree `.worktrees/`） |
@@ -66,6 +67,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale。端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |
 | `bin/*` | `~/.local/bin/*` | 下記 |
 | `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ, launchd） |
+| `scripts/check` | — | dotfiles の検査（`tests/static.sh`・`install.sh`・`acceptance.sh`。Stop フックと `integrate` が呼ぶ） |
 | `tests/` | — | コミット前の検査（何を通すかは `CLAUDE.md`）。`static.sh` は構文と設定、`install.sh` はリンク、`acceptance/*.sh` は受け入れ、`install-nosudo.sh` はコンテナでのフル install、`nvim.sh` は Neovim |
 
 `bin/`:
@@ -74,6 +76,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png`（保存時刻。同じ秒は `-2`）の名前で送信先の `~/screenshots/` へ `scp -O`（送信のたびに 7 日より古いものを削除。元のファイルはそのまま）。送信先は `config/ss-sync/targets`（1 行 1 ホスト、`#` はコメント）。失敗は `~/.local/state/ss-sync/log`（mac は `launchd.err` も）。`BatchMode` なので、新しい端末では一度手で `ssh nas` して known_hosts に入れる
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
+- `integrate [--human-approved]` — 統合はこれだけで行う。関門（main の最新を含む・未コミットの変更が無い・`scripts/check` が通る・今のコミットの origin/main との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い）を 1 つでも満たさなければ統合せず `notify` して終了コード 1。origin が GitHub ならブランチを push して PR を作るだけ（マージは人）、それ以外（bare）は main へ push。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
 - `notify MESSAGE` — エージェントが止めた理由を `~/.local/state/agent-notify.log` に記録して標準エラーに出す（外部には送らない。スマホへは Claude Code mobile が届ける）
 
 ## Claude Code の手順
@@ -90,7 +93,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」）。`install.sh` が本体・config.toml・ponytail・tinymemory の hook まで入れる。新しい端末ではその後に `codex login` → `codex plugin add superpowers@openai-curated-remote`（Codex 公式のカタログ。ログインが要る）→ `codex` を起動して `/hooks` で tinymemory と ponytail の hook を承認（端末ごとに一度）。
 
-- `codex-review plan <計画書>` / `codex-review branch [ベース]` — `codex exec` を読み取り専用の sandbox・effort xhigh・フックなし（tinymemory の記憶を入れない。ponytail のフックも止まる）で呼ぶ。branch の最後の行は `VERDICT: PASS` / `VERDICT: FAIL`
+- `codex-review plan <計画書>` / `codex-review branch [ベース]` — `codex exec` を読み取り専用の sandbox・effort xhigh・フックなし（tinymemory の記憶を入れない。ponytail のフックも止まる）で呼ぶ。branch の最後の行は `VERDICT: PASS` / `VERDICT: FAIL`。branch の結果は `<git の共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md` にも保存する（`integrate` が読む）
 
 ## 端末ごとの注意
 
@@ -104,6 +107,15 @@ Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」�
 	email = <業務のアドレス>
 [core]
 	hooksPath = ~/.config/git/hooks-nosign
+```
+
+### bare リポジトリの関門
+
+bare のリモート（業務サーバー・NAS）には、リポジトリごとに一度 pre-receive フックを入れる。`core.hooksPath` を bare 側で `hooks` にするのは、グローバルの `core.hooksPath`（業務サーバーの `hooks-nosign`）があると bare の `hooks/` が使われないため。検査はサーバーで動くので、サーバーにもリポジトリの `scripts/check` が要る道具を入れておく:
+
+```sh
+ln -s ~/dotfiles/config/git/hooks/pre-receive <repo>.git/hooks/pre-receive
+git -C <repo>.git config core.hooksPath hooks
 ```
 
 ### SSH 鍵
