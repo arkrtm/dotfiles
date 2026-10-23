@@ -13,7 +13,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）";
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export HOME="$T/home" XDG_STATE_HOME="$T/state"
-mkdir -p "$HOME/.local/bin" "$T/repo/scripts" "$T/elsewhere"
+mkdir -p "$HOME/.local/bin" "$T/repo/scripts" "$T/repo/sub" "$T/elsewhere"
+git init -q "$T/repo"
 ln -s "$ROOT/bin/notify" "$HOME/.local/bin/notify"
 LOG="$XDG_STATE_HOME/agent-notify.log"
 CHECK="$ROOT/config/claude/hooks/check.sh"; FMT="$ROOT/config/claude/hooks/fmt.sh"
@@ -43,11 +44,15 @@ printf '#!/bin/sh\necho boom; exit 1\n' > "$T/repo/scripts/check"
 stop s1 "$T/repo"; a=$?; stop s1 "$T/repo"; b=$?
 [ "$a" = 2 ] && [ "$b" = 2 ] && ok "check.sh: 成功すると失敗の回数が戻る" || ng "check.sh: 成功の後の失敗 2 回が $a $b"
 stop s2 "$T/repo"; [ $? = 2 ] && ok "check.sh: 回数はセッションごと" || ng "check.sh: 別セッションの 1 回目が 2 でない"
+stop s3 "$T/repo/sub"; [ $? = 2 ] && ok "check.sh: cwd がサブディレクトリでもリポジトリの scripts/check を使う" || ng "check.sh: サブディレクトリでは scripts/check を見つけない"
 
 # ---- fmt.sh
 printf '#!/bin/sh\necho "$1" > "%s"\n' "$T/fmt-arg" > "$T/repo/scripts/fmt"; chmod +x "$T/repo/scripts/fmt"
 printf '{"cwd":"%s","tool_input":{"file_path":"x"}}' "$T/repo" | sh "$FMT"; rc=$?
 [ "$rc" = 0 ] && [ "$(cat "$T/fmt-arg" 2>/dev/null)" = x ] && ok "fmt.sh: scripts/fmt にファイルを渡して呼ぶ" || ng "fmt.sh: rc=$rc 引数=$(cat "$T/fmt-arg" 2>/dev/null)"
+rm -f "$T/fmt-arg"
+printf '{"cwd":"%s","tool_input":{"file_path":"%s/y"}}' "$T/repo/sub" "$T/repo/sub" | sh "$FMT"
+[ "$(cat "$T/fmt-arg" 2>/dev/null)" = "$T/repo/sub/y" ] && ok "fmt.sh: cwd がサブディレクトリでもリポジトリの scripts/fmt を使う" || ng "fmt.sh: サブディレクトリでは scripts/fmt を呼ばない"
 rm -f "$T/fmt-arg"
 printf '{"cwd":"%s","tool_input":{"file_path":"x"}}' "$T/elsewhere" | sh "$FMT"; rc=$?
 [ "$rc" = 0 ] && [ ! -e "$T/fmt-arg" ] && ok "fmt.sh: scripts/fmt が無ければ何もせず 0" || ng "fmt.sh: scripts/fmt が無いとき rc=$rc"

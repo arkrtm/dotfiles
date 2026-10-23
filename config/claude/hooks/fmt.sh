@@ -3,6 +3,9 @@
 input="$(cat)"
 file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)"
 cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
-[ -n "$file" ] && [ -n "$cwd" ] && cd "$cwd" && [ -x scripts/fmt ] || exit 0
+[ -n "$file" ] && [ -n "$cwd" ] && cd "$cwd" || exit 0
+# cwd がサブディレクトリでも、リポジトリのルートの scripts/ を使う（file_path は絶対パスなので移っても変わらない）
+root="$(git rev-parse --show-toplevel 2>/dev/null)" && cd "$root"
+[ -x scripts/fmt ] || exit 0
 scripts/fmt "$file" >/dev/null 2>&1
 exit 0

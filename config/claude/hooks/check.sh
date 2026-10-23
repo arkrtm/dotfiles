@@ -5,6 +5,8 @@ input="$(cat)"
 sid="$(printf '%s' "$input" | jq -r '.session_id // "unknown"')"
 cwd="$(printf '%s' "$input" | jq -r '.cwd // empty')"
 [ -n "$cwd" ] && cd "$cwd" || exit 0
+# cwd がサブディレクトリでも、リポジトリのルートの scripts/ を使う
+root="$(git rev-parse --show-toplevel 2>/dev/null)" && cd "$root"
 [ -x scripts/check ] || exit 0
 state="${XDG_STATE_HOME:-$HOME/.local/state}/agent-check/$sid"
 mkdir -p "$(dirname "$state")"
