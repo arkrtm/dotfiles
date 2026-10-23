@@ -1,0 +1,18 @@
+# Codex の設定（dotfiles の config/codex/config.toml.tmpl から install.sh が生成する。ここを直さず、テンプレートを直して install.sh を再実行する）
+# @HOME@ はホームの絶対パスに置き換わる。モデルは書かず Codex の既定に任せる
+# [marketplaces.ponytail] は `codex plugin marketplace add` が書くものと同じにする（再実行で差分が出ないように。CLI が表を書き直すので、表の直前にコメントを置かない）
+model_reasoning_effort = "high"
+
+[plugins."ponytail@ponytail"]
+enabled = true
+
+[marketplaces.ponytail]
+source_type = "git"
+source = "https://github.com/DietrichGebert/ponytail.git"
+
+# tinymemory が承認なしで記憶を保存できるように
+[sandbox_workspace_write]
+writable_roots = ["@HOME@/.tinymemory"]
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"

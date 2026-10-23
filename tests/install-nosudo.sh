@@ -62,6 +62,19 @@ if [ "${1:-}" = --check ]; then
   yf="$(zq 'command -v yamlfix' || true)"
   under_home "$yf" && ok "yamlfix がユーザー領域に入る（$yf）" || ng "yamlfix がユーザー領域に無い（${yf:-なし}）"
 
+  # Codex（ARK-87）: 公式のインストーラーで ~/.local/bin に入り、起動ファイルに PATH を書き足さない。config.toml はテンプレートから生成され、
+  # 既存は 1 回だけ退避（2 回目は同じ中身なので退避しない）。ponytail が入り、tinymemory の hook がある
+  cv="$(clean "$HOME/.local/bin/codex" --version 2>&1 || true)"
+  case "$cv" in codex-cli*) ok "codex が ~/.local/bin に入り動く（$cv）" ;; *) ng "codex が動かない: $cv" ;; esac
+  grep -l 'Codex installer' "$HOME"/dotfiles/shell/* "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc" 2>/dev/null | grep . && ng "Codex のインストーラーが起動ファイルに書き足した" || ok "Codex のインストーラーは起動ファイルを変えない"
+  CT="$HOME/.codex/config.toml"
+  if ! grep -q '@HOME@' "$CT" && grep -qxF "writable_roots = [\"$HOME/.tinymemory\"]" "$CT" && grep -qx 'model_reasoning_effort = "high"' "$CT" \
+    && grep -qxF '[plugins."ponytail@ponytail"]' "$CT" && grep -qx '\[mcp_servers.linear\]' "$CT"; then ok "config.toml はテンプレートから生成される"; else ng "config.toml: $(cat "$CT")"; fi
+  bk="$(ls "$CT".bak.* 2>/dev/null || true)"
+  [ "$(echo "$bk" | grep -c .)" = 1 ] && [ "$(cat "$bk")" = old ] && ok "既存の config.toml は 1 回だけ退避される" || ng "config.toml の退避: ${bk:-なし}"
+  clean "$HOME/.local/bin/codex" plugin list 2>/dev/null | grep -q 'ponytail@ponytail  *installed, enabled' && ok "Codex に ponytail が入る" || ng "Codex に ponytail が入っていない"
+  grep -q 'tinymemory hook session-start' "$HOME/.codex/hooks.json" 2>/dev/null && ok "Codex の hooks.json に tinymemory の SessionStart がある" || ng "Codex の hooks.json に tinymemory が無い"
+
   exit "$fail"
 fi
 
@@ -71,6 +84,7 @@ if [ "${1:-}" = --in-container ]; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git curl ca-certificates >/dev/null
   useradd -m -s /bin/bash u
   cp -R /src /home/u/dotfiles && chown -R u:u /home/u/dotfiles
+  mkdir -p /home/u/.codex && echo old > /home/u/.codex/config.toml && chown -R u:u /home/u/.codex # 既存の config.toml の退避を確かめる
   for run in 1 2; do # 2 回目は「再実行しても安全」の確認
     su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1 || { tail -40 /tmp/install.log; echo "FAIL install.sh（$run 回目）が失敗した"; exit 1; }
     # 想定外の warning / error は失敗にする（2 回目の fnm の「インストール済み」だけは想定内）

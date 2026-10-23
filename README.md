@@ -23,8 +23,9 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 4. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
 5. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ（インストーラは取得してから版を固定して実行）、`config/mise/config.toml` のツール（tmux を含む）を全部入れる
 6. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
-7. Neovim プラグインを `lazy-lock.json` の版に揃える
-8. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定、launchd 登録）
+7. Codex: `~/.codex/config.toml` を `config/codex/config.toml.tmpl` から生成（中身が違えば既存を `*.bak.<日時>` に退避）。codex が無ければ[公式のインストーラー](https://github.com/openai/codex)で `~/.local/bin` に入れ、ponytail のプラグインと `tinymemory init codex` の hook を入れる
+8. Neovim プラグインを `lazy-lock.json` の版に揃える
+9. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定、launchd 登録）
 
 install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
@@ -54,6 +55,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。モデル・effort・ブランチと、コンテキスト・5 時間・週の上限のメーター。Nerd Font のアイコン） |
 | `config/claude/hooks/` | `~/.claude/hooks/` | `check.sh`（Stop。リポジトリの `scripts/check` が失敗したら終了を止めて直させる。同じセッションで 3 回続けて失敗したら止めて `notify`）、`fmt.sh`（Edit・Write の後に `scripts/fmt <file>`）。`scripts/` が無いリポジトリでは何もしない |
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
+| `config/codex/config.toml.tmpl` | —（`~/.codex/config.toml` を生成） | Codex の設定: effort high、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分（プロジェクトの信頼など）は install.sh の再実行で消える |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
@@ -83,6 +85,12 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - ステータスラインと check・fmt のフック（上の表。各リポジトリは `scripts/check`・`scripts/fmt` を置けばフックが使う）
 
 更新は `claude plugin marketplace update <marketplace>` → `claude plugin update <plugin>`（新しいセッションから効く）。`LIVE=1 sh tests/acceptance/claude-config.sh` は、本物の `claude -p` の新しいセッションで superpowers・tinymemory・ponytail と skill の issue・wrap-up が見えることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
+
+## Codex の手順
+
+Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」）。`install.sh` が本体・config.toml・ponytail・tinymemory の hook まで入れる。新しい端末ではその後に `codex login` → `codex plugin add superpowers@openai-curated-remote`（Codex 公式のカタログ。ログインが要る）→ `codex` を起動して `/hooks` で tinymemory と ponytail の hook を承認（端末ごとに一度）。
+
+- `codex-review plan <計画書>` / `codex-review branch [ベース]` — `codex exec` を読み取り専用の sandbox・effort high で呼ぶ。branch の最後の行は `VERDICT: PASS` / `VERDICT: FAIL`
 
 ## 端末ごとの注意
 

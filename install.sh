@@ -117,6 +117,33 @@ export FNM_DIR="$HOME/.local/share/fnm"
 # 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く
 ln -sfn "$HOME/.local/share/mise/shims/tinymemory" "$HOME/.local/bin/tinymemory"
 
+# Codex（ARK-87）: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）。
+# 中身が違うときだけ既存を退避して置き換える（Codex が書き込んだ分は再実行で消える）
+mkdir -p "$HOME/.codex"
+codex_conf="$HOME/.codex/config.toml"
+sed "s|@HOME@|$HOME|g" "$DOTFILES/config/codex/config.toml.tmpl" > "$codex_conf.new"
+if cmp -s "$codex_conf.new" "$codex_conf"; then
+  rm "$codex_conf.new"
+else
+  if [ -e "$codex_conf" ]; then
+    mv "$codex_conf" "$codex_conf.bak.$(date +%Y%m%d%H%M%S)"
+    echo "backup: $codex_conf"
+  fi
+  mv "$codex_conf.new" "$codex_conf"
+fi
+# Codex 本体は公式のインストーラー（~/.local/bin、sha256 で検証）。入っていれば何もしない（npm などで入れた端末もそのまま）。
+# ~/.local/bin が PATH に無いと起動ファイル（dotfiles へのリンク）に書き足すので、PATH に入れてから呼ぶ
+CODEX="$(command -v codex || echo "$HOME/.local/bin/codex")"
+if [ ! -x "$CODEX" ]; then
+  codex_install="$(curl -fsSL https://chatgpt.com/codex/install.sh)"
+  PATH="$HOME/.local/bin:$PATH" CODEX_NON_INTERACTIVE=1 sh -c "$codex_install"
+fi
+# ponytail は宣言だけでは入らない（ログインは要らない）。superpowers は Codex 公式のカタログにあり、ログインの後に README の手順で入れる
+"$CODEX" plugin marketplace add DietrichGebert/ponytail >/dev/null && "$CODEX" plugin add ponytail@ponytail >/dev/null \
+  || echo "warning: Codex に ponytail を入れられなかった（続行）"
+# tinymemory の Codex の hook（~/.codex/hooks.json）と skill。承認は Codex の /hooks で端末ごとに一度
+"$HOME/.local/bin/tinymemory" init codex >/dev/null
+
 # Neovim プラグインを lazy-lock.json のバージョンに揃える（端末間の差分を防ぐ）。mise exec で tree-sitter も PATH に載せ、
 # init.lua の treesitter の有効・無効が install.sh を呼んだシェルの PATH で変わらないようにする
 if "$MISE" which nvim >/dev/null 2>&1; then

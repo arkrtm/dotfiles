@@ -25,9 +25,6 @@ done
 # YAML formatter used by the format-json-yaml extension (uv comes from mise)
 need yamlfix || { need uv && uv tool install yamlfix || echo "skip yamlfix (uv missing — run install.sh)"; }
 
-# tinymemory Codex integration (the binary itself is installed by install.sh via mise)
-need tinymemory && tinymemory init codex || true
-
 # herdr is optional on a headless dev box. Its installer is user-space (~/.local/bin) but is an
 # unpinned remote script, so it is left as a manual, opt-in step rather than embedded here:
 #   curl -fsSL https://herdr.dev/install.sh | sh
