@@ -54,6 +54,10 @@ else [ "$(main)" = "$m0" ] && ok "検査がファイルを書き換えたら拒�
 git reset -q --hard "$m0"; printf '#!/bin/sh\ngit checkout -q HEAD^\n' > scripts/check; git add -A; git commit -qm moves-head
 if push HEAD:main; then ng "検査が HEAD を動かしたコミットが main に入った"
 else [ "$(main)" = "$m0" ] && ok "検査が HEAD を動かしたら拒否する" || ng "HEAD の拒否の後: $(cat "$T/err")"; fi
+# 検査の後に git status が失敗する（index が壊れる）なら、変更なしと見なさず拒否する
+git reset -q --hard "$m0"; printf '#!/bin/sh\necho broken > .git/index\n' > scripts/check; git add -A; git commit -qm breaks-index
+if push HEAD:main; then ng "検査の後に git status が失敗したコミットが main に入った"
+else [ "$(main)" = "$m0" ] && ok "検査の後に git status が失敗したら拒否する" || ng "status の失敗の拒否の後: $(cat "$T/err")"; fi
 # 検査の途中でフックが TERM で止められても、一時ディレクトリを残さない（検査 → サブシェル → フックの順の親）
 mkdir -p scripts; printf '#!/bin/sh\nkill -TERM "$(ps -o ppid= -p $PPID | tr -d " ")"\nexit 0\n' > scripts/check; chmod +x scripts/check
 git add -A; git commit -qm term

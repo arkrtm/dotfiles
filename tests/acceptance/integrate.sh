@@ -94,6 +94,9 @@ refused "main が進んでいる（AC6）"
 # ---- AC7: 未コミットの変更・main の上・scripts/check が無い／失敗する／追跡ファイルを書き換える
 setup "$T/r.git"; review PASS
 echo dirty >> a; refused "コミットしていない変更がある（AC7）"; git checkout -q a
+mkdir -p "$T/statusbin"; printf '#!/bin/sh\n[ "$1" = status ] && exit 128\nexec %s "$@"\n' "$(command -v git)" > "$T/statusbin/git"; chmod +x "$T/statusbin/git"
+PATH="$T/statusbin:$PATH" refused "git status が失敗する（変更なしと見なさない）"
+grep -q 'git status' "$T/err" && ok "git status の失敗を理由に止まる" || ng "git status の失敗で止まっていない: $(cat "$T/err")"
 git checkout -q main; refused "main の上で実行した（AC7）"; git checkout -q feature/x
 setup "$T/r.git"; git rm -q scripts/check; git commit -qm rm; review PASS; refused "scripts/check が無い（AC7）"
 setup "$T/r.git"; printf '#!/bin/sh\necho check-failed-here\nexit 1\n' > scripts/check; git commit -qam fail; review PASS
