@@ -59,7 +59,7 @@ clean || fail "検査の後にコミットしていない変更がある（scrip
 # 統合（リモートに合わせる）
 # 判定は実際の push 先（remote.origin.pushurl があればそれ）で行う。複数あると push は全部に送られるので通さない
 push_url="$(git remote get-url --push --all origin)"
-[ "$(printf '%s\n' "$push_url" | wc -l)" = 1 ] || fail "origin の push 先が複数ある（どこへ統合するか決められない）"
+[ "$(printf '%s\n' "$push_url" | wc -l)" -eq 1 ] || fail "origin の push 先が複数ある（どこへ統合するか決められない）"
 if printf '%s\n' "$push_url" | grep -q github.com; then
   git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
   url="$(gh pr list --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
