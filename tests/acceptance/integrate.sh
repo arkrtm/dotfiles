@@ -109,6 +109,10 @@ integrate --foo >/dev/null 2>"$T/err"; rc=$?
 
 # ---- AC8: すべて満たせば bare の main へ push する。worktree の中でも（レビューは共通ディレクトリ）
 accepted "すべて満たす（bare。AC8）"
+# macOS の wc -l は数字の前に空白を付ける
+setup "$T/r.git"; review PASS; mkdir -p "$T/padbin"
+printf '#!/bin/sh\n%s "$@" | sed "s/^/       /"\n' "$(command -v wc)" > "$T/padbin/wc"; chmod +x "$T/padbin/wc"
+PATH="$T/padbin:$PATH" accepted "wc -l の出力に空白が付く環境（macOS）でも統合する"
 setup "$T/r.git"; git worktree add -q -b feature/wt "$T/wt" && cd "$T/wt"; add c 1; review PASS
 accepted "worktree の中ですべて満たす"
 
