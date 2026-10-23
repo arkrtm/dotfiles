@@ -1,0 +1,71 @@
+#!/bin/sh
+# サブエージェントの進みを herdr の別 pane に見せる（ARK-90。PC 用。モバイルには出ない）。
+#   usage: agent-pane start|stop|cleanup   SubagentStart・SubagentStop・SessionStart（clear）と SessionEnd のフック（標準入力にフックの JSON）
+#          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）
+# herdr の中だけ。同時に開くのは 2 つまで（workflow のように数が多いときはバックグラウンドのまま。workflow を見分ける情報がフックに無いので数で近似）。
+# 開いた pane は state/agent-pane/<session>/<agent_id>（1 行目 pane、2 行目 記録）に覚え、消えた pane・中断（meta.json の finished）は数えずに閉じる
+MAX=2
+if [ "${1:-}" = view ]; then
+  rec="${2:?usage: agent-pane view <記録>}"
+  while [ ! -e "$rec" ]; do sleep 0.5; done
+  exec tail -n +1 -F "$rec" 2>/dev/null | jq -r --unbuffered '
+    select(.type == "assistant") | .message.content[]? |
+    if .type == "text" then .text[0:200]
+    elif .type == "tool_use" then "→ \(.name) \((.input // {} | to_entries | first | .value // "" | tostring)[0:80])"
+    else empty end' 2>/dev/null
+fi
+
+in="$(cat)"
+[ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+j() { printf '%s' "$in" | jq -r "$1 // empty" 2>/dev/null; }
+sid="$(j .session_id)"
+case "$sid" in ''|.|..|*/*) exit 0 ;; esac
+D="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/$sid"
+mkdir -p "$D" 2>/dev/null || exit 0
+# セッションごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）。持ち主のプロセスが居なければ回収する
+lock() {
+  i=0
+  until mkdir "$D.lock" 2>/dev/null; do
+    old="$(cat "$D.lock/pid" 2>/dev/null)"
+    if [ -n "$old" ] && ! kill -0 "$old" 2>/dev/null; then rm -rf "$D.lock"; continue; fi
+    i=$((i + 1)); [ "$i" -le 100 ] || exit 0
+    sleep 0.05
+  done
+  echo $$ > "$D.lock/pid"
+  trap 'rm -rf "$D.lock"' EXIT
+}
+close() { p="$(sed -n 1p "$1" 2>/dev/null)"; [ -z "$p" ] || herdr pane close "$p" >/dev/null 2>&1; rm -f "$1"; }
+aid="$(j .agent_id)"
+case "$aid" in */*) exit 0 ;; esac
+
+case "${1:-}" in
+  start)
+    [ -n "$aid" ] || exit 0
+    lock
+    [ ! -e "$D/$aid" ] || exit 0
+    n=0
+    for f in "$D"/*; do
+      [ -f "$f" ] || continue
+      if ! herdr pane get "$(sed -n 1p "$f")" >/dev/null 2>&1; then rm -f "$f"; continue; fi
+      r="$(sed -n 2p "$f")"
+      if [ "$(jq -r '.finished // false' "${r%.jsonl}.meta.json" 2>/dev/null)" = true ]; then close "$f"; continue; fi
+      n=$((n + 1))
+    done
+    [ "$n" -lt "$MAX" ] || exit 0
+    tp="$(j .transcript_path)"
+    [ -n "$tp" ] || exit 0
+    case "$aid" in agent-*) a="$aid" ;; *) a="agent-$aid" ;; esac
+    rec="${tp%.jsonl}/subagents/$a.jsonl"
+    cwd="$(j .cwd)"
+    new="$(herdr pane split --pane "$HERDR_PANE_ID" --direction right --no-focus ${cwd:+--cwd "$cwd"} 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
+    [ -n "$new" ] || exit 0
+    printf '%s\n%s\n' "$new" "$rec" > "$D/$aid"
+    herdr pane run "$new" "agent-pane view '$rec'" >/dev/null 2>&1 ;;
+  stop)
+    [ -n "$aid" ] && [ -f "$D/$aid" ] && close "$D/$aid" ;;
+  cleanup)
+    lock
+    for f in "$D"/*; do [ -f "$f" ] && close "$f"; done ;;
+esac
+exit 0
