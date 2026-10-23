@@ -118,10 +118,14 @@ export FNM_DIR="$HOME/.local/share/fnm"
 ln -sfn "$HOME/.local/share/mise/shims/tinymemory" "$HOME/.local/bin/tinymemory"
 
 # Codex（ARK-87）: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）。
-# 中身が違うときだけ既存を退避して置き換える（Codex が書き込んだ分は再実行で消える）
+# 中身が違うときだけ既存を退避して置き換える。Codex が書いた表のうち、フックの承認（hooks.state）・プロジェクトの信頼（projects）・
+# 表示の状態（tui）は既存から引き継ぐ（消すと /hooks の承認が要り直す）。ほかに Codex が書き込んだ分は再実行で消える
 mkdir -p "$HOME/.codex"
 codex_conf="$HOME/.codex/config.toml"
-sed "s|@HOME@|$HOME|g" "$DOTFILES/config/codex/config.toml.tmpl" > "$codex_conf.new"
+{
+  sed "s|@HOME@|$HOME|g" "$DOTFILES/config/codex/config.toml.tmpl"
+  [ -f "$codex_conf" ] && awk '/^\[/ { keep = /^\[(hooks\.state|projects\.|tui)/; if (keep) print "" } keep && NF' "$codex_conf"
+} > "$codex_conf.new"
 if cmp -s "$codex_conf.new" "$codex_conf"; then
   rm "$codex_conf.new"
 else
@@ -134,13 +138,18 @@ fi
 # Codex 本体は公式のインストーラー（~/.local/bin、sha256 で検証）。入っていれば何もしない（npm などで入れた端末もそのまま）。
 # ~/.local/bin が PATH に無いと起動ファイル（dotfiles へのリンク）に書き足すので、PATH に入れてから呼ぶ
 CODEX="$(command -v codex || echo "$HOME/.local/bin/codex")"
+# 取得や導入に失敗しても（オフラインなど）install.sh は止めず、Codex の後続だけ飛ばす
 if [ ! -x "$CODEX" ]; then
-  codex_install="$(curl -fsSL https://chatgpt.com/codex/install.sh)"
-  PATH="$HOME/.local/bin:$PATH" CODEX_NON_INTERACTIVE=1 sh -c "$codex_install"
+  if codex_install="$(curl -fsSL https://chatgpt.com/codex/install.sh)"; then
+    PATH="$HOME/.local/bin:$PATH" CODEX_NON_INTERACTIVE=1 sh -c "$codex_install" || true
+  fi
+  [ -x "$CODEX" ] || echo "warning: Codex を入れられなかった（続行。install.sh の再実行で入れ直す）"
 fi
 # ponytail は宣言だけでは入らない（ログインは要らない）。superpowers は Codex 公式のカタログにあり、ログインの後に README の手順で入れる
-"$CODEX" plugin marketplace add DietrichGebert/ponytail >/dev/null && "$CODEX" plugin add ponytail@ponytail >/dev/null \
-  || echo "warning: Codex に ponytail を入れられなかった（続行）"
+if [ -x "$CODEX" ]; then
+  "$CODEX" plugin marketplace add DietrichGebert/ponytail >/dev/null && "$CODEX" plugin add ponytail@ponytail >/dev/null \
+    || echo "warning: Codex に ponytail を入れられなかった（続行）"
+fi
 # tinymemory の Codex の hook（~/.codex/hooks.json）と skill。承認は Codex の /hooks で端末ごとに一度
 "$HOME/.local/bin/tinymemory" init codex >/dev/null
 

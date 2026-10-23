@@ -71,7 +71,9 @@ if [ "${1:-}" = --check ]; then
   if ! grep -q '@HOME@' "$CT" && grep -qxF "writable_roots = [\"$HOME/.tinymemory\"]" "$CT" && grep -qx 'model_reasoning_effort = "high"' "$CT" \
     && grep -qxF '[plugins."ponytail@ponytail"]' "$CT" && grep -qx '\[mcp_servers.linear\]' "$CT"; then ok "config.toml はテンプレートから生成される"; else ng "config.toml: $(cat "$CT")"; fi
   bk="$(ls "$CT".bak.* 2>/dev/null || true)"
-  [ "$(echo "$bk" | grep -c .)" = 1 ] && [ "$(cat "$bk")" = old ] && ok "既存の config.toml は 1 回だけ退避される" || ng "config.toml の退避: ${bk:-なし}"
+  [ "$(echo "$bk" | grep -c .)" = 1 ] && grep -qx 'model = "old"' "$bk" && ok "既存の config.toml は 1 回だけ退避される" || ng "config.toml の退避: ${bk:-なし}"
+  grep -qxF '[hooks.state."a:session_start:0:0"]' "$CT" && grep -qx 'trusted_hash = "sha256:aa"' "$CT" && grep -qxF '[projects."/x"]' "$CT" \
+    && ! grep -q 'model = "old"' "$CT" && ! grep -qx '\[other\]' "$CT" && ok "Codex が書いた承認と信頼の表だけ引き継ぐ" || ng "引き継ぎ: $(cat "$CT")"
   clean "$HOME/.local/bin/codex" plugin list 2>/dev/null | grep -q 'ponytail@ponytail  *installed, enabled' && ok "Codex に ponytail が入る" || ng "Codex に ponytail が入っていない"
   grep -q 'tinymemory hook session-start' "$HOME/.codex/hooks.json" 2>/dev/null && ok "Codex の hooks.json に tinymemory の SessionStart がある" || ng "Codex の hooks.json に tinymemory が無い"
 
@@ -84,7 +86,8 @@ if [ "${1:-}" = --in-container ]; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git curl ca-certificates >/dev/null
   useradd -m -s /bin/bash u
   cp -R /src /home/u/dotfiles && chown -R u:u /home/u/dotfiles
-  mkdir -p /home/u/.codex && echo old > /home/u/.codex/config.toml && chown -R u:u /home/u/.codex # 既存の config.toml の退避を確かめる
+  # 既存の config.toml: 退避されること、Codex が書いた承認（hooks.state）・信頼（projects）・表示（tui）の表は引き継がれること
+  mkdir -p /home/u/.codex && printf 'model = "old"\n\n[projects."/x"]\ntrust_level = "trusted"\n\n[hooks.state."a:session_start:0:0"]\ntrusted_hash = "sha256:aa"\n\n[other]\nk = 1\n' > /home/u/.codex/config.toml && chown -R u:u /home/u/.codex
   for run in 1 2; do # 2 回目は「再実行しても安全」の確認
     su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1 || { tail -40 /tmp/install.log; echo "FAIL install.sh（$run 回目）が失敗した"; exit 1; }
     # 想定外の warning / error は失敗にする（2 回目の fnm の「インストール済み」だけは想定内）
