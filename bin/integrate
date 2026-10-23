@@ -4,7 +4,7 @@
 #   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
 # 関門: main の上でない・未コミットの変更が無い・origin/main を含む・scripts/check が通る・
 #       今のコミットの origin/main との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない
-# 統合: origin の push 先が GitHub ならブランチを push して PR を作るだけ（マージは人）。それ以外（bare）は main へ push。
+# 統合: origin が GitHub ならブランチを push して PR を作るだけ（マージは人）。それ以外（bare）は main へ push。
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
 set -eu
 usage() { echo "usage: integrate [--human-approved]" >&2; exit 2; }
@@ -45,7 +45,8 @@ review="$(ls "$(git rev-parse --path-format=absolute --git-common-dir)/codex-rev
 
 # 3. テストや検査を弱めていない（移動も削除として数える。Markdown の文書の説明は数えない）
 if [ -z "$approved" ]; then
-  if git diff --no-color "$base...$head" -- . ':(exclude)*.md' | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
+  diff="$(git diff --no-color --no-ext-diff "$base...$head" -- . ':(exclude)*.md')" || fail "差分を取れない"
+  if printf '%s\n' "$diff" | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
     fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
   fi
   git diff --quiet --no-renames --diff-filter=D "$base...$head" -- ':(glob)**/test/**' ':(glob)**/tests/**' \
@@ -57,10 +58,10 @@ clean || fail "検査の後にコミットしていない変更がある（scrip
 [ "$(git rev-parse HEAD)" = "$head" ] || fail "検査の間に HEAD が変わった"
 
 # 統合（リモートに合わせる）
-# 判定は実際の push 先（remote.origin.pushurl があればそれ）で行う。複数あると push は全部に送られるので通さない
-push_url="$(git remote get-url --push --all origin)"
-[ "$(printf '%s\n' "$push_url" | wc -l)" -eq 1 ] || fail "origin の push 先が複数ある（どこへ統合するか決められない）"
-if printf '%s\n' "$push_url" | grep -q github.com; then
+# push 先が取得先と違う（pushurl。複数も含む）と、main の判定と PR の対象が push 先とずれるので通さない
+remote="$(git remote get-url origin)"
+[ "$(git remote get-url --push --all origin)" = "$remote" ] || fail "origin の push 先（pushurl）が取得先と違う"
+if printf '%s\n' "$remote" | grep -q github.com; then
   git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
   url="$(gh pr list --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
   [ -n "$url" ] || url="$(gh pr create --fill --base main --head "$branch")" || fail "PR を作れない"
