@@ -25,10 +25,12 @@ cat > "$T/bin/herdr" <<SH
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "agent wait") [ -e "$T/wait_sleep" ] && sleep 1
+    [ -e "$T/wait_long" ] && sleep 30
     # $T/switch があれば、待っている間に人が同じ pane で /clear・/resume した（SessionStart が走った）ことにする
     [ -e "$T/switch" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start
     printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
-  "agent prompt") [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && echo "{\"source\":\"\$(cat "$T/after_clear" 2>/dev/null || echo clear)\"}" | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start ;;
+  "agent prompt") [ "\$4" = /clear ] && [ -e "$T/resume_before_clear" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start
+    [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && echo "{\"source\":\"\$(cat "$T/after_clear" 2>/dev/null || echo clear)\"}" | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start ;;
 esac
 exit 0
 SH
@@ -89,6 +91,17 @@ for src in resume fork; do
     && ok "clear の確認の代わりに $src が来たら続きを送らず notify" || ng "clear の代わりに $src: $(cat "$LOG")"
 done
 rm -f "$T/after_clear"
+# 印を確かめた直後・/clear の直前に人が /resume した（印に resume と clear が並ぶ）ときも続きを送らない
+touch "$T/resume_before_clear"; run
+! grep -q 'ARK-1' "$LOG" && ok "/clear の直前に /resume が挟まったら続きを送らない" || ng "直前の resume: $(cat "$LOG")"
+rm -f "$T/resume_before_clear"
+# 裏の処理が herdr を待っている間に死んでも、待っている子がロックを持ち続けない
+if command -v pkill >/dev/null 2>&1; then
+  touch "$T/wait_long"; rm -f "$LOG"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; sleep 0.5
+  pkill -f '[h]andoff --worker w1:p2'; sleep 0.3; rm -f "$T/wait_long"; run
+  grep -q 'ARK-1' "$LOG" && ok "裏の処理が死んだら、待っていた子が残っていてもロックは外れる" || ng "子がロックを持ったまま: $(cat "$LOG" 2>/dev/null)"
+  pkill -f '[s]leep 30' 2>/dev/null
+fi
 
 # ---- session-start は herdr の外では何もしない
 rm -f "$XDG_STATE_HOME"/handoff-*.cleared; echo '{"source":"clear"}' | handoff --session-start; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \

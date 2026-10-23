@@ -10,7 +10,7 @@ pane="${HERDR_PANE_ID:-}"
 inside() { [ "${HERDR_ENV:-}" = 1 ] && [ -n "$pane" ]; }
 key() { printf '%s' "$1" | tr ':/' '__'; }
 log() { mkdir -p "$STATE" && printf '%s %s %s\n' "$(date '+%F %T')" "$pane" "$1" >> "$STATE/handoff.log"; }
-stop() { log "止めた: $1"; notify "handoff を止めました（$pane）: $1" 2>/dev/null || true; exit 1; }
+stop() { log "止めた: $1"; notify "handoff を止めました（$pane）: $1" 2>/dev/null 9>&- || true; exit 1; }
 # lockfd [wait]: fd 9 のファイルを排他でロックする（カーネルのロック: 持ち主のプロセスが消えると外れるので回収が要らない）。
 # wait なら最大 5 秒待つ。flock が無ければ（macOS）perl の flock
 lockfd() {
@@ -26,7 +26,8 @@ case "${1:-}" in
     # 印の中身は開始の理由（clear・resume・fork・startup。読めなければ unknown）
     src="$(jq -r '.source // empty' 2>/dev/null)"
     inside || exit 0
-    mkdir -p "$STATE" && printf '%s\n' "${src:-unknown}" > "$STATE/handoff-$(key "$pane").cleared"
+    # 追記する（/clear の直前に /resume が挟まっても、後の clear で消えないように）
+    mkdir -p "$STATE" && printf '%s\n' "${src:-unknown}" >> "$STATE/handoff-$(key "$pane").cleared"
     exit 0 ;;
   --worker)
     pane="$2" text="$3"
@@ -37,21 +38,22 @@ case "${1:-}" in
     lockfd || { log "ほかの handoff が動いているので何もしない"; exit 0; }
     # この後に同じ pane で SessionStart（人の /clear・/resume、claude の起動し直し）が走ったら、呼んだ会話ではなくなったので取り消す
     rm -f "$mark"
-    st="$(herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
-      | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null)"
+    # 子には fd 9（ロック）を渡さない（この処理が死んだら、待っている子が残っていてもロックが外れるように）
+    st="$(herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null 9>&- \
+      | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null 9>&-)"
     case "$st" in idle|done) ;; *) stop "ターンの終わりを待てなかった（状態: ${st:-不明}）" ;; esac
     [ ! -e "$mark" ] || stop "待っている間にこの pane のセッションが替わった"
     # /clear は working にならないことがあるので herdr の --wait は使わず、clear の後の SessionStart の印を待つ
-    herdr agent prompt "$pane" /clear >/dev/null 2>&1 || stop "/clear を送れない"
+    herdr agent prompt "$pane" /clear >/dev/null 2>&1 9>&- || stop "/clear を送れない"
     log "/clear を送った"
     i=0
     while [ ! -e "$mark" ]; do
       i=$((i + 1)); [ "$i" -le $((${HANDOFF_CLEAR_WAIT_S:-60} * 10)) ] || stop "clear の後の SessionStart が来ない"
-      sleep 0.1
+      sleep 0.1 9>&-
     done
-    [ "$(cat "$mark" 2>/dev/null)" = clear ] || stop "/clear の後に別の会話（$(cat "$mark" 2>/dev/null)）が始まった"
+    [ "$(cat "$mark" 2>/dev/null)" = clear ] || stop "/clear の前後に別の会話が始まった（$(tr '\n' ' ' < "$mark" 2>/dev/null)）"
     rm -f "$mark"
-    herdr agent prompt "$pane" "$text" >/dev/null 2>&1 || stop "続きの指示を送れない"
+    herdr agent prompt "$pane" "$text" >/dev/null 2>&1 9>&- || stop "続きの指示を送れない"
     log "続きを送った: $text"
     exit 0 ;;
 esac
