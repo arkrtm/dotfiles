@@ -54,6 +54,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
+| `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
 | `config/pi/` `config/herdr/` | `~/.pi/agent/…` `~/.config/herdr/…` | Pi と herdr の設定（詳細は `config/pi/README.md`） |
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
@@ -80,6 +81,18 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 更新は `claude plugin marketplace update <marketplace>` → `claude plugin update <plugin>`（新しいセッションから効く）。`LIVE=1 sh tests/acceptance/claude-config.sh` は、本物の `claude -p` の新しいセッションで superpowers・tinymemory と skill の issue・wrap-up が見えることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
 
 ## 端末ごとの注意
+
+### 業務サーバー
+
+端末ごとの違いは git のアカウントと署名だけ（私用の端末では Claude Code の既定どおりコミットに `Co-Authored-By` が付く）。業務サーバーでは `~/.gitconfig`（端末ローカル）に次を書く。`core.hooksPath` は各リポジトリの `.git/hooks` より優先されるので、業務のリポジトリで git フックを使い始めたら見直す:
+
+```ini
+[user]
+	name = <業務の名前>
+	email = <業務のアドレス>
+[core]
+	hooksPath = ~/.config/git/hooks-nosign
+```
 
 ### SSH 鍵
 
