@@ -1,6 +1,7 @@
 #!/bin/sh
 # codex-review の受け入れ検査（ARK-87）: 偽の codex を PATH の先頭に置き、使い方の誤りは終了コード 2、
-# plan と branch は codex exec を読み取り専用の sandbox・effort xhigh で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと
+# plan と branch は codex exec を読み取り専用の sandbox・effort xhigh で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと、
+# branch は結果を <共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存すること（ARK-89）
 #   sh tests/acceptance/codex.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/codex.sh  通った項目も
 set -u
@@ -12,10 +13,21 @@ ng() { echo "FAIL $1"; fail=1; }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"
-# 偽の codex: 引数を 1 行ずつ args に、標準入力を stdin に書く（codex exec は標準入力が端末でないと入力の終わりを待つ）
-printf '#!/bin/sh\nfor a in "$@"; do printf "%%s\\n" "$a"; done > "%s/args"\ncat > "%s/stdin"\n' "$T" "$T" > "$T/bin/codex"; chmod +x "$T/bin/codex"
+# 偽の codex: 引数を 1 行ずつ args に、標準入力を stdin に書く（codex exec は標準入力が端末でないと入力の終わりを待つ）。
+# -o <file> を受けたら、そのファイルに最後のメッセージとして VERDICT: PASS を書く
+cat > "$T/bin/codex" <<SH
+#!/bin/sh
+for a in "\$@"; do printf '%s\n' "\$a"; done > "$T/args"
+cat > "$T/stdin"
+while [ \$# -gt 0 ]; do [ "\$1" = -o ] && printf '指摘なし\nVERDICT: PASS\n' > "\$2"; shift; done
+SH
+chmod +x "$T/bin/codex"
 export PATH="$T/bin:$PATH"
 cd "$T"
+# branch は git のリポジトリの中で使う: main と、そこから 1 コミット進めた作業ブランチ（dev は別のベース）
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
+git init -q -b main && git commit -q --allow-empty -m base && git branch dev && git checkout -q -b feature/x && git commit -q --allow-empty -m work
 exec </dev/null # 偽の codex が呼んだ側の端末を待たないように（標準入力を渡すかは下の echo leaked で確かめる）
 
 for args in "" foo plan "plan missing.md"; do
@@ -33,6 +45,9 @@ sh "$CR" plan x.md; rc=$?
 has --skip-git-repo-check && ok "plan は git のリポジトリの外でも動く（--skip-git-repo-check）" || ng "plan に --skip-git-repo-check が無い"
 rm -f "$T/args"; sh "$CR" branch
 common && grep -q 'main\.\.\.HEAD' "$T/args" && grep -q 'VERDICT: PASS' "$T/args" && ok "branch は main...HEAD と VERDICT を渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
+saved="$(ls "$T/.git/codex-review/"*-branch-"$(git merge-base main HEAD)-$(git rev-parse HEAD)".md 2>/dev/null)"
+[ "$(printf '%s\n' "$saved" | grep -c .)" = 1 ] && [ "$(tail -n 1 "$saved")" = 'VERDICT: PASS' ] && has "$saved" \
+  && ok "branch は結果を codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存する" || ng "branch の結果の保存: $(ls -R "$T/.git/codex-review" 2>&1)"
 rm -f "$T/args"; echo leaked | sh "$CR" branch
 [ -e "$T/stdin" ] && [ ! -s "$T/stdin" ] && ok "codex に標準入力を渡さない（入力の終わりを待って止まらない）" || ng "codex に標準入力が渡る: $(cat "$T/stdin" 2>/dev/null)"
 rm -f "$T/args"; sh "$CR" branch dev
