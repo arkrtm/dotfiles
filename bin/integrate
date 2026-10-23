@@ -66,7 +66,7 @@ remote="$(git remote get-url origin)"
 [ "$(git remote get-url --push --all origin)" = "$remote" ] || fail "origin の push 先（pushurl）が取得先と違う"
 if printf '%s\n' "$remote" | grep -q github.com; then
   # PR の対象は origin（gh の既定のリポジトリ GH_REPO・set-default には従わない）
-  repo="$(printf '%s\n' "$remote" | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
+  repo="$(printf '%s\n' "$remote" | sed -E 's#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#')"
   git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
   url="$(gh pr list --repo "$repo" --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
   [ -n "$url" ] || url="$(gh pr create --repo "$repo" --fill --base main --head "$branch")" || fail "PR を作れない"
