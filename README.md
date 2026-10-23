@@ -32,7 +32,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | | mac | Ubuntu / WSL | NAS (UGOS) |
 |---|---|---|---|
 | Ghostty | Brewfile（Homebrew が無ければ省略されるので、先に Homebrew を入れる） | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows の WezTerm（`winget install wez.wezterm`。設定は下の「WezTerm（Windows）」） | 不要 |
-| フォント | Hack Nerd Font（手動導入済み） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` | 不要 |
+| フォント | Hack Nerd Font（手動導入済み。Nerd Fonts 3.5.0 以降: ステータスラインの Claude・OpenAI のアイコン） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` | 不要 |
 | Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` | Docker（下記） |
 | GitHub | `gh auth login` | `gh auth login` | `gh auth login` |
 | ログインシェル | 標準で zsh | 任意: `chsh -s "$(command -v zsh)"`（`/etc/shells` に無い zsh は不可）。しなくても ssh・コンソールでは `bash_profile` が `exec zsh`（GUI 端末は非ログインの bash なので chsh か Ghostty の `command` が要る） | chsh 不可 → `exec zsh` |
