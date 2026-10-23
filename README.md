@@ -53,7 +53,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入 + 下の check・fmt）、permissions（強制 push と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取りを禁止）、ステータスライン、ログ 365 日 |
 | `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。モデル・ブランチと、コンテキスト・5 時間・週の上限のメーター。Nerd Font のアイコン） |
 | `config/claude/hooks/` | `~/.claude/hooks/` | `check.sh`（Stop。リポジトリの `scripts/check` が失敗したら終了を止めて直させる。同じセッションで 3 回続けて失敗したら止めて `notify`）、`fmt.sh`（Edit・Write の後に `scripts/fmt <file>`）。`scripts/` が無いリポジトリでは何もしない |
-| `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
+| `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |

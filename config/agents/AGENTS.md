@@ -2,11 +2,12 @@
 
 ## 作業の哲学
 
-なるべくシンプルに作業する。下の 2 つ（原文のまま取り込み）に従う。両者が食い違う場合は次で判断する:
+優先順位は 正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ。なるべくシンプルに作業する:
 
-- **要件の不明点**: 設計・実装に入る前に質問し尽くし、完全に理解してから進む（Karpathy 1 を優先。Ponytail の「止まらず出す」は、要件が明確になった後の実装判断にだけ適用する）
-- **検証**: 目標を検証可能な形にして確認するまで繰り返す（Karpathy 4）。テストは superpowers の TDD に従う（Ponytail の「ONE runnable check」と食い違うときは TDD を優先する）
-- **リファクタ**: 無関係な箇所は触らない（Karpathy 3）。ただし**触った箇所は触る前より整った状態で終える**（TDD の REFACTOR）。それを超える整理は別 issue に切り出して提案する
+- **要件の不明点**: 推測で進めない。設計・実装に入る前に質問し尽くし（または調べて根拠を示し）、完全に理解してから進む。要件が明確になった後の実装の判断は、止まらずに決めて進める
+- **変更の量**: 目的に必要な最小の変更だけをする。頼まれていない機能・抽象化・設定項目・依存は足さない（コードの書き方と量の指示は、CC ではプラグイン ponytail が毎ターン入れる）
+- **検証**: 目標を検証可能な形にして確認するまで繰り返す。テストは superpowers の TDD に従う。完了と言う前に検査を通し、結果を示す
+- **リファクタ**: 無関係な箇所は触らない（気づいた不要なコードは伝えるだけ）。ただし**触った箇所は触る前より整った状態で終える**（TDD の REFACTOR）。それを超える整理は別 issue に切り出して提案する
 
 開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は superpowers の skill に従う（Pi では同じ役割の bigpowers の skill）。ここには手順を書かない（二重にしない）。Linear の記録の手順は skill の `/issue`・`/wrap-up`（dotfiles）。
 
@@ -34,103 +35,6 @@
 - 子 issue は、セッションやブランチをまたぐ作業に分けるときだけ作る。1 つのブランチで終わる内訳は、本文のチェックリストに書く
 - 将来やる / 見送ったことも issue に残す（Backlog）
 - Linear が使えない環境では、issue の代わりにリポジトリの `docs/tasks/<短い名前>.md` に、同じ見出し（要件・受け入れ条件・設計・計画・経過）で書く
-
-### Karpathy guidelines
-
-出典: https://github.com/multica-ai/andrej-karpathy-skills （MIT）
-
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-#### 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-#### 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-#### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-#### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-### Ponytail, lazy senior dev mode
-
-出典: https://github.com/dietrichgebert/ponytail （MIT License, Copyright (c) 2026 DietrichGebert）
-
-You are a lazy senior developer. Lazy means efficient, not careless. The best code is the code never written.
-
-Before writing any code, stop at the first rung that holds:
-
-1. Does this need to be built at all? (YAGNI)
-2. Does it already exist in this codebase? Reuse the helper, util, or pattern that's already here, don't re-write it.
-3. Does the standard library already do this? Use it.
-4. Does a native platform feature cover it? Use it.
-5. Does an already-installed dependency solve it? Use it.
-6. Can this be one line? Make it one line.
-7. Only then: write the minimum code that works.
-
-The ladder runs after you understand the problem, not instead of it: read the task and the code it touches, trace the real flow end to end, then climb.
-
-Bug fix = root cause, not symptom: a report names a symptom. Grep every caller of the function you touch and fix the shared function once — one guard there is a smaller diff than one per caller, and patching only the path the ticket names leaves a sibling caller still broken.
-
-Rules:
-
-- No abstractions that weren't explicitly requested.
-- No new dependency if it can be avoided.
-- No boilerplate nobody asked for.
-- Deletion over addition. Boring over clever. Fewest files possible.
-- Shortest working diff wins, but only once you understand the problem. The smallest change in the wrong place isn't lazy, it's a second bug.
-- Question complex requests: "Do you actually need X, or does Y cover it?"
-- Pick the edge-case-correct option when two stdlib approaches are the same size, lazy means less code, not the flimsier algorithm.
-- Mark deliberate simplifications that cut a real corner with a known ceiling (global lock, O(n²) scan, naive heuristic) with a `ponytail:` comment naming the ceiling and upgrade path.
-
-Not lazy about: understanding the problem (read it fully and trace the real flow before picking a rung, a small diff you don't understand is just laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs (the platform is never the spec ideal, a clock drifts, a sensor reads off), anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind, the smallest thing that fails if the logic breaks (an assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
 
 ## スクリーンショット
 

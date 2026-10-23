@@ -59,9 +59,14 @@ check "config/git/ignore は .superpowers/ を除外する" grep -qx '\.superpow
 
 # ---- グローバルの CLAUDE.md: 手順は superpowers、Linear の記録は /issue・/wrap-up、plan の置き場所
 C="$ROOT/config/agents/AGENTS.md"
-for h in 作業の哲学 Linear Karpathy Ponytail スクリーンショット; do
+for h in 作業の哲学 規約 Linear スクリーンショット; do
   check "グローバルの CLAUDE.md に「$h」の節がある" grep -Eq "^#+ .*$h" "$C"
 done
+# Karpathy と Ponytail は全文を取り込まず要約にする（ponytail はプラグインが毎ターン入れる。ARK-86）
+for h in 'Karpathy guidelines' 'Ponytail, lazy senior dev mode'; do
+  check "グローバルの CLAUDE.md に「$h」の全文が無い" sh -c "! grep -q '$h' '$C'"
+done
+check "グローバルの CLAUDE.md: 作業の哲学に優先順位がある" grep -q '正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ' "$C"
 check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
 check "グローバルの CLAUDE.md: 経緯（harness）は書かず README に任せる" [ "$(grep -c harness "$C")" = 0 ]
 check "グローバルの CLAUDE.md: issue は /issue で始める" grep -q '`/issue ARK-nn`' "$C"
