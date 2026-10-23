@@ -18,7 +18,8 @@ ng() { echo "FAIL $1"; fail=1; }
 mkdir -p "$HOME/.config/tmux" "$HOME/.claude/skills/other"; echo old > "$HOME/.config/tmux/tmux.conf"
 ln -s /nonexistent "$HOME/.zshrc"
 echo other > "$HOME/.claude/skills/other/SKILL.md"
-out1="$(DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh")"
+# この検査は worktree からも流すので、一時 HOME に限って worktree からの実行を許す
+out1="$(DOTFILES_LINKS_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 sh "$DOTFILES/install.sh")"
 case "$out1" in *done.*) ng "install.sh がリンクだけで止まらなかった（DOTFILES_LINKS_ONLY）" ;; *) ok "install.sh はリンクだけで止まる（DOTFILES_LINKS_ONLY）" ;; esac
 
 # LINKS 表の全項目がリンクされているか（install.sh から表を読み取る）
@@ -50,7 +51,15 @@ done | grep STALE && ng "ハーネスのものが置かれている" || ok "ハ�
   && ok "git の設定は共通 hooks の場所を指さない" || ng "git の設定に共通 hooks の場所が残っている"
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
-out=$(DOTFILES_LINKS_ONLY=1 sh "$DOTFILES/install.sh")
+out=$(DOTFILES_LINKS_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 sh "$DOTFILES/install.sh")
 case "$out" in *link:*|*backup:*) ng "再実行でリンクや退避が発生した: $out" ;; *) ok "再実行しても何も起きない（べき等）" ;; esac
+
+# worktree（.git がファイル）からは実行しない: リンクが worktree を指し、worktree を消すと設定が読めなくなる（ARK-88）
+W="$(mktemp -d)"; cp "$DOTFILES/install.sh" "$W/"; echo 'gitdir: /nonexistent' > "$W/.git"
+H="$(mktemp -d)"
+if HOME="$H" DOTFILES_LINKS_ONLY=1 sh "$W/install.sh" >/dev/null 2>&1; then ng "worktree からの実行が止まらなかった"
+elif [ -n "$(ls -A "$H")" ]; then ng "worktree からの実行で HOME に何か置かれた: $(ls -A "$H")"
+else ok "worktree からの実行は止まり、何も置かない"; fi
+rm -rf "$W" "$H"
 
 exit $fail
