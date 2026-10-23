@@ -12,6 +12,8 @@ if [ "${1:-}" = pre-edit ]; then
   f="$(printf '%s' "$in" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)"
   if [ -n "$f" ]; then
     case "$f" in /*) ;; *) f="$cwd/$f" ;; esac
+    # 既にあるファイルはリンクを解決した実体で判定する（~/.zshrc → dotfiles のように置き場所が git の外でも）
+    r="$(realpath "$f" 2>/dev/null)" && f="$r"
     dir="$(dirname "$f")"
     while [ ! -d "$dir" ]; do dir="$(dirname "$dir")"; done
   fi

@@ -42,6 +42,9 @@ edit "$T/w" "$T/w/sub/a.txt"; [ $? = 0 ] && ok "設定があれば止めない" 
 
 # ---- session-start
 git init -q -b main "$T/w2" && git -C "$T/w2" remote add origin "$T/other.git"
+# シンボリックリンク（~/.zshrc → dotfiles のように、置き場所が git の外）は実体のリポジトリで判定する
+echo y > "$T/w2/y.txt" && ln -s "$T/w2/y.txt" "$T/out-of-git/link.txt"
+edit "$T/out-of-git" "$T/out-of-git/link.txt"; [ $? = 2 ] && ok "リンク経由の編集は実体のリポジトリで判定する" || ng "リンク経由の編集を止めない"
 out="$(start "$T/w2")"; rc=$?
 [ "$rc" = 0 ] && printf '%s' "$out" | grep -q 'integrate setup' && ok "未設定なら会話の始まりに integrate setup を案内する" || ng "session-start の案内: rc=$rc out=$out"
 out="$(start "$T/w")"; [ $? = 0 ] && [ -z "$out" ] && ok "設定済みなら何も出さない" || ng "設定済みで出力: $out"
