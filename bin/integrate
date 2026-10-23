@@ -22,6 +22,15 @@ fail() {
   echo "統合しません: $1" >&2
   exit 1
 }
+# origin の GitHub のリポジトリ <owner>/<repo>（GitHub でなければ空）。gh の GH_REPO・set-default・GH_HOST には従わない。
+# insteadOf で展開した URL、無ければ書いたままの URL のうち github.com を含むもの（大文字小文字を問わない）の、末尾の <owner>/<repo>
+github_repo() {
+  for u in "$(git remote get-url origin)" "$(git config --get remote.origin.url)"; do
+    printf '%s\n' "$u" | grep -qi github.com || continue
+    printf '%s\n' "$u" | sed -E 's#/*$##; s#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#' | grep -E '^[^/:]+/[^/:]+$' || true
+    return 0
+  done
+}
 clean() {
   st="$(git status --porcelain --untracked-files=all)" || fail "git status が失敗した"
   [ -z "$st" ]
@@ -76,14 +85,7 @@ if [ "$(git config --bool --get integrate.bare || true)" = true ]; then
   echo "統合しました: $(git rev-parse --short "$head") → main"
   exit 0
 fi
-# PR の対象は origin の GitHub のリポジトリ（gh の GH_REPO・set-default・GH_HOST には従わない）。
-# insteadOf で展開した URL、無ければ書いたままの URL のうち github.com を含むもの（大文字小文字を問わない）の、末尾の <owner>/<repo>
-repo=""
-for u in "$remote" "$(git config --get remote.origin.url)"; do
-  printf '%s\n' "$u" | grep -qi github.com || continue
-  repo="$(printf '%s\n' "$u" | sed -E 's#/*$##; s#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#' | grep -E '^[^/:]+/[^/:]+$' || true)"
-  break
-done
+repo="$(github_repo)"
 [ -n "$repo" ] || fail "origin が GitHub のリポジトリか分からない（bare のリモートなら git config integrate.bare true）"
 git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
 url="$(gh pr list --repo "github.com/$repo" --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
