@@ -78,6 +78,8 @@ setup "$T/r.git"; review PASS HEAD; refused "比較元が HEAD（空の差分）
 # ---- AC4・AC5: テストや検査を弱める変更は、人の承認（--human-approved）なしでは通さない
 setup "$T/r.git"; add x.py 'import os  # noqa'; review PASS; refused "noqa を足した（AC4）"
 setup "$T/r.git"; git config color.ui always; add x.py 'import os  # noqa'; review PASS; refused "色付きの diff の設定でも noqa を見つける"
+setup "$T/r.git"; echo '*.py -diff' > .gitattributes; git add .gitattributes; add x.py 'import os  # noqa'; review PASS
+refused "差分を出さない属性（-diff）でも noqa を見つける"
 setup "$T/r.git"; add tests/test_x.py '@pytest.mark.skip'; review PASS; refused "pytest.mark.skip を足した（AC4）"
 accepted "--human-approved なら無効化の追加も通す（AC4）" --human-approved
 setup "$T/r.git"; add README.md 'skip や noqa の説明'; review PASS; accepted "Markdown の文書の説明は無効化の追加と数えない"
@@ -94,6 +96,8 @@ refused "main が進んでいる（AC6）"
 # ---- AC7: 未コミットの変更・main の上・scripts/check が無い／失敗する／追跡ファイルを書き換える
 setup "$T/r.git"; review PASS
 echo dirty >> a; refused "コミットしていない変更がある（AC7）"; git checkout -q a
+git config status.showUntrackedFiles no; echo x > conftest.py; refused "未追跡のファイルがある（status.showUntrackedFiles=no でも）"
+rm -f conftest.py; git config --unset status.showUntrackedFiles
 mkdir -p "$T/statusbin"; printf '#!/bin/sh\n[ "$1" = status ] && exit 128\nexec %s "$@"\n' "$(command -v git)" > "$T/statusbin/git"; chmod +x "$T/statusbin/git"
 PATH="$T/statusbin:$PATH" refused "git status が失敗する（変更なしと見なさない）"
 grep -q 'git status' "$T/err" && ok "git status の失敗を理由に止まる" || ng "git status の失敗で止まっていない: $(cat "$T/err")"

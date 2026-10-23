@@ -12,7 +12,8 @@ ng() { echo "FAIL $1"; fail=1; }
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 # 業務サーバーのように、グローバルの core.hooksPath が別の場所を指していても効く入れ方（README の手順）で入れる
-mkdir -p "$T/hooks-nosign"; printf '[core]\n\thooksPath = %s\n' "$T/hooks-nosign" > "$T/gitconfig"
+# 未追跡のファイルを見せない設定（status.showUntrackedFiles=no）でも、検査が作ったファイルを見落とさない
+mkdir -p "$T/hooks-nosign"; printf '[core]\n\thooksPath = %s\n[status]\n\tshowUntrackedFiles = no\n' "$T/hooks-nosign" > "$T/gitconfig"
 export GIT_CONFIG_GLOBAL="$T/gitconfig" GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 # フックが作る一時ディレクトリをここで数える（ローカルの push ではフックが環境変数を引き継ぐ）
@@ -50,6 +51,10 @@ mkdir -p scripts; printf '#!/bin/sh\necho y >> ignored.sh\n' > scripts/check; ch
 git add -A; git commit -qm rewrite; m0="$(main)"
 if push HEAD:main; then ng "検査が書き換えたコミットが main に入った"
 else [ "$(main)" = "$m0" ] && ok "検査がファイルを書き換えたら拒否する" || ng "書き換えの拒否の後: $(cat "$T/err")"; fi
+# 検査が未追跡のファイルを作って通っても拒否する
+git reset -q --hard "$m0"; printf '#!/bin/sh\necho x > conftest.py\n' > scripts/check; git add -A; git commit -qm untracked
+if push HEAD:main; then ng "検査が未追跡のファイルを作ったコミットが main に入った"
+else [ "$(main)" = "$m0" ] && ok "検査が未追跡のファイルを作ったら拒否する" || ng "未追跡の拒否の後: $(cat "$T/err")"; fi
 # 検査が一時リポジトリの HEAD を動かしても（前のコミットを検査したことになる）拒否する
 git reset -q --hard "$m0"; printf '#!/bin/sh\ngit checkout -q HEAD^\n' > scripts/check; git add -A; git commit -qm moves-head
 if push HEAD:main; then ng "検査が HEAD を動かしたコミットが main に入った"
