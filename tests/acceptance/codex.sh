@@ -29,6 +29,7 @@ common() { has exec && has --sandbox && has read-only && has model_reasoning_eff
 echo plan > "$T/x.md"
 sh "$CR" plan x.md; rc=$?
 [ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort high で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"
+has --skip-git-repo-check && ok "plan は git のリポジトリの外でも動く（--skip-git-repo-check）" || ng "plan に --skip-git-repo-check が無い"
 rm -f "$T/args"; sh "$CR" branch
 common && grep -q 'main\.\.\.HEAD' "$T/args" && grep -q 'VERDICT: PASS' "$T/args" && ok "branch は main...HEAD と VERDICT を渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
 rm -f "$T/args"; echo leaked | sh "$CR" branch
