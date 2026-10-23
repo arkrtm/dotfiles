@@ -90,7 +90,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」）。`install.sh` が本体・config.toml・ponytail・tinymemory の hook まで入れる。新しい端末ではその後に `codex login` → `codex plugin add superpowers@openai-curated-remote`（Codex 公式のカタログ。ログインが要る）→ `codex` を起動して `/hooks` で tinymemory と ponytail の hook を承認（端末ごとに一度）。
 
-- `codex-review plan <計画書>` / `codex-review branch [ベース]` — `codex exec` を読み取り専用の sandbox・effort high で呼ぶ。branch の最後の行は `VERDICT: PASS` / `VERDICT: FAIL`
+- `codex-review plan <計画書>` / `codex-review branch [ベース]` — `codex exec` を読み取り専用の sandbox・effort high・フックなし（tinymemory の記憶を入れない。ponytail のフックも止まる）で呼ぶ。branch の最後の行は `VERDICT: PASS` / `VERDICT: FAIL`
 
 ## 端末ごとの注意
 

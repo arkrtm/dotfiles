@@ -25,7 +25,8 @@ for args in "" foo plan "plan missing.md"; do
 done
 
 has() { grep -qx -- "$1" "$T/args"; }
-common() { has exec && has --sandbox && has read-only && has model_reasoning_effort=high; }
+# フックを止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる）
+common() { has exec && has --sandbox && has read-only && has model_reasoning_effort=high && has features.hooks=false; }
 echo plan > "$T/x.md"
 sh "$CR" plan x.md; rc=$?
 [ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort high で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"

@@ -15,5 +15,6 @@ case "${1:-}" in
 テストを削除・無効化して検査を通していないかも確かめてください。最後の行には、直すべき指摘がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」とだけ書いてください。" ;;
   *) usage ;;
 esac
+# フックは止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる。ponytail のフックも止まる）。
 # codex exec は標準入力が端末でないと入力の終わりを待って止まるので、標準入力は渡さない
-exec codex exec $skip --sandbox read-only -c model_reasoning_effort=high "$prompt" </dev/null
+exec codex exec $skip --sandbox read-only -c model_reasoning_effort=high -c features.hooks=false "$prompt" </dev/null
