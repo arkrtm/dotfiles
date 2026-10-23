@@ -50,7 +50,9 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/wezterm/wezterm.lua` | —（Windows の `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、ログ 365 日 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入 + 下の check・fmt）、permissions（強制 push と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取りを禁止）、ステータスライン、ログ 365 日 |
+| `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。モデル・ブランチと、コンテキスト・5 時間・週の上限のメーター。Nerd Font のアイコン） |
+| `config/claude/hooks/` | `~/.claude/hooks/` | `check.sh`（Stop。リポジトリの `scripts/check` が失敗したら終了を止めて直させる。同じセッションで 3 回続けて失敗したら止めて `notify`）、`fmt.sh`（Edit・Write の後に `scripts/fmt <file>`）。`scripts/` が無いリポジトリでは何もしない |
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（Karpathy guidelines + Ponytail を原文で取り込み）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
@@ -70,15 +72,17 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png`（保存時刻。同じ秒は `-2`）の名前で送信先の `~/screenshots/` へ `scp -O`（送信のたびに 7 日より古いものを削除。元のファイルはそのまま）。送信先は `config/ss-sync/targets`（1 行 1 ホスト、`#` はコメント）。失敗は `~/.local/state/ss-sync/log`（mac は `launchd.err` も）。`BatchMode` なので、新しい端末では一度手で `ssh nas` して known_hosts に入れる
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
+- `notify MESSAGE` — エージェントが止めた理由を `~/.local/state/agent-notify.log` に記録して標準エラーに出す（外部には送らない。スマホへは Claude Code mobile が届ける）
 
 ## Claude Code の手順
 
-開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せる。Linear の記録は dotfiles の skill（`/issue`・`/wrap-up`）。自作のハーネス（プラグイン harness）はやめた（ARK-67。経緯は ARK-30・52・63〜66）。dotfiles が受け持つのは次の 2 つ:
+開発の手順（設計・計画・TDD・レビュー・ブランチの仕上げ）は [superpowers](https://github.com/obra/superpowers)（プラグイン。公式の marketplace `claude-plugins-official`）の skill に任せる。Linear の記録は dotfiles の skill（`/issue`・`/wrap-up`）。自作のハーネス（プラグイン harness）はやめた（ARK-67。経緯は ARK-30・52・63〜66）。dotfiles が受け持つのは次の 3 つ:
 
-- `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `claude-plugins-official`・`tinymemory` と、`enabledPlugins` の `superpowers@claude-plugins-official`・`tinymemory@tinymemory`）。宣言だけでは入らないので、新しい端末では `install.sh` の後に `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → `claude plugin marketplace add arkrtm/tinymemory` → `claude plugin install tinymemory@tinymemory`
+- `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `claude-plugins-official`・`tinymemory`・`ponytail` と、`enabledPlugins` の `superpowers@claude-plugins-official`・`tinymemory@tinymemory`・`ponytail@ponytail`。ponytail は node で動き、コードを最小にする指示を毎ターン入れる）。宣言だけでは入らないので、新しい端末では `install.sh` の後に `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → `claude plugin marketplace add arkrtm/tinymemory` → `claude plugin install tinymemory@tinymemory` → `claude plugin marketplace add DietrichGebert/ponytail` → `claude plugin install ponytail@ponytail`
 - skill の `issue`・`wrap-up`（`install.sh` が `~/.claude/skills` と `~/.agents/skills` にリンクする）
+- ステータスラインと check・fmt のフック（上の表。各リポジトリは `scripts/check`・`scripts/fmt` を置けばフックが使う）
 
-更新は `claude plugin marketplace update <marketplace>` → `claude plugin update <plugin>`（新しいセッションから効く）。`LIVE=1 sh tests/acceptance/claude-config.sh` は、本物の `claude -p` の新しいセッションで superpowers・tinymemory と skill の issue・wrap-up が見えることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
+更新は `claude plugin marketplace update <marketplace>` → `claude plugin update <plugin>`（新しいセッションから効く）。`LIVE=1 sh tests/acceptance/claude-config.sh` は、本物の `claude -p` の新しいセッションで superpowers・tinymemory・ponytail と skill の issue・wrap-up が見えることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
 
 ## 端末ごとの注意
 

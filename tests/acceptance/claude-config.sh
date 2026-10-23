@@ -20,13 +20,27 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）";
 S="$ROOT/config/claude/settings.json"
 check "settings.json の hooks に agent-status・tinymemory の配線がある" \
   sh -c "jq -r '[.hooks[][].hooks[].command] | .[]' '$S' | grep -q agent-status && jq -r '[.hooks[][].hooks[].command] | .[]' '$S' | grep -q tinymemory"
-for p in superpowers@claude-plugins-official tinymemory@tinymemory; do
+for p in superpowers@claude-plugins-official tinymemory@tinymemory ponytail@ponytail; do
   check "enabledPlugins の $p が true" [ "$(jq -r --arg p "$p" '.enabledPlugins[$p]' "$S")" = true ]
 done
 check "extraKnownMarketplaces.claude-plugins-official は github の anthropics/claude-plugins-official" \
   [ "$(jq -r '.extraKnownMarketplaces["claude-plugins-official"].source | "\(.source) \(.repo)"' "$S")" = "github anthropics/claude-plugins-official" ]
 check "extraKnownMarketplaces.tinymemory は github の arkrtm/tinymemory" \
   [ "$(jq -r '.extraKnownMarketplaces.tinymemory.source | "\(.source) \(.repo)"' "$S")" = "github arkrtm/tinymemory" ]
+check "extraKnownMarketplaces.ponytail は github の DietrichGebert/ponytail" \
+  [ "$(jq -r '.extraKnownMarketplaces.ponytail.source | "\(.source) \(.repo)"' "$S")" = "github DietrichGebert/ponytail" ]
+# ---- permissions・statusLine・check/fmt のフック（ARK-86）
+for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)'; do
+  check "permissions.allow に $r" jq -e --arg r "$r" '.permissions.allow | index($r)' "$S"
+done
+for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(./.env)' 'Read(./.env.*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)'; do
+  check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
+done
+check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.type) \(.command)"' "$S")" = 'command $HOME/.claude/statusline.sh' ]
+check "Stop のフックに check.sh と agent-status" \
+  sh -c "jq -r '.hooks.Stop[].hooks[].command' '$S' | grep -qx '\$HOME/.claude/hooks/check.sh' && jq -r '.hooks.Stop[].hooks[].command' '$S' | grep -q agent-status"
+check "PostToolUse の Edit|Write に fmt.sh" \
+  [ "$(jq -r '.hooks.PostToolUse[] | select(.matcher == "Edit|Write") | .hooks[].command' "$S")" = '$HOME/.claude/hooks/fmt.sh' ]
 
 # ---- skill は issue と wrap-up だけ。install.sh の LINKS（tests/install.sh と同じ読み方）にある。グローバルの gitignore も
 check "config/agents/skills は issue と wrap-up だけ" [ "$(ls "$ROOT/config/agents/skills" | tr '\n' ' ')" = "issue wrap-up " ]
@@ -69,10 +83,11 @@ check "README に superpowers の入れ方がある" grep -qF 'claude plugin ins
 check "README に tests/ の説明がある" grep -q '`tests/`' "$ROOT/README.md"
 # README の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
 steps="$(grep -F '新しい端末では' "$ROOT/README.md" | grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' | grep -o '`claude plugin [^`]*`' | tr -d '`')"
-check "README の新しい端末の手順を読み取れた（claude plugin が 4 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 4 ]
+check "README の新しい端末の手順を読み取れた（claude plugin が 6 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 6 ]
 add_before_install() { printf '%s\n' "$steps" | sed -n "\|marketplace add $1|,\$p" | grep -q "install $2"; } # $1 = marketplace の repo、$2 = plugin
 check "README の手順で、公式の marketplace の add が superpowers の install より前" add_before_install anthropics/claude-plugins-official superpowers@claude-plugins-official
 check "README の手順で、tinymemory の marketplace の add が tinymemory の install より前" add_before_install arkrtm/tinymemory tinymemory@tinymemory
+check "README の手順で、ponytail の marketplace の add が ponytail の install より前" add_before_install DietrichGebert/ponytail ponytail@ponytail
 
 # ---- git の設定: 共通 hooks の場所は置かない（ARK-67 の結果。各リポジトリの .git/hooks がそのまま効く）
 check "config/git/config に core.hooksPath が無い" sh -c "! git config -f '$ROOT/config/git/config' --get core.hooksPath"
@@ -87,7 +102,7 @@ if [ -n "${LIVE:-}" ]; then
   lcheck() { d=$1; shift; if "$@" >/dev/null 2>&1; then ok "$d"; else ng "$d"; live_fail=1; fi; }
   has() { printf '%s' "$init" | jq -e --arg x "$2" "$1 | index(\$x)" >/dev/null; }
   lcheck "（LIVE）新しいセッションの起動情報を読めた" [ -n "$init" ]
-  for p in superpowers tinymemory; do lcheck "（LIVE）新しいセッションにプラグイン $p がある" has '.plugins | map(.name)' "$p"; done
+  for p in superpowers tinymemory ponytail; do lcheck "（LIVE）新しいセッションにプラグイン $p がある" has '.plugins | map(.name)' "$p"; done
   for s in superpowers:brainstorming superpowers:test-driven-development tinymemory:remember issue wrap-up; do
     lcheck "（LIVE）skill $s が見える" has '.skills' "$s"
   done
@@ -99,8 +114,8 @@ if [ -n "${LIVE:-}" ]; then
   # 手順の 1 つずつを語に分けて渡す（シェルを通さない）
   ran() { printf '%s\n' "$steps" | while read -r cmd; do CLAUDE_CONFIG_DIR="$N" $cmd </dev/null >> "$N/steps.log" 2>&1 || exit 1; done; }
   lcheck "（LIVE）新しい端末の手順のコマンドがすべて成功する" ran
-  lcheck "（LIVE）新しい端末の手順で superpowers と tinymemory が入る" \
-    jq -e '.plugins | has("superpowers@claude-plugins-official") and has("tinymemory@tinymemory")' "$N/plugins/installed_plugins.json"
+  lcheck "（LIVE）新しい端末の手順で superpowers・tinymemory・ponytail が入る" \
+    jq -e '.plugins | has("superpowers@claude-plugins-official") and has("tinymemory@tinymemory") and has("ponytail@ponytail")' "$N/plugins/installed_plugins.json"
   lcheck "（LIVE）新しい端末の手順で settings.json は変わらない" [ "$(jq -S . "$D/settings.before.json")" = "$(jq -S . "$N/settings.json")" ]
   # LIVE が落ちたら、原因（未ログイン・プラグイン未導入など）を見られるように記録を残す
   if [ "$live_fail" != 0 ]; then trap - EXIT; echo "（LIVE）記録を残した: $L・$D/stderr.txt・$N/steps.log"; fi

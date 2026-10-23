@@ -67,6 +67,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/fmt.sh",
+            "timeout": 60
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -87,6 +97,15 @@
             "type": "command",
             "command": "$HOME/.local/bin/agent-status done",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/check.sh",
+            "timeout": 600
           }
         ]
       }
@@ -116,7 +135,8 @@
   },
   "enabledPlugins": {
     "tinymemory@tinymemory": true,
-    "superpowers@claude-plugins-official": true
+    "superpowers@claude-plugins-official": true,
+    "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
     "tinymemory": {
@@ -130,7 +150,32 @@
         "source": "github",
         "repo": "anthropics/claude-plugins-official"
       }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
     }
   },
-  "theme": "dark"
+  "theme": "dark",
+  "permissions": {
+    "allow": [
+      "Bash(tinymemory:*)",
+      "Bash(git diff:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.codex/auth.json)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline.sh"
+  }
 }
