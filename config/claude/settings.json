@@ -3,7 +3,8 @@
   "permissions": {
     "allow": [
       "Bash(tinymemory:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(codex-review:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

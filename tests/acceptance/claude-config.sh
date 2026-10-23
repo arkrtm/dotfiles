@@ -30,7 +30,7 @@ check "extraKnownMarketplaces.tinymemory は github の arkrtm/tinymemory" \
 check "extraKnownMarketplaces.ponytail は github の DietrichGebert/ponytail" \
   [ "$(jq -r '.extraKnownMarketplaces.ponytail.source | "\(.source) \(.repo)"' "$S")" = "github DietrichGebert/ponytail" ]
 # ---- permissions・statusLine・check/fmt のフック（ARK-86）
-for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)'; do
+for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)' 'Bash(codex-review:*)'; do
   check "permissions.allow に $r" jq -e --arg r "$r" '.permissions.allow | index($r)' "$S"
 done
 for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(./.env)' 'Read(./.env.*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)'; do
@@ -65,6 +65,10 @@ done
 # Karpathy と Ponytail は全文を取り込まず要約にする（ponytail はプラグインが毎ターン入れる。ARK-86）
 for h in 'Karpathy guidelines' 'Ponytail, lazy senior dev mode'; do
   check "グローバルの CLAUDE.md に「$h」の全文が無い" sh -c "! grep -q '$h' '$C'"
+done
+# レビューは Codex（ARK-87）: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify
+for w in 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' 'notify'; do
+  check "グローバルの CLAUDE.md の「レビュー」に「$w」" sh -c "sed -n '/^## レビュー/,/^## /p' '$C' | grep -qF '$w'"
 done
 check "グローバルの CLAUDE.md: 作業の哲学に優先順位がある" grep -q '正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ' "$C"
 check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
