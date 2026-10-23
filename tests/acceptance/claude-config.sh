@@ -41,6 +41,10 @@ check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.typ
 # check・fmt のフック（scripts/check・scripts/fmt の決まり）と bare の pre-receive はやめた（ARK-98）
 check "Stop のフックは agent-status だけ（check.sh が無い）" [ "$(jq -r '.hooks.Stop[].hooks[].command' "$S")" = '$HOME/.local/bin/agent-status done' ]
 check "settings.json のフックに check.sh・fmt.sh が無い" sh -c "! jq -r '.hooks[][].hooks[].command' '$S' | grep -qE 'check\.sh|fmt\.sh'"
+# integrate setup の無いリポジトリでは会話の始まりに案内し、編集を止める（ARK-99）
+check "SessionStart に integrate-hook session-start" sh -c "jq -r '.hooks.SessionStart[].hooks[].command' '$S' | grep -qx '\$HOME/.local/bin/integrate-hook session-start'"
+check "PreToolUse の Edit|Write|NotebookEdit に integrate-hook pre-edit" \
+  [ "$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Edit|Write|NotebookEdit") | .hooks[].command' "$S")" = '$HOME/.local/bin/integrate-hook pre-edit' ]
 check "config/claude/hooks・pre-receive とその検査が無い" \
   sh -c "[ ! -e '$ROOT/config/claude/hooks' ] && [ ! -e '$ROOT/config/git/hooks/pre-receive' ] && [ ! -e '$ROOT/tests/acceptance/pre-receive.sh' ]"
 

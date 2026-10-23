@@ -42,6 +42,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/integrate-hook session-start",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -63,6 +73,16 @@
             "type": "command",
             "command": "$HOME/.local/bin/agent-status waiting",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/integrate-hook pre-edit",
+            "timeout": 15
           }
         ]
       }

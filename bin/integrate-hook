@@ -1,0 +1,30 @@
+#!/bin/sh
+# Claude Code のフック（ARK-99）: origin があって integrate setup の設定が無いリポジトリでは、会話の始まりに setup を案内し
+# （session-start）、編集（Edit・Write・NotebookEdit）を拒む（pre-edit。終了コード 2 で理由を Claude に返す）。
+# 読む・調べる・Bash（integrate setup の実行）は止めない。設定がある・origin が無い・git の外・jq が無いときは何もしない
+#   usage: integrate-hook <session-start|pre-edit>（標準入力にフックの JSON）
+in="$(cat)"
+command -v jq >/dev/null 2>&1 || exit 0
+cwd="$(printf '%s' "$in" | jq -r '.cwd // empty' 2>/dev/null)"
+dir="$cwd"
+# pre-edit は編集するファイルのリポジトリで判定する（まだ無いファイルは、ある一番近い親のディレクトリ）
+if [ "${1:-}" = pre-edit ]; then
+  f="$(printf '%s' "$in" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)"
+  if [ -n "$f" ]; then
+    case "$f" in /*) ;; *) f="$cwd/$f" ;; esac
+    dir="$(dirname "$f")"
+    while [ ! -d "$dir" ]; do dir="$(dirname "$dir")"; done
+  fi
+fi
+[ -n "$dir" ] && cd "$dir" 2>/dev/null || exit 0
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+git remote get-url origin >/dev/null 2>&1 || exit 0
+"$(dirname "$0")/integrate" setup --show </dev/null >/dev/null 2>&1
+[ $? = 1 ] || exit 0
+top="$(git rev-parse --show-toplevel)"
+how="integrate setup を引数なしで実行して推測を見て、ユーザーに選択肢で確かめてから --kind・--base・--test で設定する"
+case "${1:-}" in
+  session-start) echo "このリポジトリ（$top）には integrate setup の設定が無い。ほかの作業の前に、$how（設定が無いと編集はフックが止める）" ;;
+  pre-edit) echo "このリポジトリ（$top）には integrate setup の設定が無いので、編集を止めた。$how。それから編集する" >&2; exit 2 ;;
+esac
+exit 0

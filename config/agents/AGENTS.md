@@ -36,7 +36,7 @@
 
 1 つの issue に短命なブランチを 1 つ切り、worktree の中で作業する。最上位のブランチ（main や develop。以下 `<最上位>`）は常にテストが通る状態に保つ:
 
-- リポジトリごとに一度 `integrate setup` で種類（kind）・`<最上位>`（base）・テストのコマンド（test）を決める（設定は `~/.config/integrate/repos/`。リポジトリの外）。`integrate setup --show` で今の設定を見る。無ければ `integrate setup` を引数なしで実行して推測を見て、ユーザーに選択肢で確かめてから `--kind`・`--base`・`--test` で渡す。既にある設定の上書き（`--force`）は人が端末で行う
+- リポジトリごとに一度 `integrate setup` で種類（kind）・`<最上位>`（base）・テストのコマンド（test）を決める（設定は `~/.config/integrate/repos/`。リポジトリの外）。`integrate setup --show` で今の設定を見る。無ければ `integrate setup` を引数なしで実行して推測を見て、ユーザーに選択肢で確かめてから `--kind`・`--base`・`--test` で渡す。既にある設定の上書き（`--force`）は人が端末で行う。設定が無いと Claude Code では編集をフック（`integrate-hook`）が止める
 - kind:
   - `bare`（サーバーの bare）・`github`（自分の GitHub）: 一人の開発。integrate が関門の後に `<最上位>` へ直接 push する（PR は作らない）
   - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（`<最上位>` が進んで止まったら人に聞く）
