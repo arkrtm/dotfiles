@@ -1,0 +1,14 @@
+# dotfiles の検査（scripts/check）。main の保護の必須チェック（ジョブ名 check。README の「GitHub の main の保護」）
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 検査が使う道具のうち ubuntu-latest に無いもの（dash・jq・git はある）
+      - run: sudo apt-get update && sudo apt-get install -y zsh tmux
+      - run: sh scripts/check

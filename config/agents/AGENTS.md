@@ -42,7 +42,7 @@
 - 統合の前の順番: `git fetch` → `git rebase origin/main`（PR を出す前だけ）→ リポジトリの指示ファイルにある検査 → `codex-review branch origin/main` → `integrate`。レビューの後に変えたら、検査とレビューをやり直す
 - 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（main の最新を含む、未コミットの変更が無い、`scripts/check` が通る、今のコミットへの `codex-review branch origin/main` の最後の行が `VERDICT: PASS`、テストを削除・移動していない、skip・xfail・`type: ignore`・`noqa` を足していない）を確かめ、1 つでも欠けたら統合せず `notify` して止まる。直せる理由だけ直して検査・レビューからやり直し、直せなければ人を待つ。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
 - integrate の統合はリモートで変わる（push 先が取得先と違う設定では止まる）:
-  - GitHub（既定）: ブランチを push して PR を作るところまで。マージは人が確かめて行う（`gh pr merge --rebase --delete-branch`。squash しない）。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（main が進んで止まったら人に聞く）
+  - GitHub（既定）: ブランチを push して PR を作るところまで。main は CI（`scripts/check`）必須で保護する（PR 必須、管理者にも適用。設定は dotfiles の README の「GitHub の main の保護」）。マージは人が CI の成功を確かめて行う（`gh pr merge --rebase --delete-branch`。squash しない。自動マージは使わない）。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（main が進んで止まったら人に聞く）
   - bare: クローンで一度 `git config integrate.bare true` にしておくと、main へ push する（無ければ GitHub として扱い、GitHub のリポジトリと分からなければ止まる。bare 側の pre-receive でも `scripts/check` を確かめる）。main が進んで止まったら fetch・rebase・検査・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
 - 強制 push はしない
 
