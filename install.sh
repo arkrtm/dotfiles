@@ -3,6 +3,11 @@
 set -eu
 
 DOTFILES="$(cd "$(dirname "$0")" && pwd)"
+# worktree（.git がファイル）から実行すると、リンクが worktree を指し、worktree を消すと設定が読めなくなる
+if [ -f "$DOTFILES/.git" ] && [ -z "${DOTFILES_ALLOW_WORKTREE:-}" ]; then
+  echo "install.sh: worktree からは実行しない（元のチェックアウトで実行する）" >&2
+  exit 1
+fi
 
 # リンク定義: <リポジトリ内パス> <$HOME からの配置先>
 LINKS="
