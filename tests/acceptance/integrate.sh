@@ -89,6 +89,12 @@ setup "$T/r.git"; git rm -q tests/t.sh; git commit -qm rm; review PASS; refused 
 accepted "--human-approved ならテストの削除も通す（AC5）" --human-approved
 setup "$T/r.git"; mkdir archive; git mv tests/t.sh archive/t.sh; git commit -qm mv; review PASS; refused "tests/ のファイルを外へ移した（AC5）"
 setup "$T/r.git"; git rm -q tests/日本語.sh; git commit -qm rm; review PASS; refused "日本語名のテストを削除した（AC5）"
+# test/tests の外でも、命名規則でテストと分かるファイル・ディレクトリの削除は通さない（ARK-97）
+for f in test_app.py src/app_test.py src/conftest.py src/app_test.go web/a.test.ts web/a.spec.js web/__tests__/a.js spec/a_spec.rb; do
+  setup "$T/r.git"; mkdir -p "$(dirname "$f")"; echo t > "$f"; git add "$f"; git commit -qm add
+  git push -q origin HEAD:main; git fetch -q; git checkout -q -B feature/x origin/main; add a 1
+  git rm -q "$f"; git commit -qm rm; review PASS; refused "テストを削除した: $f"
+done
 
 # ---- AC6: main が進んでいたら通さない
 setup "$T/r.git"; review PASS

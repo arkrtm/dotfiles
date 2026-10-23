@@ -53,7 +53,11 @@ if [ -z "$approved" ]; then
   if printf '%s\n' "$diff" | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
     fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
   fi
-  git diff --quiet --no-renames --diff-filter=D "$base...$head" -- ':(glob)**/test/**' ':(glob)**/tests/**' \
+  # テストのディレクトリと、命名規則でテストと分かるファイル（Python・Go・JS/TS・Ruby）
+  git diff --quiet --no-renames --diff-filter=D "$base...$head" -- \
+    ':(glob)**/test/**' ':(glob)**/tests/**' ':(glob)**/__tests__/**' ':(glob)**/spec/**' \
+    ':(glob)**/test_*.py' ':(glob)**/*_test.py' ':(glob)**/conftest.py' ':(glob)**/*_test.go' \
+    ':(glob)**/*.test.*' ':(glob)**/*.spec.*' ':(glob)**/*_spec.rb' \
     || fail "テストのファイルが削除・移動されている。必要なら理由を書いて人が integrate --human-approved で通す"
 fi
 
