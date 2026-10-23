@@ -1,7 +1,7 @@
 #!/bin/sh
 # handoff の受け入れ検査（ARK-90）: 偽の herdr で、herdr の外では 1（herdr を呼ばない）、中では裏の処理が自分の pane の
 # エージェントが idle になるのを待って /clear を送り、clear の後の SessionStart（handoff --session-start）の印を待ってから
-# 続きの指示を送ること。blocked・印が来ない・ほかの handoff が動いているときは送らない（notify）。死んだロックは回収する
+# 続きの指示を送ること。blocked・印が来ない・ほかの handoff が動いているときは送らない（notify）。ロックは持ち主が消えたら外れる
 #   sh tests/acceptance/handoff.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/handoff.sh  通った項目も
 set -u
@@ -24,7 +24,7 @@ cat > "$T/bin/herdr" <<SH
 #!/bin/sh
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
-  "agent wait") printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
+  "agent wait") [ -e "$T/wait_sleep" ] && sleep 1; printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
   "agent prompt") [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start </dev/null ;;
 esac
 exit 0
@@ -58,17 +58,21 @@ touch "$T/no_clear"; n0="$(nlines)"; run
 grep -q 'prompt w1:p2 /clear' "$LOG" && ! grep -q 'ARK-1' "$LOG" && [ "$(nlines)" -gt "$n0" ] \
   && ok "clear の印が来なければ続きを送らず notify" || ng "印なし: $(cat "$LOG")"
 rm -f "$T/no_clear"
-ln -s $$ "$XDG_STATE_HOME/handoff-w1_p2.lock" # ロックは pid を指すシンボリックリンク（作るのと pid を書くのが一度）
-rm -f "$LOG"; d0="$(done_lines)"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; settle "$d0"
-! grep -q 'agent prompt' "$LOG" 2>/dev/null && ok "ほかの handoff が動いている（生きたロック）なら送らない" || ng "生きたロック: $(cat "$LOG")"
-rm -f "$XDG_STATE_HOME/handoff-w1_p2.lock"; ln -s 999999 "$XDG_STATE_HOME/handoff-w1_p2.lock"; run
-grep -q 'ARK-1' "$LOG" && ok "死んだプロセスのロックは回収して進む" || ng "死んだロック: $(cat "$LOG" 2>/dev/null)"
-
-! ls "$XDG_STATE_HOME"/handoff-w1_p2.lock.* >/dev/null 2>&1 && ok "回収の後に一時のロックを残さない" || ng "一時のロックが残った"
-# 同時に 2 つ呼んでも /clear は 1 回だけ
-rm -f "$LOG"; d0="$(done_lines)"; for x in 1 2; do HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; done
+# ロックはカーネルのファイルロック（flock）: ほかの処理が持っている間は送らず、持ち主が消えたら自動で外れる
+if command -v flock >/dev/null 2>&1; then
+  L="$XDG_STATE_HOME/handoff-w1_p2.lock"; mkdir -p "$XDG_STATE_HOME"
+  (exec 9>>"$L"; flock 9; sleep 30) & holder=$!; sleep 0.3
+  rm -f "$LOG"; d0="$(done_lines)"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; settle "$d0"
+  ! grep -q 'agent prompt' "$LOG" 2>/dev/null && ok "ほかの handoff がロックを持っている間は送らない" || ng "ロック中: $(cat "$LOG")"
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null; run
+  grep -q 'ARK-1' "$LOG" && ok "持ち主が消えたらロックは外れ、次の handoff は進む" || ng "持ち主が消えた後: $(cat "$LOG" 2>/dev/null)"
+fi
+# 同時に 2 つ呼んでも /clear は 1 回だけ（1 本目が待っている間に 2 本目が来る）
+touch "$T/wait_sleep"; rm -f "$LOG"; d0="$(done_lines)"
+for x in 1 2; do HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; done
 i=0; while [ "$(done_lines)" -lt $((d0 + 2)) ] && [ "$i" -lt 80 ]; do sleep 0.1; i=$((i + 1)); done; sleep 0.2
 [ "$(grep -c 'prompt w1:p2 /clear' "$LOG")" = 1 ] && ok "同時に 2 つ呼んでも /clear は 1 回" || ng "二重: $(cat "$LOG")"
+rm -f "$T/wait_sleep"
 
 # ---- session-start は herdr の外では何もしない
 rm -f "$XDG_STATE_HOME"/handoff-*.cleared; handoff --session-start </dev/null; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \

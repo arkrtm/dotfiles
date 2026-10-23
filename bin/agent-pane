@@ -23,22 +23,24 @@ sid="$(j .session_id)"
 case "$sid" in ''|.|..|*/*) exit 0 ;; esac
 D="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/$sid"
 mkdir -p "$D" 2>/dev/null || exit 0
-# セッションごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）。ロックは pid を指すシンボリックリンク。
-# 持ち主のプロセスが居なければ mv で 1 つの処理だけが回収する
-lock() {
-  i=0
-  until ln -s "$$" "$D.lock" 2>/dev/null; do
-    old="$(readlink "$D.lock" 2>/dev/null)"
-    if [ -n "$old" ] && ! kill -0 "$old" 2>/dev/null && mv "$D.lock" "$D.lock.$$" 2>/dev/null; then
-      if [ "$(readlink "$D.lock.$$")" = "$old" ]; then rm -f "$D.lock.$$"; continue; fi
-      ln -s "$(readlink "$D.lock.$$")" "$D.lock" 2>/dev/null; rm -f "$D.lock.$$"
-    fi
-    i=$((i + 1)); [ "$i" -le 100 ] || exit 0
-    sleep 0.05
-  done
-  trap 'rm -f "$D.lock"' EXIT
+# lockfd [wait]: fd 9 のファイルを排他でロックする（カーネルのロック: 持ち主のプロセスが消えると外れるので回収が要らない）。
+# wait なら最大 5 秒待つ。flock が無ければ（macOS）perl の flock
+lockfd() {
+  if command -v flock >/dev/null 2>&1; then
+    if [ "${1:-}" = wait ]; then flock -w 5 9; else flock -n 9; fi
+  else
+    perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or exit 2; for (1 .. ($ARGV[0] eq "wait" ? 50 : 1)) { exit 0 if flock($f, LOCK_EX | LOCK_NB); select(undef, undef, undef, 0.1) } exit 1' "${1:-now}"
+  fi
 }
-close() { p="$(sed -n 1p "$1" 2>/dev/null)"; [ -z "$p" ] || herdr pane close "$p" >/dev/null 2>&1; rm -f "$1"; }
+# セッションごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）
+lock() { exec 9>>"$D.lock"; lockfd wait || exit 0; }
+# gone <pane>: herdr がその pane は無い（pane_not_found）と答えたら 0。通信の失敗は「ある」として扱う（覚えた pane を失わない）
+gone() { out="$(herdr pane "$1" "$2" 2>&1)" && return 1; printf '%s' "$out" | grep -q '"pane_not_found"'; }
+# close <記録>: pane を閉じられた、または既に無いときだけ記録を消す
+close() {
+  p="$(sed -n 1p "$1" 2>/dev/null)"
+  if [ -z "$p" ] || herdr pane close "$p" >/dev/null 2>&1 || gone get "$p"; then rm -f "$1"; fi
+}
 aid="$(j .agent_id)"
 case "$aid" in */*) exit 0 ;; esac
 
@@ -50,7 +52,7 @@ case "${1:-}" in
     n=0
     for f in "$D"/*; do
       [ -f "$f" ] || continue
-      if ! herdr pane get "$(sed -n 1p "$f")" >/dev/null 2>&1; then rm -f "$f"; continue; fi
+      if gone get "$(sed -n 1p "$f")"; then rm -f "$f"; continue; fi
       r="$(sed -n 2p "$f")"
       if [ "$(jq -r '.finished // false' "${r%.jsonl}.meta.json" 2>/dev/null)" = true ]; then close "$f"; continue; fi
       n=$((n + 1))

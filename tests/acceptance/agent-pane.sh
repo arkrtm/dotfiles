@@ -22,8 +22,11 @@ cat > "$T/bin/herdr" <<SH
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "pane split") n=\$(( \$(ls "$T/live" | wc -l) + 10 )); touch "$T/live/w1:p\$n"; printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "\$n" ;;
-  "pane get") [ -e "$T/live/\$3" ] || exit 1 ;;
-  "pane close") rm -f "$T/live/\$3" ;;
+  "pane get"|"pane close")
+    # $T/broken があれば通信の失敗（pane_not_found 以外のエラー）
+    [ -e "$T/broken" ] && { echo '{"error":{"code":"server_unavailable"}}'; exit 1; }
+    [ -e "$T/live/\$3" ] || { echo '{"error":{"code":"pane_not_found"}}'; exit 1; }
+    [ "\$2" = close ] && rm -f "$T/live/\$3" ;;
 esac
 exit 0
 SH
@@ -61,6 +64,12 @@ reset; start b1; start b2; rm -f "$T/live"/*; start b3
 reset; start c1; start c2; echo '{"finished":true}' > "$T/proj/s1/subagents/agent-c1.meta.json"; start c3
 [ "$(splits)" = 3 ] && grep -q '^pane close w1:p10' "$LOG" && ok "中断で finished のものは閉じて数えない" || ng "finished: $(cat "$LOG")"
 rm -f "$T/proj/s1/subagents"/*.meta.json
+
+# ---- herdr との通信が失敗したときは、覚えた pane を消さない（数えて、後で閉じられるように）
+reset; start e1; touch "$T/broken"; stop e1
+[ -e "$XDG_STATE_HOME/agent-pane/s1/e1" ] && ok "close が通信の失敗なら覚えた pane を残す" || ng "通信の失敗で記録を消した"
+start e2; rm -f "$T/broken"; start e3
+[ "$(splits)" = 2 ] && ok "get が通信の失敗なら pane を数えたままにする" || ng "通信の失敗: splits=$(splits)"
 
 # ---- 並行の開始でも上限を守る
 reset; for a in d1 d2 d3 d4; do start "$a" & done; wait
