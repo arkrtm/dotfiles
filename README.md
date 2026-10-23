@@ -67,7 +67,8 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale。端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |
 | `bin/*` | `~/.local/bin/*` | 下記 |
 | `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ, launchd） |
-| `scripts/check` | — | dotfiles の検査（`tests/static.sh`・`install.sh`・`acceptance.sh`。Stop フックと `integrate` が呼ぶ） |
+| `scripts/check` | — | dotfiles の検査（`tests/static.sh`・`install.sh`・`acceptance.sh`。Stop フックと `integrate` と CI が呼ぶ） |
+| `.github/workflows/check.yml` | — | GitHub の CI。PR と main への push で `scripts/check` を ubuntu で実行する（main の保護の必須チェック。下の「GitHub の main の保護」） |
 | `tests/` | — | コミット前の検査（何を通すかは `CLAUDE.md`）。`static.sh` は構文と設定、`install.sh` はリンク、`acceptance/*.sh` は受け入れ、`install-nosudo.sh` はコンテナでのフル install、`nvim.sh` は Neovim |
 
 `bin/`:
@@ -122,6 +123,17 @@ git -C <repo>.git config core.hooksPath hooks
 
 ```sh
 git config integrate.bare true
+```
+
+### GitHub の main の保護
+
+GitHub のリポジトリは、main を PR 経由でしか変えられず、CI（`.github/workflows/check.yml` のジョブ `check` が `scripts/check` を実行）が通らないとマージできないようにする。管理者にも適用し、承認レビューの人数は求めない（一人なので）。マージは rebase だけ（squash・merge commit は無効）で、マージ後にブランチを消す。自動マージは使わない（マージは人）。リポジトリごとに一度、CI が一度走ってチェック名 `check` ができた後に:
+
+```sh
+gh api -X PUT repos/arkrtm/dotfiles/branches/main/protection --input - <<'EOF'
+{"required_status_checks":{"strict":true,"contexts":["check"]},"enforce_admins":true,"required_pull_request_reviews":{"required_approving_review_count":0},"restrictions":null,"required_linear_history":true,"allow_force_pushes":false,"allow_deletions":false}
+EOF
+gh api -X PATCH repos/arkrtm/dotfiles -F allow_rebase_merge=true -F allow_squash_merge=false -F allow_merge_commit=false -F delete_branch_on_merge=true -F allow_auto_merge=false
 ```
 
 ### SSH 鍵
