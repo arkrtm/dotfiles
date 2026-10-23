@@ -45,6 +45,11 @@ if push HEAD:main; then ng "scripts/check が無いコミットが main に入�
 else [ "$(main)" = "$m0" ] && grep -q scripts/check "$T/err" && ok "scripts/check が無いコミットは拒否する" || ng "拒否の後: $(cat "$T/err")"; fi
 
 [ -z "$(ls -A "$T/tmp")" ] && ok "一時ディレクトリを残さない" || ng "一時ディレクトリが残った: $(ls -A "$T/tmp")"
+# 検査の途中でフックが TERM で止められても、一時ディレクトリを残さない（検査 → サブシェル → フックの順の親）
+mkdir -p scripts; printf '#!/bin/sh\nkill -TERM "$(ps -o ppid= -p $PPID | tr -d " ")"\nexit 0\n' > scripts/check; chmod +x scripts/check
+git add -A; git commit -qm term
+push HEAD:main && ng "止められたフックで main に入った: $(cat "$T/err")"
+[ -z "$(ls -A "$T/tmp")" ] && ok "止められても一時ディレクトリを残さない" || ng "止められた後に一時ディレクトリが残った: $(ls -A "$T/tmp")"
 
 [ "$fail" = 0 ] && echo "acceptance pre-receive: ok"
 [ "$fail" = 0 ]

@@ -79,6 +79,7 @@ setup "$T/r.git"; review PASS HEAD; refused "比較元が HEAD（空の差分）
 setup "$T/r.git"; add x.py 'import os  # noqa'; review PASS; refused "noqa を足した（AC4）"
 setup "$T/r.git"; add tests/test_x.py '@pytest.mark.skip'; review PASS; refused "pytest.mark.skip を足した（AC4）"
 accepted "--human-approved なら無効化の追加も通す（AC4）" --human-approved
+setup "$T/r.git"; add README.md 'skip や noqa の説明'; review PASS; accepted "Markdown の文書の説明は無効化の追加と数えない"
 setup "$T/r.git"; git rm -q tests/t.sh; git commit -qm rm; review PASS; refused "tests/ のファイルを削除した（AC5）"
 accepted "--human-approved ならテストの削除も通す（AC5）" --human-approved
 setup "$T/r.git"; mkdir archive; git mv tests/t.sh archive/t.sh; git commit -qm mv; review PASS; refused "tests/ のファイルを外へ移した（AC5）"
@@ -122,6 +123,11 @@ add a 2; review PASS; integrate >/dev/null 2>"$T/err"
   && ok "GitHub: 開いた PR があれば push だけ" || ng "GitHub: 2 回目: $(cat "$T/gh.log") $(cat "$T/err")"
 rm -f "$T/pr"; add a 3; review PASS; integrate >/dev/null 2>"$T/err"
 [ "$(grep -c '^pr create' "$T/gh.log")" = 2 ] && ok "GitHub: PR が閉じていれば新しく作る" || ng "GitHub: 閉じた PR: $(cat "$T/gh.log")"
+# 取得は bare、push は GitHub（remote.origin.pushurl）なら、push 先に合わせて PR を作るだけ（GitHub の main を直接変えない）
+setup "$T/r.git"; G="$T/github.com/p.git"; rm -rf "$G"; git clone -q --bare "$BARE" "$G"
+git remote set-url --push origin "$G"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?
+[ "$rc" = 0 ] && [ "$(git -C "$G" rev-parse main)" = "$(git -C "$BARE" rev-parse main)" ] && grep -q '^pr create' "$T/gh.log" \
+  && ok "GitHub: push 先（pushurl）で判定する" || ng "GitHub: pushurl: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
 
 [ "$fail" = 0 ] && echo "acceptance integrate: ok"
 [ "$fail" = 0 ]

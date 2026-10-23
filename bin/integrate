@@ -4,7 +4,7 @@
 #   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
 # 関門: main の上でない・未コミットの変更が無い・origin/main を含む・scripts/check が通る・
 #       今のコミットの origin/main との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない
-# 統合: origin が GitHub ならブランチを push して PR を作るだけ（マージは人）。それ以外（bare）は main へ push。
+# 統合: origin の push 先が GitHub ならブランチを push して PR を作るだけ（マージは人）。それ以外（bare）は main へ push。
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
 set -eu
 usage() { echo "usage: integrate [--human-approved]" >&2; exit 2; }
@@ -43,9 +43,9 @@ review="$(ls "$(git rev-parse --path-format=absolute --git-common-dir)/codex-rev
 [ -n "$review" ] || fail "今のコミットへの Codex のレビュー（codex-review branch origin/main）が無い"
 [ "$(tail -n 1 "$review" | tr -d '[:space:]')" = "VERDICT:PASS" ] || fail "Codex のレビューが PASS でない: $review"
 
-# 3. テストや検査を弱めていない（移動も削除として数える）
+# 3. テストや検査を弱めていない（移動も削除として数える。Markdown の文書の説明は数えない）
 if [ -z "$approved" ]; then
-  if git diff "$base...$head" | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
+  if git diff "$base...$head" -- . ':(exclude)*.md' | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
     fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
   fi
   git diff --quiet --no-renames --diff-filter=D "$base...$head" -- ':(glob)**/test/**' ':(glob)**/tests/**' \
@@ -57,7 +57,8 @@ clean || fail "検査の後にコミットしていない変更がある（scrip
 [ "$(git rev-parse HEAD)" = "$head" ] || fail "検査の間に HEAD が変わった"
 
 # 統合（リモートに合わせる）
-if git remote get-url origin | grep -q github.com; then
+# 判定は実際の push 先（remote.origin.pushurl があればそれ）で行う
+if git remote get-url --push origin | grep -q github.com; then
   git push -q origin "$head:refs/heads/$branch" || fail "ブランチを push できない"
   url="$(gh pr list --head "$branch" --base main --state open --json url -q '.[].url' | head -n 1)" || fail "PR を調べられない"
   [ -n "$url" ] || url="$(gh pr create --fill --base main --head "$branch")" || fail "PR を作れない"
