@@ -39,6 +39,7 @@ printf '{"cwd":"%s","tool_name":"Write","tool_input":{}}' "$T/w" | sh "$H" pre-e
   && ok "file_path が無ければ cwd で判定する" || ng "file_path が無いとき cwd で判定しない"
 (cd "$T/w" && integrate setup --kind bare --base main --test true </dev/null >/dev/null 2>&1)
 edit "$T/w" "$T/w/sub/a.txt"; [ $? = 0 ] && ok "設定があれば止めない" || ng "設定があるのに止めた: $(cat "$T/err")"
+edit "$T/w" "$T/w/.git/config"; [ $? = 0 ] && ok ".git/ の中のファイルは止めない（作業ツリーの外）" || ng ".git/ の中の編集を止めた: $(cat "$T/err")"
 
 # ---- session-start
 git init -q -b main "$T/w2" && git -C "$T/w2" remote add origin "$T/other.git"

@@ -19,7 +19,7 @@ if [ "${1:-}" = pre-edit ]; then
   fi
 fi
 [ -n "$dir" ] && cd "$dir" 2>/dev/null || exit 0
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ] || exit 0 # .git/ の中は false で終了コード 0
 git remote get-url origin >/dev/null 2>&1 || exit 0
 "$(dirname "$0")/integrate" setup --show </dev/null >/dev/null 2>&1
 [ $? = 1 ] || exit 0
