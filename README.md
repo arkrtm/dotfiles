@@ -111,7 +111,7 @@ Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」�
 
 ### integrate setup
 
-`integrate` はリポジトリごとの設定に従う。設定は `~/.config/integrate/repos/<origin の URL の英数字と ._- 以外を _ にした名前>-<URL のハッシュの先頭 12 文字>` に `kind=`・`base=`・`test=`・`remote=` の 4 行で置く（リポジトリの外。worktree・clone し直しでも origin が同じなら同じ設定）:
+`integrate` はリポジトリごとの設定に従う。設定は `~/.config/integrate/repos/<origin の識別子の英数字と ._- 以外を _ にした名前の先頭 100 文字>-<識別子のハッシュの先頭 12 文字>`（識別子は取得先 URL。ローカルのパスは解決した絶対パス） に `kind=`・`base=`・`test=`・`remote=` の 4 行で置く（リポジトリの外。worktree・clone し直しでも origin が同じなら同じ設定）:
 
 | kind | 使う場面 | 統合 |
 |---|---|---|

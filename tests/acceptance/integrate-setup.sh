@@ -86,6 +86,21 @@ cd "$T" && rm -rf "$T/w2" && git init -q --bare -b develop "$T/team_project.git"
 integrate setup --kind pr --base main --test true </dev/null >/dev/null 2>&1; b=$?
 [ "$a" = 0 ] && [ "$b" = 0 ] && [ "$(nfiles)" = 2 ] && ok "記号だけ違う URL の設定は衝突しない" || ng "設定の衝突: rc=$a,$b files=$(nfiles)"
 
+# ---- 相対パスの origin（../repo.git）は解決した場所で見分ける。別のリポジトリの設定を使わない
+for x in a b; do
+  cd "$T" && rm -rf "$T/$x" && mkdir -p "$T/$x" && git init -q --bare -b develop "$T/$x/repo.git"
+  git init -q -b develop "$T/$x/work" && git -C "$T/$x/work" remote add origin ../repo.git
+done
+rm -rf "$HOME/.config"; cd "$T/a/work" && integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>&1
+grep -qx "remote=$T/a/repo.git" "$D"/* 2>/dev/null && ok "相対パスの origin は解決した場所を remote に書く" || ng "相対パスの remote: $(cfg)"
+cd "$T/b/work" && integrate setup --show </dev/null >/dev/null 2>&1; [ $? = 1 ] && ok "同じ相対パスでも別のリポジトリの設定は使わない" || ng "別のリポジトリの設定が見えた"
+
+# ---- 長い URL でもファイル名の上限（255 バイト）に収まる
+long="$T/$(printf 'x%.0s' $(seq 1 200))/$(printf 'y%.0s' $(seq 1 100)).git"
+repo "$long" develop
+integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>"$T/err"; rc=$?
+[ "$rc" = 0 ] && [ "$(ls "$D" | wc -c)" -lt 200 ] && ok "長い URL でも設定を書ける" || ng "長い URL: rc=$rc $(cat "$T/err")"
+
 # ---- 書けなければ失敗を返す（root では権限で書けなくならないので省く）
 if [ "$(id -u)" != 0 ]; then
   repo "$T/r.git" develop; mkdir -p "$D"; chmod 555 "$D"
