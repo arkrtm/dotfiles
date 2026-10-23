@@ -3,7 +3,7 @@
 #   usage: agent-pane start|stop|cleanup   SubagentStart・SubagentStop・SessionStart（clear）と SessionEnd のフック（標準入力にフックの JSON）
 #          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）
 # herdr の中だけ。同時に開くのは 2 つまで（workflow のように数が多いときはバックグラウンドのまま。workflow を見分ける情報がフックに無いので数で近似）。
-# 開いた pane は state/agent-pane/<session>/<agent_id>（1 行目 pane、2 行目 記録）に覚え、消えた pane・中断（meta.json の finished）は数えずに閉じる
+# 開いた pane は state/agent-pane/<メインの pane>/<agent_id>（1 行目 pane、2 行目 記録）に覚え、消えた pane・中断（meta.json の finished）は数えずに閉じる
 MAX=2
 if [ "${1:-}" = view ]; then
   rec="${2:?usage: agent-pane view <記録>}"
@@ -21,7 +21,8 @@ command -v jq >/dev/null 2>&1 || exit 0
 j() { printf '%s' "$in" | jq -r "$1 // empty" 2>/dev/null; }
 sid="$(j .session_id)"
 case "$sid" in ''|.|..|*/*) exit 0 ;; esac
-D="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/$sid"
+# 記録はメインの pane ごと（clear でセッションが替わっても、前のセッションで閉じられなかった pane を数えて片づけられるように）
+D="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/$(printf '%s' "$HERDR_PANE_ID" | tr ':/' '__')"
 mkdir -p "$D" 2>/dev/null || exit 0
 # lockfd [wait]: fd 9 のファイルを排他でロックする（カーネルのロック: 持ち主のプロセスが消えると外れるので回収が要らない）。
 # wait なら最大 5 秒待つ。flock が無ければ（macOS）perl の flock
@@ -32,7 +33,7 @@ lockfd() {
     perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or exit 2; for (1 .. ($ARGV[0] eq "wait" ? 50 : 1)) { exit 0 if flock($f, LOCK_EX | LOCK_NB); select(undef, undef, undef, 0.1) } exit 1' "${1:-now}"
   fi
 }
-# セッションごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）
+# メインの pane ごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）
 lock() { exec 9>>"$D.lock"; lockfd wait || exit 0; }
 # gone <pane>: herdr がその pane は無い（pane_not_found）と答えたら 0。通信の失敗は「ある」として扱う（覚えた pane を失わない）
 gone() { out="$(herdr pane "$1" "$2" 2>&1)" && return 1; printf '%s' "$out" | grep -q '"pane_not_found"'; }

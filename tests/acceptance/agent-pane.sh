@@ -69,7 +69,7 @@ rm -f "$T/proj/s1/subagents"/*.meta.json
 
 # ---- herdr との通信が失敗したときは、覚えた pane を消さない（数えて、後で閉じられるように）
 reset; start e1; touch "$T/broken"; stop e1
-[ -e "$XDG_STATE_HOME/agent-pane/s1/e1" ] && ok "close が通信の失敗なら覚えた pane を残す" || ng "通信の失敗で記録を消した"
+[ -e "$XDG_STATE_HOME/agent-pane/w1_p1/e1" ] && ok "close が通信の失敗なら覚えた pane を残す" || ng "通信の失敗で記録を消した"
 start e2; rm -f "$T/broken"; start e3
 [ "$(splits)" = 2 ] && ok "get が通信の失敗なら pane を数えたままにする" || ng "通信の失敗: splits=$(splits)"
 
@@ -80,12 +80,19 @@ rm -f "$T/proj/s1/subagents"/*.meta.json
 
 # 表示を起動できなければ pane を閉じて記録も残さない
 reset; touch "$T/run_fail"; start g1; rm -f "$T/run_fail"
-[ -z "$(ls "$T/live")" ] && [ ! -e "$XDG_STATE_HOME/agent-pane/s1/g1" ] && ok "表示の起動に失敗したら pane を閉じて記録を消す" || ng "起動の失敗: live=$(ls "$T/live")"
+[ -z "$(ls "$T/live")" ] && [ ! -e "$XDG_STATE_HOME/agent-pane/w1_p1/g1" ] && ok "表示の起動に失敗したら pane を閉じて記録を消す" || ng "起動の失敗: live=$(ls "$T/live")"
 start g1; [ "$(splits)" = 2 ] && ok "起動に失敗した後の再通知で開き直す" || ng "再通知: $(splits)"
 
 # ---- 並行の開始でも上限を守る
 reset; for a in d1 d2 d3 d4; do start "$a" & done; wait
 [ "$(splits)" = 2 ] && ok "4 つ同時に開始しても開くのは 2 つ" || ng "並行: $(splits)"
+
+# ---- 片づけに失敗した pane は、次のセッション（clear の後）の片づけで閉じる（記録はメインの pane ごと）
+reset; start h1; touch "$T/broken"; printf '{"session_id":"s1"}' | in_herdr agent-pane cleanup; rm -f "$T/broken"
+printf '{"session_id":"s2"}' | in_herdr agent-pane cleanup
+[ -z "$(ls "$T/live")" ] && ok "前のセッションで閉じられなかった pane も次のセッションの片づけで閉じる" || ng "セッションをまたぐ片づけ: $(ls "$T/live")"
+reset; start i1; start i2; printf '{"session_id":"s2","transcript_path":"%s/proj/s2.jsonl","cwd":"%s","agent_id":"i3"}' "$T" "$T" | in_herdr agent-pane start
+[ "$(splits)" = 2 ] && ok "上限はメインの pane ごと（セッションが替わっても数える）" || ng "セッションをまたぐ上限: $(splits)"
 
 # ---- cleanup はすべて閉じる
 printf '{"session_id":"s1"}' | in_herdr agent-pane cleanup; [ -z "$(ls "$T/live")" ] && ok "cleanup はそのセッションの pane をすべて閉じる" || ng "cleanup: $(ls "$T/live")"
