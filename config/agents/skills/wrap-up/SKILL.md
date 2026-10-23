@@ -47,5 +47,5 @@ argument-hint: "[ARK-nn]"
    - kind が `pr`: `gh pr view feature/<作業内容> --json url,state,baseRefName,headRefOid` の `state` が `MERGED`、`baseRefName` が `<base>`、`headRefOid` が `git rev-parse feature/<作業内容>` と一致する（一致しなければ PR に入っていないローカルのコミットがある。チームのマージ待ちなら止めて人に聞く）
 2. 結果を Linear にコメントして Done にする: `pr` は PR の url、`bare`・`github` は `<base>` に入ったコミット（`git log --oneline` の該当範囲）
 3. relay の片づけ: `tinymemory list --json | jq -r '.[] | select((.tags | index("relay")) and (.title | test("^ARK-nn([^0-9]|$)"))) | .id'`（`ARK-nn` はこの issue の番号）の各 id を `tinymemory archive <id>`
-4. worktree とブランチ: `<元>` に移って `git pull --ff-only`（失敗したら止めて人に聞く）、`git worktree remove <元>/.worktrees/<作業内容>`（未コミット・未追跡のファイルで拒まれたら消さずに人に聞く）、ブランチを消す（`bare`・`github` は `git branch -d feature/<作業内容>`。`pr` はマージでコミットが作り直されると `-d` では消せないので、1 で一致を確かめたうえで `git branch -D feature/<作業内容>`）
+4. worktree とブランチ: `<元>` に移る。`<元>` のブランチが `<base>` なら `git pull --ff-only`（失敗したら止めて人に聞く）、違えば切り替えず更新もしない（そう報告する）。`git worktree remove <元>/.worktrees/<作業内容>`（未コミット・未追跡のファイルで拒まれたら消さずに人に聞く）。ブランチは `git branch -D feature/<作業内容>` で消す（`-d` は `<元>` のブランチや上流への取り込みで判定するので、`<base>` と違うブランチの上や `pr` のマージでコミットが作り直されたときに拒む。取り込みは 1 で `<base>` に対して確かめ済み）
 5. 残したものを 1 行ずつ報告し、Linear を Done にしてから `/clear`（Pi・Codex は `/new`）を促す

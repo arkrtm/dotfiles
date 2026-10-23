@@ -100,7 +100,8 @@ for w in '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最
 done
 W="$ROOT/config/agents/skills/wrap-up/SKILL.md"
 check "wrap-up の SKILL.md に「## 5. 統合の後」の節がある" grep -qx '## 5. 統合の後' "$W"
-for w in 'origin/<base>' 'baseRefName' 'integrate setup --show'; do
+check "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" sh -c "! grep -qF 'git branch -d' '$W'"
+for w in 'origin/<base>' 'baseRefName' 'integrate setup --show' 'ブランチが `<base>` なら' 'git branch -D feature/<作業内容>'; do
   check "wrap-up の SKILL.md に「$w」" grep -qF -- "$w" "$W"
 done
 for w in Done relay 'tinymemory archive' 'git worktree remove' headRefOid '--ff-only'; do
