@@ -9,11 +9,12 @@ case "$id" in ''|.|..|*/*) exit 0 ;; esac
 f="${XDG_STATE_HOME:-$HOME/.local/state}/claude-context/$id"
 p="$(cat "$f" 2>/dev/null)"
 case "$p" in ''|*[!0-9]*) exit 0 ;; esac
-[ "$p" -ge 60 ] || exit 0
 b=$((p / 10 * 10))
 last="$(cat "$f.nudged" 2>/dev/null)"
 case "$last" in ''|*[!0-9]*) last=0 ;; esac
-[ "$b" -gt "$last" ] || exit 0
+# compact などで下がったら刻みを戻す（また埋まったときに促す）
+if [ "$b" -lt "$last" ]; then echo "$b" > "$f.nudged"; exit 0; fi
+[ "$p" -ge 60 ] && [ "$b" -gt "$last" ] || exit 0
 echo "$b" > "$f.nudged"
 jq -n --arg c "文脈が ${p}% 使われている。区切りのよいところで handoff skill の手順で引き継ぐ（herdr の中なら clear して自動で続く）" \
   '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $c}}'

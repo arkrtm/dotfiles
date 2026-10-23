@@ -22,14 +22,16 @@ case "${1:-}" in
     pane="$2" text="$3"
     lock="$STATE/handoff-$(key "$pane").lock" mark="$STATE/handoff-$(key "$pane").cleared"
     mkdir -p "$STATE"
-    # 同じ pane で動く handoff は 1 つだけ（二重に /clear を送らない）。持ち主のプロセスが居なければロックを回収する
-    if ! mkdir "$lock" 2>/dev/null; then
-      old="$(cat "$lock/pid" 2>/dev/null)"
-      if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then log "ほかの handoff が動いているので何もしない"; exit 0; fi
-      rm -rf "$lock"; mkdir "$lock" 2>/dev/null || { log "ロックを取れない"; exit 1; }
+    # 同じ pane で動く handoff は 1 つだけ（二重に /clear を送らない）。ロックは pid を指すシンボリックリンク（作るのと pid を書くのが一度）。
+    # 持ち主のプロセスが居なければ、mv で 1 つの処理だけが回収する（回収の間に別の処理が作ったロックなら戻して譲る）
+    if ! ln -s "$$" "$lock" 2>/dev/null; then
+      old="$(readlink "$lock" 2>/dev/null)"
+      if [ -z "$old" ] || kill -0 "$old" 2>/dev/null || ! mv "$lock" "$lock.$$" 2>/dev/null; then log "ほかの handoff が動いているので何もしない"; exit 0; fi
+      if [ "$(readlink "$lock.$$")" != "$old" ]; then ln -s "$(readlink "$lock.$$")" "$lock" 2>/dev/null; rm -f "$lock.$$"; log "ほかの handoff が動いているので何もしない"; exit 0; fi
+      rm -f "$lock.$$"
+      ln -s "$$" "$lock" 2>/dev/null || { log "ほかの handoff が動いているので何もしない"; exit 0; }
     fi
-    echo $$ > "$lock/pid"
-    trap 'rm -rf "$lock"' EXIT
+    trap 'rm -f "$lock"' EXIT
     st="$(herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
       | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null)"
     case "$st" in idle|done) ;; *) stop "ターンの終わりを待てなかった（状態: ${st:-不明}）" ;; esac

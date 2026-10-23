@@ -58,11 +58,17 @@ touch "$T/no_clear"; n0="$(nlines)"; run
 grep -q 'prompt w1:p2 /clear' "$LOG" && ! grep -q 'ARK-1' "$LOG" && [ "$(nlines)" -gt "$n0" ] \
   && ok "clear の印が来なければ続きを送らず notify" || ng "印なし: $(cat "$LOG")"
 rm -f "$T/no_clear"
-mkdir -p "$XDG_STATE_HOME/handoff-w1_p2.lock"; echo $$ > "$XDG_STATE_HOME/handoff-w1_p2.lock/pid"
+ln -s $$ "$XDG_STATE_HOME/handoff-w1_p2.lock" # ロックは pid を指すシンボリックリンク（作るのと pid を書くのが一度）
 rm -f "$LOG"; d0="$(done_lines)"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; settle "$d0"
 ! grep -q 'agent prompt' "$LOG" 2>/dev/null && ok "ほかの handoff が動いている（生きたロック）なら送らない" || ng "生きたロック: $(cat "$LOG")"
-echo 999999 > "$XDG_STATE_HOME/handoff-w1_p2.lock/pid"; run
+rm -f "$XDG_STATE_HOME/handoff-w1_p2.lock"; ln -s 999999 "$XDG_STATE_HOME/handoff-w1_p2.lock"; run
 grep -q 'ARK-1' "$LOG" && ok "死んだプロセスのロックは回収して進む" || ng "死んだロック: $(cat "$LOG" 2>/dev/null)"
+
+! ls "$XDG_STATE_HOME"/handoff-w1_p2.lock.* >/dev/null 2>&1 && ok "回収の後に一時のロックを残さない" || ng "一時のロックが残った"
+# 同時に 2 つ呼んでも /clear は 1 回だけ
+rm -f "$LOG"; d0="$(done_lines)"; for x in 1 2; do HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; done
+i=0; while [ "$(done_lines)" -lt $((d0 + 2)) ] && [ "$i" -lt 80 ]; do sleep 0.1; i=$((i + 1)); done; sleep 0.2
+[ "$(grep -c 'prompt w1:p2 /clear' "$LOG")" = 1 ] && ok "同時に 2 つ呼んでも /clear は 1 回" || ng "二重: $(cat "$LOG")"
 
 # ---- session-start は herdr の外では何もしない
 rm -f "$XDG_STATE_HOME"/handoff-*.cleared; handoff --session-start </dev/null; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \

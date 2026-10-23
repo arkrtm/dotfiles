@@ -49,6 +49,12 @@ start a1; [ "$(splits)" = 2 ] && ok "同じエージェントの再通知では�
 stop a1; ! [ -e "$T/live/w1:p10" ] && grep -q '^pane close w1:p10' "$LOG" && ok "終了でその pane を閉じる" || ng "終了: $(cat "$LOG")"
 start a4; [ "$(splits)" = 3 ] && ok "閉じた分だけまた開ける" || ng "閉じた後: $(splits)"
 
+# ---- 記録のパスに ' があっても view のコマンドが壊れない（シェルが解釈した結果がそのパス）
+reset; Q="$T/it's"; mkdir -p "$Q/s1/subagents"
+printf '{"session_id":"s1","transcript_path":"%s/s1.jsonl","cwd":"%s","agent_id":"q1"}' "$Q" "$T" | in_herdr agent-pane start
+cmd="$(sed -n 's/^pane run w1:p[0-9]* //p' "$LOG")"
+eval "set -- $cmd" 2>/dev/null && [ "${3:-}" = "$Q/s1/subagents/agent-q1.jsonl" ] && ok "パスの ' を正しくエスケープする" || ng "引用符: $cmd"
+
 # ---- 消えた pane・中断（finished）は数えない
 reset; start b1; start b2; rm -f "$T/live"/*; start b3
 [ "$(splits)" = 3 ] && ok "消えた pane は数えない" || ng "消えた pane: $(splits)"

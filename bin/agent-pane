@@ -23,17 +23,20 @@ sid="$(j .session_id)"
 case "$sid" in ''|.|..|*/*) exit 0 ;; esac
 D="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/$sid"
 mkdir -p "$D" 2>/dev/null || exit 0
-# セッションごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）。持ち主のプロセスが居なければ回収する
+# セッションごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）。ロックは pid を指すシンボリックリンク。
+# 持ち主のプロセスが居なければ mv で 1 つの処理だけが回収する
 lock() {
   i=0
-  until mkdir "$D.lock" 2>/dev/null; do
-    old="$(cat "$D.lock/pid" 2>/dev/null)"
-    if [ -n "$old" ] && ! kill -0 "$old" 2>/dev/null; then rm -rf "$D.lock"; continue; fi
+  until ln -s "$$" "$D.lock" 2>/dev/null; do
+    old="$(readlink "$D.lock" 2>/dev/null)"
+    if [ -n "$old" ] && ! kill -0 "$old" 2>/dev/null && mv "$D.lock" "$D.lock.$$" 2>/dev/null; then
+      if [ "$(readlink "$D.lock.$$")" = "$old" ]; then rm -f "$D.lock.$$"; continue; fi
+      ln -s "$(readlink "$D.lock.$$")" "$D.lock" 2>/dev/null; rm -f "$D.lock.$$"
+    fi
     i=$((i + 1)); [ "$i" -le 100 ] || exit 0
     sleep 0.05
   done
-  echo $$ > "$D.lock/pid"
-  trap 'rm -rf "$D.lock"' EXIT
+  trap 'rm -f "$D.lock"' EXIT
 }
 close() { p="$(sed -n 1p "$1" 2>/dev/null)"; [ -z "$p" ] || herdr pane close "$p" >/dev/null 2>&1; rm -f "$1"; }
 aid="$(j .agent_id)"
@@ -61,7 +64,8 @@ case "${1:-}" in
     new="$(herdr pane split --pane "$HERDR_PANE_ID" --direction right --no-focus ${cwd:+--cwd "$cwd"} 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
     [ -n "$new" ] || exit 0
     printf '%s\n%s\n' "$new" "$rec" > "$D/$aid"
-    herdr pane run "$new" "agent-pane view '$rec'" >/dev/null 2>&1 ;;
+    q="$(printf '%s' "$rec" | sed "s/'/'\\\\''/g")" # ' を '\'' にしてシングルクォートで囲む
+    herdr pane run "$new" "agent-pane view '$q'" >/dev/null 2>&1 ;;
   stop)
     [ -n "$aid" ] && [ -f "$D/$aid" ] && close "$D/$aid" ;;
   cleanup)
