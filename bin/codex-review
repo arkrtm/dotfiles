@@ -15,6 +15,9 @@ case "${1:-}" in
     prompt="厳しいレビュアーとして、計画書 $2 を読んでください。方針の誤り、見落としている要件、もっと単純な代替案を重要度順に挙げてください。問題がなければ「指摘なし」とだけ書いてください。" ;;
   branch)
     # 比較する 2 つのコミットは SHA で固定する（レビューの途中で参照が動いても、保存名と同じ差分を見る）
+    # 未コミットの変更があると、Codex が読む作業ツリーとコミットが違う
+    clean() { st="$(git status --porcelain)" && [ -z "$st" ]; }
+    clean || { echo "未コミットの変更がある（または git status が失敗した）ので、レビューしません。コミットしてから実行してください" >&2; exit 1; }
     base="${2:-main}"
     from="$(git merge-base "$base" HEAD)"
     head="$(git rev-parse HEAD)"
@@ -28,9 +31,9 @@ esac
 # フックは止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる。ponytail のフックも止まる）。
 # codex exec は標準入力が端末でないと入力の終わりを待って止まるので、標準入力は渡さない
 codex exec $skip ${out:+-o "$out"} --sandbox read-only -c model_reasoning_effort=xhigh -c features.hooks=false "$prompt" </dev/null || exit
-# レビューの途中で HEAD が変わったら、作業ツリーと結果が合わないので保存しない
-if [ -n "$out" ] && [ "$(git rev-parse HEAD)" != "$head" ]; then
+# レビューの途中で HEAD か作業ツリーが変わったら、レビューした内容とコミットが合わないので保存しない
+if [ -n "$out" ] && { [ "$(git rev-parse HEAD)" != "$head" ] || ! clean; }; then
   rm -f "$out"
-  echo "レビューの途中で HEAD が変わったので、結果を保存しません。やり直してください" >&2
+  echo "レビューの途中で HEAD か作業ツリーが変わったので、結果を保存しません。やり直してください" >&2
   exit 1
 fi

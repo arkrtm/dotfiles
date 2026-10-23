@@ -21,7 +21,10 @@ fail() {
   echo "統合しません: $1" >&2
   exit 1
 }
-clean() { [ -z "$(git status --porcelain)" ]; }
+clean() {
+  st="$(git status --porcelain)" || fail "git status が失敗した"
+  [ -z "$st" ]
+}
 
 branch="$(git branch --show-current)"
 [ -n "$branch" ] && [ "$branch" != main ] || fail "main の上（またはブランチの外）で実行された"

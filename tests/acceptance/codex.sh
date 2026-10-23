@@ -30,6 +30,7 @@ cd "$T"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 git init -q -b main && git commit -q --allow-empty -m base && git branch dev && git checkout -q -b feature/x && git commit -q --allow-empty -m work
+printf '%s\n' bin args stdin x.md err >> .git/info/exclude # 検査の道具は作業ツリーの変更に数えない
 exec </dev/null # 偽の codex が呼んだ側の端末を待たないように（標準入力を渡すかは下の echo leaked で確かめる）
 
 for args in "" foo plan "plan missing.md"; do
@@ -56,6 +57,10 @@ rm -f "$T/args"; echo leaked | sh "$CR" branch
 rm -f "$T/args"; sh "$CR" branch dev
 grep -q 'dev との差分' "$T/args" && ok "branch <ベース> はそのベースを使う" || ng "branch dev: $(cat "$T/args" 2>/dev/null)"
 
+# 未コミットの変更があると、レビューする内容がコミットと違うので実行しない
+echo dirty > d; rm -f "$T/args"; sh "$CR" branch 2>"$T/err"; rc=$?
+[ "$rc" != 0 ] && [ ! -e "$T/args" ] && ok "未コミットの変更があれば branch のレビューをしない" || ng "未コミットの変更: rc=$rc $(cat "$T/err")"
+rm -f d
 # レビューの途中で HEAD が変わったら、結果を元のコミットの名前で残さない
 rm -rf "$T/.git/codex-review"; h0="$(git rev-parse HEAD)"
 MOVE=1 sh "$CR" branch 2>"$T/err"; rc=$?
