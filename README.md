@@ -111,7 +111,7 @@ Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」�
 
 ### integrate setup
 
-`integrate` はリポジトリごとの設定に従う。設定は `~/.config/integrate/repos/<origin の URL の英数字と ._- 以外を _ にした名前>` に `kind=`・`base=`・`test=`・`remote=` の 4 行で置く（リポジトリの外。worktree・clone し直しでも origin が同じなら同じ設定）:
+`integrate` はリポジトリごとの設定に従う。設定は `~/.config/integrate/repos/<origin の URL の英数字と ._- 以外を _ にした名前>-<URL のハッシュの先頭 12 文字>` に `kind=`・`base=`・`test=`・`remote=` の 4 行で置く（リポジトリの外。worktree・clone し直しでも origin が同じなら同じ設定）:
 
 | kind | 使う場面 | 統合 |
 |---|---|---|
@@ -120,7 +120,7 @@ Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」�
 | `pr` | 書き込み権限のあるチームの GitHub | ブランチを push して base に向けた PR を作るまで（マージはチーム） |
 
 - `integrate setup --kind <kind> --base <branch> --test '<command>'` で書く。引数が足りなければ、端末では推測を既定値に 1 項目ずつ尋ね、端末でなければ推測（kind: GitHub でなければ bare、持ち主が `gh` のログインなら github、ほかは pr。base: リモートの HEAD。test: `scripts/check`・`pyproject.toml`・`package.json`・`Cargo.toml`・`go.mod` から）を出して終了コード 2
-- `integrate setup --show` で今の設定を出す。既にある設定は上書きしない（終了コード 1）。上書きは `integrate setup --force …` を人が端末で実行する（エージェントの Bash は端末でないので止まる。settings.json の deny は補助で、設定のファイルを rm して作り直すことまでは捕らえない）
+- `integrate setup --show` で今の設定を出す。既にある設定は上書きしない（終了コード 1）。上書きは `integrate setup --force …` を人が端末で実行する。端末の確かめと settings.json の deny は抑止で（`--human-approved` と同じ水準）、同じユーザーで動くエージェントが擬似端末（`script`）や設定のファイルの rm で越えることまでは防げない
 - この dotfiles は `integrate setup --kind github --base main --test 'sh scripts/check'`
 - ARK-98 より前の端末: `~/.claude/hooks` のリンク（check・fmt のフック）はリンク先が無くなるので `rm ~/.claude/hooks`
 

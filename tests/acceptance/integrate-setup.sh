@@ -79,6 +79,22 @@ integrate setup --show </dev/null >/dev/null 2>&1; [ $? = 1 ] && ok "--show は�
 XDG_CONFIG_HOME="$T/xdg" integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>&1
 [ ! -e "$T/xdg" ] && [ "$(nfiles)" = 1 ] && ok "XDG_CONFIG_HOME に従わず ~/.config に書く" || ng "XDG_CONFIG_HOME: xdg=$(ls -R "$T/xdg" 2>/dev/null) files=$(nfiles)"
 
+# ---- 記号だけ違う URL（/team/project と /team_project）でも設定は別のファイル
+mkdir -p "$T/team"; repo "$T/team/project.git" develop
+integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>&1; a=$?
+cd "$T" && rm -rf "$T/w2" && git init -q --bare -b develop "$T/team_project.git" && git clone -q "$T/team_project.git" "$T/w2" 2>/dev/null && cd "$T/w2"
+integrate setup --kind pr --base main --test true </dev/null >/dev/null 2>&1; b=$?
+[ "$a" = 0 ] && [ "$b" = 0 ] && [ "$(nfiles)" = 2 ] && ok "記号だけ違う URL の設定は衝突しない" || ng "設定の衝突: rc=$a,$b files=$(nfiles)"
+
+# ---- 書けなければ失敗を返す（root では権限で書けなくならないので省く）
+if [ "$(id -u)" != 0 ]; then
+  repo "$T/r.git" develop; mkdir -p "$D"; chmod 555 "$D"
+  integrate setup --kind bare --base develop --test true </dev/null >"$T/out" 2>"$T/err"; rc=$?
+  chmod 755 "$D"
+  [ "$rc" = 1 ] && [ "$(nfiles)" = 0 ] && ! grep -q 設定しました "$T/out" && grep -q 書けない "$T/err" \
+    && ok "設定を書けなければ 1（成功と言わない）" || ng "書けないとき: rc=$rc out=$(cat "$T/out") err=$(cat "$T/err")"
+fi
+
 # ---- 推測（引数なし・端末でない）
 repo "$T/r.git" develop
 guess "GitHub でなければ bare" kind=bare

@@ -36,10 +36,11 @@ github_repo() {
     return 0
   done
 }
-# 設定のファイル: origin の取得先 URL の英数字と ._- 以外を _ にした名前
+# 設定のファイル: origin の取得先 URL の英数字と ._- 以外を _ にした名前（読める）と、URL のハッシュの先頭 12 文字（記号だけ違う URL で衝突しない）
 conf_path() {
   url="$(git remote get-url origin 2>/dev/null)" || return 1
-  printf '%s/.config/integrate/repos/%s\n' "$HOME" "$(printf '%s' "$url" | tr -c 'A-Za-z0-9._-' '_')"
+  h="$(printf '%s' "$url" | git hash-object --stdin)" || return 1
+  printf '%s/.config/integrate/repos/%s-%.12s\n' "$HOME" "$(printf '%s' "$url" | tr -c 'A-Za-z0-9._-' '_')" "$h"
 }
 # 設定を conf_kind・conf_base・conf_test・conf_remote に読む（シェルとしては実行しない）。無ければ 1、壊れていれば 2
 conf_load() {
@@ -105,6 +106,8 @@ setup() {
   remote="$(git remote get-url origin 2>/dev/null)" || { echo "origin が無い" >&2; exit 2; }
   f="$(conf_path)"
   if [ -n "$force" ]; then
+    # 端末の確かめは抑止（--human-approved の deny と同じ水準）。同じユーザーで動くエージェントは擬似端末や rm で越えられるので、
+    # 人だけが上書きできる保証ではない
     [ -t 0 ] && [ -t 1 ] || { echo "上書き（--force）は人が端末から行う" >&2; exit 2; }
   elif [ -e "$f" ]; then
     echo "設定が既にある（$f）。上書きは人が端末から integrate setup --force" >&2; exit 1
@@ -131,13 +134,16 @@ setup() {
     [ -n "$s_base" ] || s_base="$(ask base "$g_base")"
     [ -n "$s_test" ] || s_test="$(ask test "$g_test")"
   fi
-  mkdir -p "$(dirname "$f")"
+  mkdir -p "$(dirname "$f")" || { echo "設定を書けない（$f）" >&2; exit 1; }
   body="$(printf 'kind=%s\nbase=%s\ntest=%s\nremote=%s' "$s_kind" "$s_base" "$s_test" "$remote")"
   if [ -n "$force" ]; then
-    printf '%s\n' "$body" > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"
+    { printf '%s\n' "$body" > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"; } 2>/dev/null || { rm -f "$f.tmp.$$"; echo "設定を書けない（$f）" >&2; exit 1; }
   else
     # 新規は排他的に作る（同時に setup しても書けるのは 1 つ）
-    (set -C; printf '%s\n' "$body" > "$f") 2>/dev/null || { echo "設定が既にある（$f）" >&2; exit 1; }
+    if ! (set -C; printf '%s\n' "$body" > "$f") 2>/dev/null; then
+      [ -e "$f" ] && echo "設定が既にある（$f）" >&2 || echo "設定を書けない（$f）" >&2
+      exit 1
+    fi
   fi
   echo "設定しました: $f"
   exit 0
