@@ -29,19 +29,20 @@ check "extraKnownMarketplaces.tinymemory は github の arkrtm/tinymemory" \
   [ "$(jq -r '.extraKnownMarketplaces.tinymemory.source | "\(.source) \(.repo)"' "$S")" = "github arkrtm/tinymemory" ]
 check "extraKnownMarketplaces.ponytail は github の DietrichGebert/ponytail" \
   [ "$(jq -r '.extraKnownMarketplaces.ponytail.source | "\(.source) \(.repo)"' "$S")" = "github DietrichGebert/ponytail" ]
-# ---- permissions・statusLine・check/fmt のフック（ARK-86）
+# ---- permissions・statusLine（ARK-86）。integrate setup の上書きと設定の直接の編集を禁止（ARK-98）
 for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)' 'Bash(codex-review:*)'; do
   check "permissions.allow に $r" jq -e --arg r "$r" '.permissions.allow | index($r)' "$S"
 done
 for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(./.env)' 'Read(./.env.*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)' \
-  'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)'; do
+  'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)' 'Bash(integrate setup --force:*)' 'Edit(~/.config/integrate/**)'; do
   check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
 done
 check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.type) \(.command)"' "$S")" = 'command $HOME/.claude/statusline.sh' ]
-check "Stop のフックに check.sh と agent-status" \
-  sh -c "jq -r '.hooks.Stop[].hooks[].command' '$S' | grep -qx '\$HOME/.claude/hooks/check.sh' && jq -r '.hooks.Stop[].hooks[].command' '$S' | grep -q agent-status"
-check "PostToolUse の Edit|Write に fmt.sh" \
-  [ "$(jq -r '.hooks.PostToolUse[] | select(.matcher == "Edit|Write") | .hooks[].command' "$S")" = '$HOME/.claude/hooks/fmt.sh' ]
+# check・fmt のフック（scripts/check・scripts/fmt の決まり）と bare の pre-receive はやめた（ARK-98）
+check "Stop のフックは agent-status だけ（check.sh が無い）" [ "$(jq -r '.hooks.Stop[].hooks[].command' "$S")" = '$HOME/.local/bin/agent-status done' ]
+check "settings.json のフックに check.sh・fmt.sh が無い" sh -c "! jq -r '.hooks[][].hooks[].command' '$S' | grep -qE 'check\.sh|fmt\.sh'"
+check "config/claude/hooks・pre-receive とその検査が無い" \
+  sh -c "[ ! -e '$ROOT/config/claude/hooks' ] && [ ! -e '$ROOT/config/git/hooks/pre-receive' ] && [ ! -e '$ROOT/tests/acceptance/pre-receive.sh' ]"
 
 # ---- skill は issue と wrap-up だけ。install.sh の LINKS（tests/install.sh と同じ読み方）にある。グローバルの gitignore も
 check "config/agents/skills は issue と wrap-up だけ" [ "$(ls "$ROOT/config/agents/skills" | tr '\n' ' ')" = "issue wrap-up " ]
