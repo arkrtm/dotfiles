@@ -1,18 +1,24 @@
 #!/bin/sh
 # 関門をすべて満たしたときだけ統合する。1 つでも欠けたら統合せず、notify で知らせて止まる（終了コード 1）
-#   usage: integrate [--human-approved]
+#   usage: integrate [--human-approved] | integrate setup [--force] [--kind K] [--base B] [--test CMD] | integrate setup --show
 #   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
 # 関門: main の上でない・未コミットの変更が無い・origin/main を含む・scripts/check が通る・
 #       今のコミットの origin/main との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない
 # 統合: クローンで integrate.bare を true にした bare のリモートは main へ push。それ以外は GitHub として
 #       ブランチを push して PR を作るだけ（マージは人）。GitHub のリポジトリが分からなければ止まる。
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
+# setup: リポジトリの種類（kind: bare・github・pr）・最上位のブランチ（base）・テストのコマンド（test）を
+#       ~/.config/integrate/repos/<origin の URL の鍵> に書く（リポジトリの外。XDG_CONFIG_HOME には従わない: settings.json の deny と場所を合わせる）。
+#       引数が足りなければ、端末なら推測を既定値に尋ね、端末でなければ推測を出して終了コード 2。既にあれば 1。
+#       上書きは setup の直後の --force で、端末からだけ（エージェントには書き換えさせない）
 set -eu
-usage() { echo "usage: integrate [--human-approved]" >&2; exit 2; }
+usage() { echo "usage: integrate [--human-approved] | integrate setup [--force] [--kind bare|github|pr] [--base <branch>] [--test <command>] | integrate setup --show" >&2; exit 2; }
 approved=""
+mode=""
 case "$#:${1:-}" in
   0:) ;;
   1:--human-approved) approved=1 ;;
+  *:setup) mode=setup; shift ;;
   *) usage ;;
 esac
 root="$(git rev-parse --show-toplevel)" || exit 1
@@ -31,6 +37,113 @@ github_repo() {
     return 0
   done
 }
+# 設定のファイル: origin の取得先 URL の英数字と ._- 以外を _ にした名前
+conf_path() {
+  url="$(git remote get-url origin 2>/dev/null)" || return 1
+  printf '%s/.config/integrate/repos/%s\n' "$HOME" "$(printf '%s' "$url" | tr -c 'A-Za-z0-9._-' '_')"
+}
+# 設定を conf_kind・conf_base・conf_test・conf_remote に読む（シェルとしては実行しない）。無ければ 1、壊れていれば 2
+conf_load() {
+  conf_kind="" conf_base="" conf_test="" conf_remote=""
+  f="$(conf_path)" || return 1
+  [ -f "$f" ] || return 1
+  n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    case "$line" in
+      kind=*) [ -z "$conf_kind" ] || return 2; conf_kind="${line#kind=}" ;;
+      base=*) [ -z "$conf_base" ] || return 2; conf_base="${line#base=}" ;;
+      test=*) [ -z "$conf_test" ] || return 2; conf_test="${line#test=}" ;;
+      remote=*) [ -z "$conf_remote" ] || return 2; conf_remote="${line#remote=}" ;;
+      *) return 2 ;;
+    esac
+  done < "$f"
+  [ "$n" = 4 ] && [ -n "$conf_kind" ] && [ -n "$conf_base" ] && [ -n "$conf_test" ] && [ -n "$conf_remote" ] || return 2
+  case "$conf_kind" in bare|github|pr) ;; *) return 2 ;; esac
+}
+# 推測: kind は GitHub でなければ bare、GitHub で持ち主が gh のログインと同じなら github、ほかは pr。
+# base はリモートの HEAD が指すブランチ。test はリポジトリのファイルから
+guess_kind() {
+  repo="$(github_repo)"
+  [ -n "$repo" ] || { echo bare; return; }
+  me="$(gh api user -q .login 2>/dev/null || true)"
+  lower() { printf '%s' "$1" | tr 'A-Z' 'a-z'; }
+  if [ -n "$me" ] && [ "$(lower "${repo%%/*}")" = "$(lower "$me")" ]; then echo github; else echo pr; fi
+}
+guess_base() {
+  git ls-remote --symref origin HEAD 2>/dev/null | awk '$1 == "ref:" && $3 == "HEAD" { sub("^refs/heads/", "", $2); print $2; exit }'
+}
+guess_test() {
+  if [ -e scripts/check ]; then echo 'sh scripts/check'
+  elif [ -e pyproject.toml ]; then echo 'uv run pytest'
+  elif [ -e package.json ]; then echo 'npm test'
+  elif [ -e Cargo.toml ]; then echo 'cargo test'
+  elif [ -e go.mod ]; then echo 'go test ./...'
+  fi
+}
+setup() {
+  if [ "$#" = 1 ] && [ "$1" = --show ]; then
+    f="$(conf_path)" && [ -f "$f" ] || { echo "設定が無い（integrate setup）" >&2; exit 1; }
+    cat "$f"; exit 0
+  fi
+  force=""
+  [ "${1:-}" != --force ] || { force=1; shift; }
+  s_kind="" s_base="" s_test=""
+  while [ "$#" -gt 0 ]; do
+    [ "$#" -ge 2 ] && [ -n "$2" ] || usage
+    case "$1" in
+      --kind) s_kind="$2" ;;
+      --base) s_base="$2" ;;
+      --test) s_test="$2" ;;
+      *) usage ;;
+    esac
+    shift 2
+  done
+  nl='
+'
+  case "$s_kind$s_base$s_test" in *"$nl"*) echo "値に改行は使えない" >&2; exit 2 ;; esac
+  case "$s_kind" in ''|bare|github|pr) ;; *) echo "kind は bare・github・pr のどれか" >&2; exit 2 ;; esac
+  remote="$(git remote get-url origin 2>/dev/null)" || { echo "origin が無い" >&2; exit 2; }
+  f="$(conf_path)"
+  if [ -n "$force" ]; then
+    [ -t 0 ] && [ -t 1 ] || { echo "上書き（--force）は人が端末から行う" >&2; exit 2; }
+  elif [ -e "$f" ]; then
+    echo "設定が既にある（$f）。上書きは人が端末から integrate setup --force" >&2; exit 1
+  fi
+  if [ -z "$s_kind" ] || [ -z "$s_base" ] || [ -z "$s_test" ]; then
+    g_kind="$(guess_kind)" g_base="$(guess_base)" g_test="$(guess_test)"
+    if [ ! -t 0 ]; then
+      printf 'kind=%s\nbase=%s\ntest=%s\n' "${s_kind:-$g_kind}" "${s_base:-$g_base}" "${s_test:-$g_test}"
+      echo "足りない項目がある。確かめて integrate setup --kind <bare|github|pr> --base <branch> --test <command> で実行し直す" >&2
+      exit 2
+    fi
+    # ask <名前> <推測>: 空の入力は推測を採る。どちらも空・kind が不正なら尋ね直す
+    ask() {
+      while :; do
+        printf '%s [%s]: ' "$1" "$2" >&2
+        IFS= read -r a || exit 2
+        a="${a:-$2}"
+        [ -n "$a" ] || continue
+        [ "$1" != kind ] || case "$a" in bare|github|pr) ;; *) continue ;; esac
+        printf '%s\n' "$a"; return
+      done
+    }
+    [ -n "$s_kind" ] || s_kind="$(ask kind "$g_kind")"
+    [ -n "$s_base" ] || s_base="$(ask base "$g_base")"
+    [ -n "$s_test" ] || s_test="$(ask test "$g_test")"
+  fi
+  mkdir -p "$(dirname "$f")"
+  body="$(printf 'kind=%s\nbase=%s\ntest=%s\nremote=%s' "$s_kind" "$s_base" "$s_test" "$remote")"
+  if [ -n "$force" ]; then
+    printf '%s\n' "$body" > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"
+  else
+    # 新規は排他的に作る（同時に setup しても書けるのは 1 つ）
+    (set -C; printf '%s\n' "$body" > "$f") 2>/dev/null || { echo "設定が既にある（$f）" >&2; exit 1; }
+  fi
+  echo "設定しました: $f"
+  exit 0
+}
+[ "$mode" != setup ] || setup "$@"
 clean() {
   st="$(git status --porcelain --untracked-files=all)" || fail "git status が失敗した"
   [ -z "$st" ]
