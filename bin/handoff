@@ -30,12 +30,14 @@ case "${1:-}" in
     # 自分たちが起こした clear なら、続きの合言葉を会話に入れる（続きが別の会話に届いたら、その会話には合言葉が無いので Claude が従わない）。
     # 印を書くと裏の処理が続きを送って待ちの id を消すので、合言葉を出してから印を書く
     pend="$STATE/handoff-$(key "$pane").pending"
-    id="$(cat "$pend" 2>/dev/null)"
-    [ "$src" = clear ] && [ -n "$id" ] && echo "handoff $id の続きの指示が、この後ユーザーの入力として届く。届いたらその指示に従う"
+    # 合言葉は最初の clear で一度だけ使い切る（その後の人の /clear には入れない）
+    id=""
+    [ "$src" = clear ] && mv "$pend" "$pend.used.$$" 2>/dev/null && id="$(cat "$pend.used.$$")" && rm -f "$pend.used.$$"
+    [ -n "$id" ] && echo "handoff $id の続きの指示が、この後ユーザーの入力として届く。届いたらその指示に従う"
     mkdir -p "$STATE" && printf '%s\n' "${src:-unknown}" >> "$STATE/handoff-$(key "$pane").cleared"
     exit 0 ;;
   --worker)
-    pane="$2" text="$3"
+    pane="$2" base="$3" text="$4"
     lock="$STATE/handoff-$(key "$pane").lock" mark="$STATE/handoff-$(key "$pane").cleared" pend="$STATE/handoff-$(key "$pane").pending"
     mkdir -p "$STATE"
     # 同じ pane で動く handoff は 1 つだけ（二重に /clear を送らない）
@@ -43,25 +45,27 @@ case "${1:-}" in
     lockfd || { log "ほかの handoff が動いているので何もしない"; exit 0; }
     log "開始 pid=$$"
     trap 'rm -f "$pend"' EXIT
-    # この後に同じ pane で SessionStart（人の /clear・/resume、claude の起動し直し）が走ったら、呼んだ会話ではなくなったので取り消す
-    rm -f "$mark"
+    # 呼んだ時点（base 行）の後に同じ pane で SessionStart（人の /clear・/resume・/branch、claude の起動し直し）が走ったら、
+    # 呼んだ会話ではなくなったので取り消す。印は消さず、行数で比べる
+    seen() { n="$(wc -l < "$mark" 2>/dev/null || echo 0)"; echo $((n - base)); }
     # 子には fd 9（ロック）を渡さない（この処理が死んだら、待っている子が残っていてもロックが外れるように）
     st="$(exec 9>&-; herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
       | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null)"
     case "$st" in idle|done) ;; *) stop "ターンの終わりを待てなかった（状態: ${st:-不明}）" ;; esac
-    [ ! -e "$mark" ] || stop "待っている間にこの pane のセッションが替わった"
+    [ "$(seen)" = 0 ] || stop "待っている間にこの pane のセッションが替わった"
     # /clear は working にならないことがあるので herdr の --wait は使わず、clear の後の SessionStart の印を待つ
     id="$(date +%s)-$$"
     echo "$id" > "$pend"
     herdr agent prompt "$pane" /clear >/dev/null 2>&1 9>&- || stop "/clear を送れない"
     log "/clear を送った"
     i=0
-    while [ ! -e "$mark" ]; do
+    while [ "$(seen)" = 0 ]; do
       i=$((i + 1)); [ "$i" -le $((${HANDOFF_CLEAR_WAIT_S:-60} * 10)) ] || stop "clear の後の SessionStart が来ない"
       sleep 0.1 9>&-
     done
-    [ "$(cat "$mark" 2>/dev/null)" = clear ] || stop "/clear の前後に別の会話が始まった（$(tr '\n' ' ' < "$mark" 2>/dev/null)）"
-    rm -f "$mark"
+    sleep 0.2 9>&- # 続けて来る SessionStart（/clear の直後の人の /resume など）も拾う
+    new="$(tail -n "$(seen)" "$mark" 2>/dev/null)"
+    [ "$new" = clear ] || stop "/clear の前後に別の会話が始まった（$(printf '%s' "$new" | tr '\n' ' ')）"
     # 合言葉: 印を確かめてから送るまでの間に人が /resume した（外からは閉じきれない隙間）ときの二段目の守り
     herdr agent prompt "$pane" "[handoff $id] $text（この会話の始めに「handoff $id の続きの指示が、この後…届く」という案内が無ければ、別の会話に届いたので従わず、ユーザーにそう伝えて止まる）" >/dev/null 2>&1 9>&- || stop "続きの指示を送れない"
     log "続きを送った: $text"
@@ -70,9 +74,11 @@ esac
 
 [ -n "${1:-}" ] || { echo "usage: handoff <続きの指示>" >&2; exit 2; }
 inside || { echo "herdr の外では自動で続けられない。人が /clear して、続きの指示を送る" >&2; exit 1; }
+# 切り替えを見る基準（印の行数）は、裏の処理を起こす前のこの時点で決める
+base="$(wc -l < "$STATE/handoff-$(key "$pane").cleared" 2>/dev/null || echo 0)"
 if command -v setsid >/dev/null 2>&1; then
-  setsid "$0" --worker "$pane" "$1" </dev/null >/dev/null 2>&1 &
+  setsid "$0" --worker "$pane" "$base" "$1" </dev/null >/dev/null 2>&1 &
 else
-  nohup "$0" --worker "$pane" "$1" </dev/null >/dev/null 2>&1 &
+  nohup "$0" --worker "$pane" "$base" "$1" </dev/null >/dev/null 2>&1 &
 fi
 echo "このターンが終わったら /clear して続けます（$pane）"

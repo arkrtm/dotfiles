@@ -107,14 +107,19 @@ kill "$(cat "$T/sleeppid" 2>/dev/null)" 2>/dev/null
 id="$(sed -n 's/^agent prompt w1:p2 \[handoff \([^]]*\)\].*/\1/p' "$LOG")"
 [ -n "$id" ] && grep -q "handoff $id の続きの指示が.*届く」という案内が無ければ" "$LOG" && ok "続きの指示に合言葉と、案内が無いときは従わない旨を付ける" || ng "合言葉: $(tail -n 1 "$LOG")"
 mkdir -p "$XDG_STATE_HOME"; echo 123-9 > "$XDG_STATE_HOME/handoff-w1_p2.pending"
-out="$(echo '{"source":"clear"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
-printf '%s' "$out" | grep -q 'handoff 123-9 の続きの指示が' && ok "待っている handoff の clear の SessionStart は合言葉を会話に入れる" || ng "clear の案内: $out"
 out="$(echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
-[ -z "$out" ] && ok "resume の SessionStart は合言葉を入れない" || ng "resume の案内: $out"
-rm -f "$XDG_STATE_HOME/handoff-w1_p2.pending"
+[ -z "$out" ] && ok "resume の SessionStart は合言葉を入れない（使い切りもしない）" || ng "resume の案内: $out"
 out="$(echo '{"source":"clear"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
-[ -z "$out" ] && ok "待っている handoff が無ければ clear でも何も入れない" || ng "handoff なしの clear: $out"
+printf '%s' "$out" | grep -q 'handoff 123-9' && ok "待っている handoff の clear の SessionStart は合言葉を会話に入れる" || ng "clear の案内: $out"
+out="$(echo '{"source":"clear"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
+[ -z "$out" ] && ok "合言葉は最初の clear で使い切り、次の clear には入れない" || ng "2 回目の clear: $out"
 [ ! -e "$XDG_STATE_HOME/handoff-w1_p2.pending" ] && ok "送った後は待ちの印を残さない" || ng "pending が残った"
+
+# 呼んだ直後（裏の処理が始まる前）に人が /resume しても取り消す
+rm -f "$LOG"; d0="$(done_lines)"; n0="$(nlines)"; touch "$T/wait_sleep"
+HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1
+echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start >/dev/null; settle "$d0"; rm -f "$T/wait_sleep"
+! grep -q 'agent prompt' "$LOG" && [ "$(nlines)" -gt "$n0" ] && ok "呼んだ直後の /resume でも取り消す" || ng "直後の resume: $(cat "$LOG")"
 
 # ---- session-start は herdr の外では何もしない
 rm -f "$XDG_STATE_HOME"/handoff-*.cleared; echo '{"source":"clear"}' | handoff --session-start; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \
