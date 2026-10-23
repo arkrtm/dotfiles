@@ -39,10 +39,11 @@
 - ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/main`。作るのは `/issue`
 - コミット: 構造の変更（`refactor:`）と振る舞いの変更（`feat:`・`fix:`）を別にする。テストと実装は同じコミットにし、どのコミットでもテストが通る状態にする。メッセージは英語で最大 3 行（1 行目は型付きの件名、命令形、50 文字以内。必要なら空行の後に理由を 1 行）
 - issue 番号はコミット・PR・ブランチ名に入れない（対応は Linear の issue の本文にだけ書く）
-- 統合の前の順番: `git fetch` → `git rebase origin/main`（最初の push の前だけ）→ リポジトリの指示ファイルにある検査 → `codex-review branch origin/main` → 統合。レビューの後に変えたら、検査とレビューをやり直す
-- 統合の方法は `git remote get-url origin` で決める:
-  - github.com: `git push -u origin feature/<作業内容>` と `gh pr create` の後、人に確かめてから `gh pr merge --rebase --delete-branch`（squash しない）。PR を出した後は rebase せず、修正はコミットを足して push する（main が進んで衝突したら止めて人に聞く）
-  - それ以外（bare）: `git push origin HEAD:main`。main が進んでいて拒否されたら fetch・rebase・検査・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
+- 統合の前の順番: `git fetch` → `git rebase origin/main`（PR を出す前だけ）→ リポジトリの指示ファイルにある検査 → `codex-review branch origin/main` → `integrate`。レビューの後に変えたら、検査とレビューをやり直す
+- 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（main の最新を含む、未コミットの変更が無い、`scripts/check` が通る、今のコミットへの `codex-review branch origin/main` の最後の行が `VERDICT: PASS`、テストを削除・移動していない、skip・xfail・`type: ignore`・`noqa` を足していない）を確かめ、1 つでも欠けたら統合せず `notify` して止まる。直せる理由だけ直して検査・レビューからやり直し、直せなければ人を待つ。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
+- integrate の統合は `git remote get-url origin` で変わる:
+  - github.com: ブランチを push して PR を作るところまで。マージは人が確かめて行う（`gh pr merge --rebase --delete-branch`。squash しない）。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（main が進んで止まったら人に聞く）
+  - それ以外（bare）: main へ push する（bare 側の pre-receive でも `scripts/check` を確かめる）。main が進んで止まったら fetch・rebase・検査・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
 - 強制 push はしない
 
 ## Linear（タスク管理）
