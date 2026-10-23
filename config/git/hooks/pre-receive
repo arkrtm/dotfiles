@@ -1,6 +1,7 @@
 #!/bin/sh
 # bare リポジトリの最後の関門: main への push は、受け取ったコミットで scripts/check が通るときだけ受け付ける。
 # 入れ方: ln -s ~/dotfiles/config/git/hooks/pre-receive <repo>.git/hooks/pre-receive
+#         git -C <repo>.git config core.hooksPath hooks   （グローバルの core.hooksPath があっても bare の hooks/ を使う）
 # 受け取ったコミットそのものを、一時的な git のリポジトリに checkout して検査する（git archive は export-ignore の
 # ファイルが欠ける）。まだ取り込み前（quarantine）のオブジェクトは alternates で読む
 set -eu

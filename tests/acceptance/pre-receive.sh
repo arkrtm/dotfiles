@@ -11,13 +11,16 @@ ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# 業務サーバーのように、グローバルの core.hooksPath が別の場所を指していても効く入れ方（README の手順）で入れる
+mkdir -p "$T/hooks-nosign"; printf '[core]\n\thooksPath = %s\n' "$T/hooks-nosign" > "$T/gitconfig"
+export GIT_CONFIG_GLOBAL="$T/gitconfig" GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 # フックが作る一時ディレクトリをここで数える（ローカルの push ではフックが環境変数を引き継ぐ）
 mkdir -p "$T/tmp"; export TMPDIR="$T/tmp"
 
 git init -q --bare -b main "$T/r.git"
 ln -s "$ROOT/config/git/hooks/pre-receive" "$T/r.git/hooks/pre-receive"
+git -C "$T/r.git" config core.hooksPath hooks
 git clone -q "$T/r.git" "$T/w" 2>/dev/null
 cd "$T/w"
 main() { git -C "$T/r.git" rev-parse -q --verify main; }
