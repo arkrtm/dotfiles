@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Claude Code のステータスライン（Nerd Font アイコン付き 2 行）。macOS 標準の bash 3.2 でも動く書き方
-# 1 行目: モデル・effort・ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）
+# 1 行目: モデル・effort・ブランチ・Codex（レビュー役）のモデルと effort、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）
 in=$(cat)
 get() { jq -r "$1 // empty" <<<"$in"; }
 
@@ -27,6 +27,9 @@ eff=$(get .effort.level)
 [ -n "$eff" ] && line1+=" ${DIM}${eff}${R}"
 br=$(git -C "$(get .workspace.current_dir)" branch --show-current 2>/dev/null)
 [ -n "$br" ] && line1+="   ${DIM}${I_BRANCH} ${br}${R}"
+# Codex の設定の先頭（最初の表より前）の model と model_reasoning_effort
+cx=$(awk -F'"' '/^\[/ { exit } /^model *=/ { m = $2 } /^model_reasoning_effort *=/ { e = $2 } END { if (m != "") print m (e != "" ? " " e : "") }' "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null)
+[ -n "$cx" ] && line1+="   ${DIM}codex ${cx}${R}"
 
 # 2 行目: コンテキスト・5 時間・週のメーター
 line2=""

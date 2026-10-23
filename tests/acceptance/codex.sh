@@ -1,6 +1,6 @@
 #!/bin/sh
 # codex-review の受け入れ検査（ARK-87）: 偽の codex を PATH の先頭に置き、使い方の誤りは終了コード 2、
-# plan と branch は codex exec を読み取り専用の sandbox・effort high で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと
+# plan と branch は codex exec を読み取り専用の sandbox・effort xhigh で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと
 #   sh tests/acceptance/codex.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/codex.sh  通った項目も
 set -u
@@ -26,10 +26,10 @@ done
 
 has() { grep -qx -- "$1" "$T/args"; }
 # フックを止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる）
-common() { has exec && has --sandbox && has read-only && has model_reasoning_effort=high && has features.hooks=false; }
+common() { has exec && has --sandbox && has read-only && has model_reasoning_effort=xhigh && has features.hooks=false; }
 echo plan > "$T/x.md"
 sh "$CR" plan x.md; rc=$?
-[ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort high で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"
+[ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort xhigh で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"
 has --skip-git-repo-check && ok "plan は git のリポジトリの外でも動く（--skip-git-repo-check）" || ng "plan に --skip-git-repo-check が無い"
 rm -f "$T/args"; sh "$CR" branch
 common && grep -q 'main\.\.\.HEAD' "$T/args" && grep -q 'VERDICT: PASS' "$T/args" && ok "branch は main...HEAD と VERDICT を渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"

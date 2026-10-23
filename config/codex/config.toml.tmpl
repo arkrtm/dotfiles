@@ -1,7 +1,9 @@
 # Codex の設定（dotfiles の config/codex/config.toml.tmpl から install.sh が生成する。ここを直さず、テンプレートを直して install.sh を再実行する）
-# @HOME@ はホームの絶対パスに置き換わる。モデルは書かず Codex の既定に任せる
+# @HOME@ はホームの絶対パスに置き換わる
 # [marketplaces.ponytail] は `codex plugin marketplace add` が書くものと同じにする（再実行で差分が出ないように。CLI が表を書き直すので、表の直前にコメントを置かない）
-model_reasoning_effort = "high"
+# レビュー役（codex-review）として sol・xhigh に固定する（Codex の既定が変わってもぶれないように）
+model = "gpt-6.1-sol"
+model_reasoning_effort = "xhigh"
 
 [plugins."ponytail@ponytail"]
 enabled = true
