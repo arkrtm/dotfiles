@@ -117,12 +117,15 @@ setup "$T/r.git"; git worktree add -q -b feature/wt "$T/wt" && cd "$T/wt"; add c
 accepted "worktree の中ですべて満たす"
 
 # ---- AC9: GitHub はブランチを push して PR を作るだけ（マージしない）。開いた PR があれば作らない
-setup "$T/github.com/r.git"; review PASS; m0="$(git -C "$BARE" rev-parse main)"
+setup "$T/github.com/o/r.git"; review PASS; m0="$(git -C "$BARE" rev-parse main)"
 integrate >"$T/out" 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && [ "$(git -C "$BARE" rev-parse feature/x)" = "$(git rev-parse HEAD)" ] && [ "$(git -C "$BARE" rev-parse main)" = "$m0" ] \
   && ok "GitHub: ブランチを push し、main は変えない" || ng "GitHub: rc=$rc $(cat "$T/err")"
 [ "$(grep -c '^pr create' "$T/gh.log")" = 1 ] && ! grep -q '^pr merge' "$T/gh.log" && grep -q 'pull/1' "$T/out" \
   && ok "GitHub: PR を作って url を出し、マージしない" || ng "GitHub: gh の呼び出し: $(cat "$T/gh.log")"
+# gh の既定のリポジトリ（GH_REPO・gh repo set-default）に関係なく、PR の対象は origin
+[ "$(grep -c -- '--repo o/r' "$T/gh.log")" = "$(grep -c '^pr ' "$T/gh.log")" ] \
+  && ok "GitHub: PR の検索と作成は origin（--repo o/r）に固定する" || ng "GitHub: gh の呼び出し: $(cat "$T/gh.log")"
 add a 2; review PASS; integrate >/dev/null 2>"$T/err"
 [ "$(grep -c '^pr create' "$T/gh.log")" = 1 ] && [ "$(git -C "$BARE" rev-parse feature/x)" = "$(git rev-parse HEAD)" ] \
   && ok "GitHub: 開いた PR があれば push だけ" || ng "GitHub: 2 回目: $(cat "$T/gh.log") $(cat "$T/err")"
