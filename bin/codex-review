@@ -13,4 +13,5 @@ case "${1:-}" in
 テストを削除・無効化して検査を通していないかも確かめてください。最後の行には、直すべき指摘がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」とだけ書いてください。" ;;
   *) usage ;;
 esac
-exec codex exec --sandbox read-only -c model_reasoning_effort=high "$prompt"
+# codex exec は標準入力が端末でないと入力の終わりを待って止まるので、標準入力は渡さない
+exec codex exec --sandbox read-only -c model_reasoning_effort=high "$prompt" </dev/null

@@ -12,9 +12,11 @@ ng() { echo "FAIL $1"; fail=1; }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"
-printf '#!/bin/sh\nfor a in "$@"; do printf "%%s\\n" "$a"; done > "%s/args"\n' "$T" > "$T/bin/codex"; chmod +x "$T/bin/codex"
+# 偽の codex: 引数を 1 行ずつ args に、標準入力を stdin に書く（codex exec は標準入力が端末でないと入力の終わりを待つ）
+printf '#!/bin/sh\nfor a in "$@"; do printf "%%s\\n" "$a"; done > "%s/args"\ncat > "%s/stdin"\n' "$T" "$T" > "$T/bin/codex"; chmod +x "$T/bin/codex"
 export PATH="$T/bin:$PATH"
 cd "$T"
+exec </dev/null # 偽の codex が呼んだ側の端末を待たないように（標準入力を渡すかは下の echo leaked で確かめる）
 
 for args in "" foo plan "plan missing.md"; do
   # shellcheck disable=SC2086 # 語に分けて渡す
@@ -29,6 +31,8 @@ sh "$CR" plan x.md; rc=$?
 [ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort high で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"
 rm -f "$T/args"; sh "$CR" branch
 common && grep -q 'main\.\.\.HEAD' "$T/args" && grep -q 'VERDICT: PASS' "$T/args" && ok "branch は main...HEAD と VERDICT を渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
+rm -f "$T/args"; echo leaked | sh "$CR" branch
+[ -e "$T/stdin" ] && [ ! -s "$T/stdin" ] && ok "codex に標準入力を渡さない（入力の終わりを待って止まらない）" || ng "codex に標準入力が渡る: $(cat "$T/stdin" 2>/dev/null)"
 rm -f "$T/args"; sh "$CR" branch dev
 grep -q 'dev\.\.\.HEAD' "$T/args" && ok "branch <ベース> はそのベースを使う" || ng "branch dev: $(cat "$T/args" 2>/dev/null)"
 
