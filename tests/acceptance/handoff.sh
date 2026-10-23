@@ -25,7 +25,7 @@ cat > "$T/bin/herdr" <<SH
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "agent wait") [ -e "$T/wait_sleep" ] && sleep 1
-    [ -e "$T/wait_long" ] && sleep 30
+    [ -e "$T/wait_long" ] && { sleep 30 & echo \$! > "$T/sleeppid"; wait; }
     # $T/switch があれば、待っている間に人が同じ pane で /clear・/resume した（SessionStart が走った）ことにする
     [ -e "$T/switch" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start
     printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
@@ -51,7 +51,7 @@ HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff >/dev/null 2>&1; [ $? = 2 ] && ok "続�
 run
 [ "$rc" = 0 ] && [ "$(cat "$LOG" 2>/dev/null | cut -d' ' -f1-4)" = "agent wait w1:p2 --until
 agent prompt w1:p2 /clear
-agent prompt w1:p2 ARK-1" ] && ok "idle を待って /clear し、clear の後に続きの指示を自分の pane に送る" || ng "中: rc=$rc log=$(cat "$LOG" 2>/dev/null)"
+agent prompt w1:p2 [handoff" ] && ok "idle を待って /clear し、clear の後に続きの指示を自分の pane に送る" || ng "中: rc=$rc log=$(cat "$LOG" 2>/dev/null)"
 grep -q -- '--until idle' "$LOG" && grep -q 'ARK-1 の続き' "$LOG" && ok "続きの指示はそのまま 1 つの引数で送る" || ng "指示の渡し方: $(cat "$LOG")"
 [ -s "$XDG_STATE_HOME/handoff.log" ] && ok "handoff.log に経過を残す" || ng "handoff.log が無い"
 
@@ -95,13 +95,26 @@ rm -f "$T/after_clear"
 touch "$T/resume_before_clear"; run
 ! grep -q 'ARK-1' "$LOG" && ok "/clear の直前に /resume が挟まったら続きを送らない" || ng "直前の resume: $(cat "$LOG")"
 rm -f "$T/resume_before_clear"
-# 裏の処理が herdr を待っている間に死んでも、待っている子がロックを持ち続けない
-if command -v pkill >/dev/null 2>&1; then
-  touch "$T/wait_long"; rm -f "$LOG"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1; sleep 0.5
-  pkill -f '[h]andoff --worker w1:p2'; sleep 0.3; rm -f "$T/wait_long"; run
-  grep -q 'ARK-1' "$LOG" && ok "裏の処理が死んだら、待っていた子が残っていてもロックは外れる" || ng "子がロックを持ったまま: $(cat "$LOG" 2>/dev/null)"
-  pkill -f '[s]leep 30' 2>/dev/null
-fi
+# 裏の処理が herdr を待っている間に死んでも、待っている子がロックを持ち続けない（止めるのは検査が起こしたプロセスだけ）
+touch "$T/wait_long"; rm -f "$LOG" "$T/sleeppid"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "ARK-1 の続き" >/dev/null 2>&1
+i=0; while [ ! -s "$T/sleeppid" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+wpid="$(sed -n 's/.*開始 pid=\([0-9]*\).*/\1/p' "$XDG_STATE_HOME/handoff.log" | tail -n 1)"
+kill "$wpid" 2>/dev/null; sleep 0.3; rm -f "$T/wait_long"; run
+grep -q 'ARK-1' "$LOG" && ok "裏の処理が死んだら、待っていた子が残っていてもロックは外れる" || ng "子がロックを持ったまま: $(cat "$LOG" 2>/dev/null)"
+kill "$(cat "$T/sleeppid" 2>/dev/null)" 2>/dev/null
+
+# 合言葉: 続きの指示に id を付け、自分たちが起こした clear の SessionStart だけがその id を会話に入れる
+id="$(sed -n 's/^agent prompt w1:p2 \[handoff \([^]]*\)\].*/\1/p' "$LOG")"
+[ -n "$id" ] && grep -q "handoff $id の続きの指示が.*届く」という案内が無ければ" "$LOG" && ok "続きの指示に合言葉と、案内が無いときは従わない旨を付ける" || ng "合言葉: $(tail -n 1 "$LOG")"
+mkdir -p "$XDG_STATE_HOME"; echo 123-9 > "$XDG_STATE_HOME/handoff-w1_p2.pending"
+out="$(echo '{"source":"clear"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
+printf '%s' "$out" | grep -q 'handoff 123-9 の続きの指示が' && ok "待っている handoff の clear の SessionStart は合言葉を会話に入れる" || ng "clear の案内: $out"
+out="$(echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
+[ -z "$out" ] && ok "resume の SessionStart は合言葉を入れない" || ng "resume の案内: $out"
+rm -f "$XDG_STATE_HOME/handoff-w1_p2.pending"
+out="$(echo '{"source":"clear"}' | HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff --session-start)"
+[ -z "$out" ] && ok "待っている handoff が無ければ clear でも何も入れない" || ng "handoff なしの clear: $out"
+[ ! -e "$XDG_STATE_HOME/handoff-w1_p2.pending" ] && ok "送った後は待ちの印を残さない" || ng "pending が残った"
 
 # ---- session-start は herdr の外では何もしない
 rm -f "$XDG_STATE_HOME"/handoff-*.cleared; echo '{"source":"clear"}' | handoff --session-start; [ $? = 0 ] && ! ls "$XDG_STATE_HOME"/handoff-*.cleared >/dev/null 2>&1 \
