@@ -22,7 +22,7 @@ fail() {
   exit 1
 }
 clean() {
-  st="$(git status --porcelain)" || fail "git status が失敗した"
+  st="$(git status --porcelain --untracked-files=all)" || fail "git status が失敗した"
   [ -z "$st" ]
 }
 
@@ -48,7 +48,7 @@ review="$(ls "$(git rev-parse --path-format=absolute --git-common-dir)/codex-rev
 
 # 3. テストや検査を弱めていない（移動も削除として数える。Markdown の文書の説明は数えない）
 if [ -z "$approved" ]; then
-  diff="$(git diff --no-color --no-ext-diff "$base...$head" -- . ':(exclude)*.md')" || fail "差分を取れない"
+  diff="$(git diff --no-color --no-ext-diff --text --no-textconv "$base...$head" -- . ':(exclude)*.md')" || fail "差分を取れない"
   if printf '%s\n' "$diff" | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
     fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
   fi

@@ -64,9 +64,10 @@ rm -rf "$T/.git/codex-review"; FAILRC=1 sh "$CR" branch 2>"$T/err"; rc=$?
 [ "$rc" != 0 ] && [ -z "$(ls -A "$T/.git/codex-review" 2>/dev/null)" ] \
   && ok "Codex が異常終了したら結果を残さない" || ng "異常終了: rc=$rc $(ls -A "$T/.git/codex-review" 2>&1)"
 # 未コミットの変更があると、レビューする内容がコミットと違うので実行しない
+git config status.showUntrackedFiles no
 echo dirty > d; rm -f "$T/args"; sh "$CR" branch 2>"$T/err"; rc=$?
-[ "$rc" != 0 ] && [ ! -e "$T/args" ] && ok "未コミットの変更があれば branch のレビューをしない" || ng "未コミットの変更: rc=$rc $(cat "$T/err")"
-rm -f d
+[ "$rc" != 0 ] && [ ! -e "$T/args" ] && ok "未追跡のファイルがあれば branch のレビューをしない（status.showUntrackedFiles=no でも）" || ng "未追跡のファイル: rc=$rc $(cat "$T/err")"
+rm -f d; git config --unset status.showUntrackedFiles
 # レビューの途中で HEAD が変わったら、結果を元のコミットの名前で残さない
 rm -rf "$T/.git/codex-review"; h0="$(git rev-parse HEAD)"
 MOVE=1 sh "$CR" branch 2>"$T/err"; rc=$?

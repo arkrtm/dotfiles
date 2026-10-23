@@ -17,7 +17,7 @@ case "${1:-}" in
   branch)
     # 比較する 2 つのコミットは SHA で固定する（レビューの途中で参照が動いても、保存名と同じ差分を見る）
     # 未コミットの変更があると、Codex が読む作業ツリーとコミットが違う
-    clean() { st="$(git status --porcelain)" && [ -z "$st" ]; }
+    clean() { st="$(git status --porcelain --untracked-files=all)" && [ -z "$st" ]; }
     clean || { echo "未コミットの変更がある（または git status が失敗した）ので、レビューしません。コミットしてから実行してください" >&2; exit 1; }
     base="${2:-main}"
     from="$(git merge-base "$base" HEAD)"
