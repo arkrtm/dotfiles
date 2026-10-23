@@ -34,16 +34,18 @@
 
 ## Git
 
-1 つの issue に短命なブランチを 1 つ切り、worktree の中で作業する。main は常にテストが通る状態に保つ:
+1 つの issue に短命なブランチを 1 つ切り、worktree の中で作業する。最上位のブランチ（main や develop。以下 `<最上位>`）は常にテストが通る状態に保つ:
 
-- ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/main`。作るのは `/issue`
+- リポジトリごとに一度 `integrate setup` で種類（kind）・`<最上位>`（base）・テストのコマンド（test）を決める（設定は `~/.config/integrate/repos/`。リポジトリの外）。`integrate setup --show` で今の設定を見る。無ければ `integrate setup` を引数なしで実行して推測を見て、ユーザーに選択肢で確かめてから `--kind`・`--base`・`--test` で渡す。既にある設定の上書き（`--force`）は人が端末で行う
+- kind:
+  - `bare`（サーバーの bare）・`github`（自分の GitHub）: 一人の開発。integrate が関門の後に `<最上位>` へ直接 push する（PR は作らない）
+  - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（`<最上位>` が進んで止まったら人に聞く）
+- ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/<最上位>`。作るのは `/issue`
 - コミット: 構造の変更（`refactor:`）と振る舞いの変更（`feat:`・`fix:`）を別にする。テストと実装は同じコミットにし、どのコミットでもテストが通る状態にする。メッセージは英語で最大 3 行（1 行目は型付きの件名、命令形、50 文字以内。必要なら空行の後に理由を 1 行）
 - issue 番号はコミット・PR・ブランチ名に入れない（対応は Linear の issue の本文にだけ書く）
-- 統合の前の順番: `git fetch` → `git rebase origin/main`（PR を出す前だけ）→ リポジトリの指示ファイルにある検査 → `codex-review branch origin/main` → `integrate`。レビューの後に変えたら、検査とレビューをやり直す
-- 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（main の最新を含む、未コミットの変更が無い、`scripts/check` が通る、今のコミットへの `codex-review branch origin/main` の最後の行が `VERDICT: PASS`、テストを削除・移動していない、skip・xfail・`type: ignore`・`noqa` を足していない）を確かめ、1 つでも欠けたら統合せず `notify` して止まる。直せる理由だけ直して検査・レビューからやり直し、直せなければ人を待つ。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
-- integrate の統合はリモートで変わる（push 先が取得先と違う設定では止まる）:
-  - GitHub（既定）: ブランチを push して PR を作るところまで。main は CI（`scripts/check`）必須で保護する（PR 必須、管理者にも適用。設定は dotfiles の README の「GitHub の main の保護」）。マージは人が CI の成功を確かめて行う（`gh pr merge --rebase --delete-branch`。squash しない。自動マージは使わない）。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（main が進んで止まったら人に聞く）
-  - bare: クローンで一度 `git config integrate.bare true` にしておくと、main へ push する（無ければ GitHub として扱い、GitHub のリポジトリと分からなければ止まる。bare 側の pre-receive でも `scripts/check` を確かめる）。main が進んで止まったら fetch・rebase・検査・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
+- 統合の前の順番: `git fetch` → `git rebase origin/<最上位>`（`bare`・`github` は毎回、`pr` は PR を出す前だけ）→ setup の test → `codex-review branch origin/<最上位>` → `integrate`。レビューの後に変えたら、テストとレビューをやり直す
+- 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（setup の設定がある、`<最上位>` の最新を含む、未コミットの変更が無い、setup の test が通る、今のコミットへの `codex-review branch origin/<最上位>` の最後の行が `VERDICT: PASS`、テストを削除・移動していない、skip・xfail・`type: ignore`・`noqa` を足していない）を確かめ、1 つでも欠けたら統合せず `notify` して止まる（push 先が取得先と違う設定でも止まる）。直せる理由だけ直してテスト・レビューからやり直し、直せなければ人を待つ。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
+- `<最上位>` への push が早送りでなく拒否されたら（`<最上位>` が進んだ）、fetch・rebase・テスト・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
 - 強制 push はしない
 
 ## Linear（タスク管理）

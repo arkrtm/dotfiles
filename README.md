@@ -51,14 +51,12 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/wezterm/wezterm.lua` | —（Windows の `WEZTERM_CONFIG_FILE` で指す） | WSL の端末。既定は WSL、`Ctrl+Shift+1` で WSL・`Ctrl+Shift+2` で PowerShell のタブ、`Ctrl+Shift+O` でランチャー。kitty 方式の画像（herdr の中の yazi） |
 | `config/nvim/` | `~/.config/nvim/` | lazy.nvim + onedark, lualine, telescope, gitsigns, yazi.nvim, treesitter, noice（コマンドラインは画面上部のポップアップ、メッセージは右下） |
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
-| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入 + 下の check・fmt）、permissions（`git push`・`gh pr merge`・`integrate --human-approved` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取りを禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` などは捕らえない。機械的な関門は integrate 自身・bare の pre-receive・GitHub で人がマージすること）、ステータスライン、ログ 365 日 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、hooks（状態表示 + compact・resume 後の記憶の注入）、permissions（`git push`・`gh pr merge`・`integrate --human-approved`・`integrate setup --force` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取り、`~/.config/integrate/` の編集を禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` や `bin/integrate setup --force` などは捕らえない。機械的な関門は integrate 自身。設定の上書きは integrate が端末からだけ受け付ける）、ステータスライン、ログ 365 日 |
 | `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。Claude のモデルと effort → Codex のモデルと effort（`~/.codex/config.toml` から）→ ブランチと、コンテキスト・5 時間・週の上限のメーター。Nerd Font のアイコン。Claude・OpenAI のアイコン（`nf-cod-claude`・`nf-cod-openai`）は Nerd Fonts 3.5.0 以降のフォントが要る） |
-| `config/claude/hooks/` | `~/.claude/hooks/` | `check.sh`（Stop。リポジトリの `scripts/check` が失敗したら終了を止めて直させる。同じセッションで 3 回続けて失敗したら止めて `notify`）、`fmt.sh`（Edit・Write の後に `scripts/fmt <file>`）。`scripts/` が無いリポジトリでは何もしない |
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、レビュー（計画と最終は codex-review）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/codex/config.toml.tmpl` | —（`~/.codex/config.toml` を生成） | Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分は install.sh の再実行で消える。ただしフックの承認（`hooks.state`）・プロジェクトの信頼（`projects`）・表示（`tui`）の表は引き継ぐ |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch、rebase 中心の pull・push（`push.autoSetupRemote` は git 2.37 から）、衝突は diff3、bare の守り（この端末の bare は新旧とも、早送りでない push とブランチの削除を拒む）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
-| `config/git/hooks/pre-receive` | —（bare に入れる。下の「bare リポジトリの関門」） | main への push を、受け取ったコミットで `scripts/check` が通るときだけ受け付ける |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
 | `config/pi/` `config/herdr/` | `~/.pi/agent/…` `~/.config/herdr/…` | Pi と herdr の設定（詳細は `config/pi/README.md`） |
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`、issue ごとの worktree `.worktrees/`） |
@@ -67,8 +65,8 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale。端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |
 | `bin/*` | `~/.local/bin/*` | 下記 |
 | `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ, launchd） |
-| `scripts/check` | — | dotfiles の検査（`tests/static.sh`・`install.sh`・`acceptance.sh`。Stop フックと `integrate` と CI が呼ぶ） |
-| `.github/workflows/check.yml` | — | GitHub の CI。PR と main への push で `scripts/check` を ubuntu で実行する（main の保護の必須チェック。下の「GitHub の main の保護」） |
+| `scripts/check` | — | dotfiles のテスト（`tests/static.sh`・`install.sh`・`acceptance.sh`。dotfiles の `integrate setup` の test と CI が呼ぶ。ほかのリポジトリに同じ名前を求める決まりではない） |
+| `.github/workflows/check.yml` | — | GitHub の CI。PR と main への push で `scripts/check` を ubuntu で実行する（push の後の知らせ。main の保護の必須チェックではない） |
 | `tests/` | — | コミット前の検査（何を通すかは `CLAUDE.md`）。`static.sh` は構文と設定、`install.sh` はリンク、`acceptance/*.sh` は受け入れ、`install-nosudo.sh` はコンテナでのフル install、`nvim.sh` は Neovim |
 
 `bin/`:
@@ -77,7 +75,8 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
 - `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png`（保存時刻。同じ秒は `-2`）の名前で送信先の `~/screenshots/` へ `scp -O`（送信のたびに 7 日より古いものを削除。元のファイルはそのまま）。送信先は `config/ss-sync/targets`（1 行 1 ホスト、`#` はコメント）。失敗は `~/.local/state/ss-sync/log`（mac は `launchd.err` も）。`BatchMode` なので、新しい端末では一度手で `ssh nas` して known_hosts に入れる
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
-- `integrate [--human-approved]` — 統合はこれだけで行う。関門（main の最新を含む・未コミットの変更が無い・`scripts/check` が通る・今のコミットの origin/main との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（origin の push 先が取得先と違う設定でも止まる）。既定では GitHub として、ブランチを push して PR を作るだけ（マージは人。origin が GitHub のリポジトリと分からなければ止まる）。クローンで `git config integrate.bare true` にした bare のリモートだけ main へ push する。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
+- `integrate [--human-approved]` — 統合はこれだけで行う。関門（`integrate setup` の設定がある・最上位のブランチ（base）の最新を含む・未コミットの変更が無い・設定の test が通る・今のコミットの origin/<base> との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（設定の remote が origin と違う・origin の push 先が取得先と違う設定でも止まる）。kind が `bare`・`github` なら base へ push（早送りだけ）、`pr` ならブランチを push して base に向けた PR を作るだけ（マージはチーム）。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
+- `integrate setup` — リポジトリごとの設定（下の「integrate setup」）
 - `notify MESSAGE` — エージェントが止めた理由を `~/.local/state/agent-notify.log` に記録して標準エラーに出す（外部には送らない。スマホへは Claude Code mobile が届ける）
 
 ## Claude Code の手順
@@ -86,7 +85,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 - `config/claude/settings.json` の宣言（`extraKnownMarketplaces` の `claude-plugins-official`・`tinymemory`・`ponytail` と、`enabledPlugins` の `superpowers@claude-plugins-official`・`tinymemory@tinymemory`・`ponytail@ponytail`。ponytail は node で動き、コードを最小にする指示を毎ターン入れる）。宣言だけでは入らないので、新しい端末では `install.sh` の後に `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → `claude plugin marketplace add arkrtm/tinymemory` → `claude plugin install tinymemory@tinymemory` → `claude plugin marketplace add DietrichGebert/ponytail` → `claude plugin install ponytail@ponytail`
 - skill の `issue`・`wrap-up`（`install.sh` が `~/.claude/skills` と `~/.agents/skills` にリンクする）
-- ステータスラインと check・fmt のフック（上の表。各リポジトリは `scripts/check`・`scripts/fmt` を置けばフックが使う）
+- ステータスライン（上の表）
 
 更新は `claude plugin marketplace update <marketplace>` → `claude plugin update <plugin>`（新しいセッションから効く）。`LIVE=1 sh tests/acceptance/claude-config.sh` は、本物の `claude -p` の新しいセッションで superpowers・tinymemory・ponytail と skill の issue・wrap-up が見えることと、空の設定の置き場で上の新しい端末の手順が通り settings.json を変えないことを確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る）。
 
@@ -110,28 +109,28 @@ Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」�
 	hooksPath = ~/.config/git/hooks-nosign
 ```
 
-### bare リポジトリの関門
+### integrate setup
 
-bare のリモート（業務サーバー・NAS）には、リポジトリごとに一度 pre-receive フックを入れる。`core.hooksPath` を bare 側で `hooks` にするのは、グローバルの `core.hooksPath`（業務サーバーの `hooks-nosign`）があると bare の `hooks/` が使われないため。検査はサーバーで動くので、サーバーにもリポジトリの `scripts/check` が要る道具を入れておく:
+`integrate` はリポジトリごとの設定に従う。設定は `~/.config/integrate/repos/<origin の URL の英数字と ._- 以外を _ にした名前>` に `kind=`・`base=`・`test=`・`remote=` の 4 行で置く（リポジトリの外。worktree・clone し直しでも origin が同じなら同じ設定）:
 
-```sh
-ln -s ~/dotfiles/config/git/hooks/pre-receive <repo>.git/hooks/pre-receive
-git -C <repo>.git config core.hooksPath hooks
-```
+| kind | 使う場面 | 統合 |
+|---|---|---|
+| `bare` | サーバーの bare に同じサーバーのクローンから push（一人の開発） | base（例 develop）へ直接 push |
+| `github` | 自分の GitHub（一人の開発） | base（main）へ直接 push |
+| `pr` | 書き込み権限のあるチームの GitHub | ブランチを push して base に向けた PR を作るまで（マージはチーム） |
 
-その bare のクローン（作業する側）では、`integrate` が main へ push するように一度だけ設定する（無ければ GitHub として PR を作ろうとして止まる）:
-
-```sh
-git config integrate.bare true
-```
+- `integrate setup --kind <kind> --base <branch> --test '<command>'` で書く。引数が足りなければ、端末では推測を既定値に 1 項目ずつ尋ね、端末でなければ推測（kind: GitHub でなければ bare、持ち主が `gh` のログインなら github、ほかは pr。base: リモートの HEAD。test: `scripts/check`・`pyproject.toml`・`package.json`・`Cargo.toml`・`go.mod` から）を出して終了コード 2
+- `integrate setup --show` で今の設定を出す。既にある設定は上書きしない（終了コード 1）。上書きは `integrate setup --force …` を人が端末で実行する（エージェントの Bash は端末でないので止まる。settings.json の deny は補助で、設定のファイルを rm して作り直すことまでは捕らえない）
+- この dotfiles は `integrate setup --kind github --base main --test 'sh scripts/check'`
+- ARK-98 より前の端末: `~/.claude/hooks` のリンク（check・fmt のフック）はリンク先が無くなるので `rm ~/.claude/hooks`
 
 ### GitHub の main の保護
 
-GitHub のリポジトリは、main を PR 経由でしか変えられず、CI（`.github/workflows/check.yml` のジョブ `check` が `scripts/check` を実行）が通らないとマージできないようにする。管理者にも適用し、承認レビューの人数は求めない（一人なので）。マージは rebase だけ（squash・merge commit は無効）で、マージ後にブランチを消す。自動マージは使わない（マージは人）。リポジトリごとに一度、CI が一度走ってチェック名 `check` ができた後に:
+自分の GitHub（kind `github`）は integrate が main へ直接 push するので、PR 必須・必須チェックは入れず、強制 push と main の削除だけを禁じる。CI（`.github/workflows/check.yml`）は push の後に結果を知らせるだけ。PR を使うとき（手作業など）のマージは rebase だけ（squash・merge commit は無効）で、マージ後にブランチを消す。リポジトリごとに一度:
 
 ```sh
 gh api -X PUT repos/arkrtm/dotfiles/branches/main/protection --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":["check"]},"enforce_admins":true,"required_pull_request_reviews":{"required_approving_review_count":0},"restrictions":null,"required_linear_history":true,"allow_force_pushes":false,"allow_deletions":false}
+{"required_status_checks":null,"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"required_linear_history":true,"allow_force_pushes":false,"allow_deletions":false}
 EOF
 gh api -X PATCH repos/arkrtm/dotfiles -F allow_rebase_merge=true -F allow_squash_merge=false -F allow_merge_commit=false -F delete_branch_on_merge=true -F allow_auto_merge=false
 ```

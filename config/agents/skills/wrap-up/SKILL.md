@@ -41,11 +41,11 @@ argument-hint: "[ARK-nn]"
 残したものを「置き場所: タイトル」で 1 行ずつ列挙し、残さなかった判断も 1 行で述べる。次はグローバル指示の Git の節の方法で統合し、統合の後にもう一度この skill を使う（5. 統合の後。この skill は統合の前に走るので、ここでは区切りを促さない）。
 
 ## 5. 統合の後
-統合が済んだ後に呼ばれたときは、1〜4 をせずこれだけを順に行う。`<作業内容>` は issue の本文の `ブランチ: feature/<作業内容>`、`<元>` は `git worktree list --porcelain` の先頭（元のチェックアウト）。
+統合が済んだ後に呼ばれたときは、1〜4 をせずこれだけを順に行う。`<作業内容>` は issue の本文の `ブランチ: feature/<作業内容>`、`<元>` は `git worktree list --porcelain` の先頭（元のチェックアウト）、`<kind>`・`<base>` は `integrate setup --show` の kind と base。
 1. 統合の確認。満たさなければ 2 以降をせず、止めて人に聞く
-   - GitHub: `gh pr view feature/<作業内容> --json url,state,headRefOid` の `state` が `MERGED`、かつ `headRefOid` が `git rev-parse feature/<作業内容>` と一致する（一致しなければ PR に入っていないローカルのコミットがある）
-   - bare: `git fetch` の後、`git merge-base --is-ancestor feature/<作業内容> origin/main` が成功する
-2. 結果を Linear にコメントして Done にする: GitHub は PR の url、bare は main に入ったコミット（`git log --oneline` の該当範囲）
+   - kind が `bare`・`github`: `git fetch` の後、`git merge-base --is-ancestor feature/<作業内容> origin/<base>` が成功する
+   - kind が `pr`: `gh pr view feature/<作業内容> --json url,state,baseRefName,headRefOid` の `state` が `MERGED`、`baseRefName` が `<base>`、`headRefOid` が `git rev-parse feature/<作業内容>` と一致する（一致しなければ PR に入っていないローカルのコミットがある。チームのマージ待ちなら止めて人に聞く）
+2. 結果を Linear にコメントして Done にする: `pr` は PR の url、`bare`・`github` は `<base>` に入ったコミット（`git log --oneline` の該当範囲）
 3. relay の片づけ: `tinymemory list --json | jq -r '.[] | select((.tags | index("relay")) and (.title | test("^ARK-nn([^0-9]|$)"))) | .id'`（`ARK-nn` はこの issue の番号）の各 id を `tinymemory archive <id>`
-4. worktree とブランチ: `<元>` に移って `git pull --ff-only`（失敗したら止めて人に聞く）、`git worktree remove <元>/.worktrees/<作業内容>`（未コミット・未追跡のファイルで拒まれたら消さずに人に聞く）、ブランチを消す（bare は `git branch -d feature/<作業内容>`。GitHub は rebase マージでコミットが作り直され `-d` では消せないので、1 で一致を確かめたうえで `git branch -D feature/<作業内容>`）
+4. worktree とブランチ: `<元>` に移って `git pull --ff-only`（失敗したら止めて人に聞く）、`git worktree remove <元>/.worktrees/<作業内容>`（未コミット・未追跡のファイルで拒まれたら消さずに人に聞く）、ブランチを消す（`bare`・`github` は `git branch -d feature/<作業内容>`。`pr` はマージでコミットが作り直されると `-d` では消せないので、1 で一致を確かめたうえで `git branch -D feature/<作業内容>`）
 5. 残したものを 1 行ずつ報告し、Linear を Done にしてから `/clear`（Pi・Codex は `/new`）を促す
