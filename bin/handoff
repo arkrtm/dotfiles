@@ -1,0 +1,58 @@
+#!/bin/sh
+# 文脈を引き継いで続ける（ARK-90）: herdr の中で、このターンが終わって自分の pane のエージェントが idle になったら /clear を送り、
+# clear の後の SessionStart（handoff --session-start が印を書く）を待ってから、続きの指示をユーザーの入力として送る。
+# 裏の処理は切り離して動かす（呼んだターンが終わらないと /clear を受け付けないため）。引き継ぎの保存は呼ぶ前に済ませる（handoff skill）
+#   usage: handoff <続きの指示>       herdr の外では 1（人が /clear して続きを送る）
+#          handoff --session-start    SessionStart（clear）のフック
+# 待ちの上限: ターンの終わりは HANDOFF_TIMEOUT_MS（既定 30 分）、clear の印は HANDOFF_CLEAR_WAIT_S 秒（既定 60）
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}"
+pane="${HERDR_PANE_ID:-}"
+inside() { [ "${HERDR_ENV:-}" = 1 ] && [ -n "$pane" ]; }
+key() { printf '%s' "$1" | tr ':/' '__'; }
+log() { mkdir -p "$STATE" && printf '%s %s %s\n' "$(date '+%F %T')" "$pane" "$1" >> "$STATE/handoff.log"; }
+stop() { log "止めた: $1"; notify "handoff を止めました（$pane）: $1" 2>/dev/null || true; exit 1; }
+
+case "${1:-}" in
+  --session-start)
+    cat >/dev/null 2>&1
+    inside || exit 0
+    mkdir -p "$STATE" && : > "$STATE/handoff-$(key "$pane").cleared"
+    exit 0 ;;
+  --worker)
+    pane="$2" text="$3"
+    lock="$STATE/handoff-$(key "$pane").lock" mark="$STATE/handoff-$(key "$pane").cleared"
+    mkdir -p "$STATE"
+    # 同じ pane で動く handoff は 1 つだけ（二重に /clear を送らない）。持ち主のプロセスが居なければロックを回収する
+    if ! mkdir "$lock" 2>/dev/null; then
+      old="$(cat "$lock/pid" 2>/dev/null)"
+      if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then log "ほかの handoff が動いているので何もしない"; exit 0; fi
+      rm -rf "$lock"; mkdir "$lock" 2>/dev/null || { log "ロックを取れない"; exit 1; }
+    fi
+    echo $$ > "$lock/pid"
+    trap 'rm -rf "$lock"' EXIT
+    st="$(herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
+      | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null)"
+    case "$st" in idle|done) ;; *) stop "ターンの終わりを待てなかった（状態: ${st:-不明}）" ;; esac
+    # /clear は working にならないことがあるので herdr の --wait は使わず、clear の後の SessionStart の印を待つ
+    rm -f "$mark"
+    herdr agent prompt "$pane" /clear >/dev/null 2>&1 || stop "/clear を送れない"
+    log "/clear を送った"
+    i=0
+    while [ ! -e "$mark" ]; do
+      i=$((i + 1)); [ "$i" -le $((${HANDOFF_CLEAR_WAIT_S:-60} * 10)) ] || stop "clear の後の SessionStart が来ない"
+      sleep 0.1
+    done
+    rm -f "$mark"
+    herdr agent prompt "$pane" "$text" >/dev/null 2>&1 || stop "続きの指示を送れない"
+    log "続きを送った: $text"
+    exit 0 ;;
+esac
+
+[ -n "${1:-}" ] || { echo "usage: handoff <続きの指示>" >&2; exit 2; }
+inside || { echo "herdr の外では自動で続けられない。人が /clear して、続きの指示を送る" >&2; exit 1; }
+if command -v setsid >/dev/null 2>&1; then
+  setsid "$0" --worker "$pane" "$1" </dev/null >/dev/null 2>&1 &
+else
+  nohup "$0" --worker "$pane" "$1" </dev/null >/dev/null 2>&1 &
+fi
+echo "このターンが終わったら /clear して続けます（$pane）"
