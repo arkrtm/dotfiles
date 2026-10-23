@@ -95,6 +95,12 @@ rm -rf "$HOME/.config"; cd "$T/a/work" && integrate setup --kind bare --base dev
 grep -qx "remote=$T/a/repo.git" "$D"/* 2>/dev/null && ok "相対パスの origin は解決した場所を remote に書く" || ng "相対パスの remote: $(cfg)"
 cd "$T/b/work" && integrate setup --show </dev/null >/dev/null 2>&1; [ $? = 1 ] && ok "同じ相対パスでも別のリポジトリの設定は使わない" || ng "別のリポジトリの設定が見えた"
 
+# ---- シンボリックリンクを含む origin は git と同じく物理パスで解決する（b/link → a/sub のとき b/link/../repo.git は a/repo.git）
+mkdir -p "$T/a/sub" && ln -s "$T/a/sub" "$T/b/link"
+git -C "$T/b/work" remote set-url origin "$T/b/link/../repo.git"
+rm -rf "$HOME/.config"; cd "$T/b/work" && integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>&1
+grep -qx "remote=$T/a/repo.git" "$D"/* 2>/dev/null && ok "シンボリックリンクを含む origin は物理パスで解決する" || ng "シンボリックリンクの remote: $(cfg)"
+
 # ---- 長い URL でもファイル名の上限（255 バイト）に収まる
 long="$T/$(printf 'x%.0s' $(seq 1 200))/$(printf 'y%.0s' $(seq 1 100)).git"
 repo "$long" develop

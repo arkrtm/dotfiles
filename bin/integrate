@@ -43,7 +43,7 @@ remote_id() {
   case "$url" in
     *://*) ;;
     *) case "${url%%:*}" in
-         "$url"|*/*) d="$(cd "$root" 2>/dev/null && cd "$url" 2>/dev/null && pwd -P)" && url="$d" ;;
+         "$url"|*/*) d="$(CDPATH= cd -P "$root" 2>/dev/null && CDPATH= cd -P "$url" 2>/dev/null && pwd -P)" && url="$d" ;;
        esac ;;
   esac
   printf '%s\n' "$url"
