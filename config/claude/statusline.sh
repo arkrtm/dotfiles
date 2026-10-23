@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Claude Code のステータスライン（Nerd Font アイコン付き 2 行）。macOS 標準の bash 3.2 でも動く書き方
-# 1 行目: モデルとブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）
+# 1 行目: モデル・effort・ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）
 in=$(cat)
 get() { jq -r "$1 // empty" <<<"$in"; }
 
@@ -21,8 +21,10 @@ bar() { local n=$((($1 + 5) / 10)) s="" i; for ((i = 0; i < 10; i++)); do if ((i
 # アイコン 値 黄 赤
 meter() { local p=${2%.*}; printf '%s%s %s %3d%%%s' "$(col "$p" "$3" "$4")" "$1" "$(bar "$p")" "$p" "$R"; }
 
-# 1 行目: モデルとブランチ
+# 1 行目: モデル・effort（対応していないモデルでは入力に無い）・ブランチ
 line1="$I_MODEL $(get .model.display_name)"
+eff=$(get .effort.level)
+[ -n "$eff" ] && line1+=" ${DIM}${eff}${R}"
 br=$(git -C "$(get .workspace.current_dir)" branch --show-current 2>/dev/null)
 [ -n "$br" ] && line1+="   ${DIM}${I_BRANCH} ${br}${R}"
 
