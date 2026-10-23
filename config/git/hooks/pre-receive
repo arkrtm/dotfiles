@@ -8,6 +8,10 @@ set -eu
 objects="$(cd "$(git rev-parse --git-dir)" && pwd)/objects"
 quarantine="${GIT_QUARANTINE_PATH:-}"
 zero=0000000000000000000000000000000000000000
+# 検査の途中で止められても、一時ディレクトリを残さない
+tmp=""
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' HUP INT TERM
 while read -r old new ref; do
   [ "$ref" = refs/heads/main ] || continue
   [ "$new" != "$zero" ] || continue # 削除は receive.denyDeletes が拒む
@@ -21,5 +25,5 @@ while read -r old new ref; do
     [ -x scripts/check ] || { echo "scripts/check が無いので受け付けません" >&2; exit 1; }
     scripts/check >&2 || { echo "検査（scripts/check）が通らないので受け付けません" >&2; exit 1; }
   ); then rm -rf "$tmp"
-  else rm -rf "$tmp"; exit 1; fi
+  else exit 1; fi
 done
