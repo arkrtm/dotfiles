@@ -21,6 +21,7 @@ cat > "$T/bin/herdr" <<SH
 #!/bin/sh
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
+  "pane run") [ -e "$T/run_fail" ] && exit 1 ;;
   "pane split") n=\$(( \$(ls "$T/live" | wc -l) + 10 )); touch "$T/live/w1:p\$n"; printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "\$n" ;;
   "pane get"|"pane close")
     # $T/broken があれば通信の失敗（pane_not_found 以外のエラー）
@@ -76,6 +77,11 @@ start e2; rm -f "$T/broken"; start e3
 reset; start f1; start f2; echo '{"finished":true}' > "$T/proj/s1/subagents/agent-f1.meta.json"; touch "$T/broken"; start f3; rm -f "$T/broken"
 [ "$(splits)" = 2 ] && ok "finished でも閉じられなかった pane は数える" || ng "finished と close の失敗: splits=$(splits)"
 rm -f "$T/proj/s1/subagents"/*.meta.json
+
+# 表示を起動できなければ pane を閉じて記録も残さない
+reset; touch "$T/run_fail"; start g1; rm -f "$T/run_fail"
+[ -z "$(ls "$T/live")" ] && [ ! -e "$XDG_STATE_HOME/agent-pane/s1/g1" ] && ok "表示の起動に失敗したら pane を閉じて記録を消す" || ng "起動の失敗: live=$(ls "$T/live")"
+start g1; [ "$(splits)" = 2 ] && ok "起動に失敗した後の再通知で開き直す" || ng "再通知: $(splits)"
 
 # ---- 並行の開始でも上限を守る
 reset; for a in d1 d2 d3 d4; do start "$a" & done; wait

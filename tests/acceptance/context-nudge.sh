@@ -37,6 +37,8 @@ echo 85 > "$C/s1"; rm -f "$C/s1.nudged"; out="$(nudge '{"session_id":"s1","agent
 [ -z "$out" ] && [ ! -e "$C/s1.nudged" ] && ok "サブエージェント（agent_id）では出さず、刻みも進めない" || ng "agent_id: $out"
 out="$(nudge '{"session_id":"../s1"}')"; [ -z "$out" ] && ok "session_id に / があれば何もしない" || ng "session_id の /: $out"
 printf 'not json' | sh "$ROOT/bin/context-nudge" >/dev/null 2>&1; [ $? = 0 ] && ok "壊れた入力でも 0" || ng "壊れた入力で 0 でない"
+XDG_STATE_HOME="$T/none" sh "$ROOT/bin/context-nudge" </dev/null >/dev/null 2>&1; printf '%s' "$main" | XDG_STATE_HOME="$T/none" sh "$ROOT/bin/context-nudge" >/dev/null 2>&1
+[ $? = 0 ] && ok "状態の置き場がまだ無くても 0（Claude への警告にしない）" || ng "置き場が無いとき 0 でない"
 
 [ "$fail" = 0 ] && echo "acceptance context-nudge: ok"
 [ "$fail" = 0 ]

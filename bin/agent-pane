@@ -68,7 +68,8 @@ case "${1:-}" in
     [ -n "$new" ] || exit 0
     printf '%s\n%s\n' "$new" "$rec" > "$D/$aid"
     q="$(printf '%s' "$rec" | sed "s/'/'\\\\''/g")" # ' を '\'' にしてシングルクォートで囲む
-    herdr pane run "$new" "agent-pane view '$q'" >/dev/null 2>&1 ;;
+    # 表示を起動できなければ、空の pane と記録を残さない（上限を詰まらせず、再通知で開き直せるように）
+    herdr pane run "$new" "agent-pane view '$q'" >/dev/null 2>&1 || close "$D/$aid" ;;
   stop)
     [ -n "$aid" ] && [ -f "$D/$aid" ] && close "$D/$aid" ;;
   cleanup)

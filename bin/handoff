@@ -27,10 +27,12 @@ case "${1:-}" in
     src="$(jq -r '.source // empty' 2>/dev/null)"
     inside || exit 0
     # 追記する（/clear の直前に /resume が挟まっても、後の clear で消えないように）
-    mkdir -p "$STATE" && printf '%s\n' "${src:-unknown}" >> "$STATE/handoff-$(key "$pane").cleared"
-    # 自分たちが起こした clear なら、続きの合言葉を会話に入れる（続きが別の会話に届いたら、その会話には合言葉が無いので Claude が従わない）
+    # 自分たちが起こした clear なら、続きの合言葉を会話に入れる（続きが別の会話に届いたら、その会話には合言葉が無いので Claude が従わない）。
+    # 印を書くと裏の処理が続きを送って待ちの id を消すので、合言葉を出してから印を書く
     pend="$STATE/handoff-$(key "$pane").pending"
-    [ "$src" = clear ] && [ -s "$pend" ] && echo "handoff $(cat "$pend") の続きの指示が、この後ユーザーの入力として届く。届いたらその指示に従う"
+    id="$(cat "$pend" 2>/dev/null)"
+    [ "$src" = clear ] && [ -n "$id" ] && echo "handoff $id の続きの指示が、この後ユーザーの入力として届く。届いたらその指示に従う"
+    mkdir -p "$STATE" && printf '%s\n' "${src:-unknown}" >> "$STATE/handoff-$(key "$pane").cleared"
     exit 0 ;;
   --worker)
     pane="$2" text="$3"

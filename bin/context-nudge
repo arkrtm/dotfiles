@@ -7,16 +7,17 @@ command -v jq >/dev/null 2>&1 || exit 0
 id="$(printf '%s' "$in" | jq -r '.session_id // empty' 2>/dev/null)"
 case "$id" in ''|.|..|*/*) exit 0 ;; esac
 f="${XDG_STATE_HOME:-$HOME/.local/state}/claude-context/$id"
-p="$(cat "$f" 2>/dev/null)"
-case "$p" in ''|*[!0-9]*) exit 0 ;; esac
 # lockfd: fd 9 のファイルを排他でロックする（最大 5 秒待つ。flock が無ければ perl の flock）
 lockfd() {
   if command -v flock >/dev/null 2>&1; then flock -w 5 9
   else perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or exit 2; for (1 .. 50) { exit 0 if flock($f, LOCK_EX | LOCK_NB); select(undef, undef, undef, 0.1) } exit 1'; fi
 }
 # 判定と更新を排他にする（並行する PostToolUse で二重に出さない）
+[ -f "$f" ] || exit 0 # ステータスラインがまだ書いていない（置き場が無いとロックも作れず、シェルが 2 で終わってしまう）
 exec 9>>"$f.lock"
 lockfd || exit 0
+p="$(cat "$f" 2>/dev/null)" # 使用率もロックの中で読む（古い値で刻みを戻さない）
+case "$p" in ''|*[!0-9]*) exit 0 ;; esac
 b=$((p / 10 * 10))
 last="$(cat "$f.nudged" 2>/dev/null)"
 case "$last" in ''|*[!0-9]*) last=0 ;; esac
