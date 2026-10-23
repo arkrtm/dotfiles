@@ -1,0 +1,16 @@
+#!/bin/sh
+# Codex にレビューさせる（読み取り専用の sandbox。ファイルは変えない）
+#   usage: codex-review plan <計画書> | codex-review branch [ベースブランチ]
+# branch の最後の行は、直すべき指摘がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」
+set -eu
+usage() { echo "usage: codex-review plan <file> | branch [base]" >&2; exit 2; }
+case "${1:-}" in
+  plan)
+    [ -f "${2:-}" ] || usage
+    prompt="厳しいレビュアーとして、計画書 $2 を読んでください。方針の誤り、見落としている要件、もっと単純な代替案を重要度順に挙げてください。問題がなければ「指摘なし」とだけ書いてください。" ;;
+  branch)
+    prompt="厳しいレビュアーとして、git diff ${2:-main}...HEAD の変更をレビューしてください。バグ、壊れやすい箇所、不要な複雑さ、テストの不足を、重要度順にファイルと行を添えて挙げてください。
+テストを削除・無効化して検査を通していないかも確かめてください。最後の行には、直すべき指摘がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」とだけ書いてください。" ;;
+  *) usage ;;
+esac
+exec codex exec --sandbox read-only -c model_reasoning_effort=high "$prompt"
