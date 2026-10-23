@@ -20,6 +20,8 @@ cat > "$T/bin/codex" <<SH
 for a in "\$@"; do printf '%s\n' "\$a"; done > "$T/args"
 cat > "$T/stdin"
 while [ \$# -gt 0 ]; do [ "\$1" = -o ] && printf '指摘なし\nVERDICT: PASS\n' > "\$2"; shift; done
+# MOVE があれば、レビューの途中で HEAD を動かす
+[ -z "\${MOVE:-}" ] || git commit -q --allow-empty -m moved
 SH
 chmod +x "$T/bin/codex"
 export PATH="$T/bin:$PATH"
@@ -44,14 +46,22 @@ sh "$CR" plan x.md; rc=$?
 [ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort xhigh で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"
 has --skip-git-repo-check && ok "plan は git のリポジトリの外でも動く（--skip-git-repo-check）" || ng "plan に --skip-git-repo-check が無い"
 rm -f "$T/args"; sh "$CR" branch
-common && grep -q 'main\.\.\.HEAD' "$T/args" && grep -q 'VERDICT: PASS' "$T/args" && ok "branch は main...HEAD と VERDICT を渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
+common && grep -qF "$(git merge-base main HEAD)...$(git rev-parse HEAD)" "$T/args" && grep -q 'VERDICT: PASS' "$T/args" \
+  && ok "branch は <merge-base>...<HEAD> を SHA で固定して VERDICT と渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
 saved="$(ls "$T/.git/codex-review/"*-branch-"$(git merge-base main HEAD)-$(git rev-parse HEAD)".md 2>/dev/null)"
 [ "$(printf '%s\n' "$saved" | grep -c .)" = 1 ] && [ "$(tail -n 1 "$saved")" = 'VERDICT: PASS' ] && has "$saved" \
   && ok "branch は結果を codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存する" || ng "branch の結果の保存: $(ls -R "$T/.git/codex-review" 2>&1)"
 rm -f "$T/args"; echo leaked | sh "$CR" branch
 [ -e "$T/stdin" ] && [ ! -s "$T/stdin" ] && ok "codex に標準入力を渡さない（入力の終わりを待って止まらない）" || ng "codex に標準入力が渡る: $(cat "$T/stdin" 2>/dev/null)"
 rm -f "$T/args"; sh "$CR" branch dev
-grep -q 'dev\.\.\.HEAD' "$T/args" && ok "branch <ベース> はそのベースを使う" || ng "branch dev: $(cat "$T/args" 2>/dev/null)"
+grep -q 'dev との差分' "$T/args" && ok "branch <ベース> はそのベースを使う" || ng "branch dev: $(cat "$T/args" 2>/dev/null)"
+
+# レビューの途中で HEAD が変わったら、結果を元のコミットの名前で残さない
+rm -rf "$T/.git/codex-review"; h0="$(git rev-parse HEAD)"
+MOVE=1 sh "$CR" branch 2>"$T/err"; rc=$?
+[ "$rc" != 0 ] && ! ls "$T/.git/codex-review/"*"-$h0.md" >/dev/null 2>&1 \
+  && ok "レビューの途中で HEAD が変わったら結果を保存しない" || ng "途中で HEAD が変わった: rc=$rc $(ls "$T/.git/codex-review" 2>&1)"
+git reset -q --hard "$h0"
 
 [ "$fail" = 0 ] && echo "acceptance codex: ok"
 [ "$fail" = 0 ]

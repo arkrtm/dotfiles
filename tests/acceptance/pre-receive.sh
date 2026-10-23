@@ -50,6 +50,10 @@ mkdir -p scripts; printf '#!/bin/sh\necho y >> ignored.sh\n' > scripts/check; ch
 git add -A; git commit -qm rewrite; m0="$(main)"
 if push HEAD:main; then ng "検査が書き換えたコミットが main に入った"
 else [ "$(main)" = "$m0" ] && ok "検査がファイルを書き換えたら拒否する" || ng "書き換えの拒否の後: $(cat "$T/err")"; fi
+# 検査が一時リポジトリの HEAD を動かしても（前のコミットを検査したことになる）拒否する
+git reset -q --hard "$m0"; printf '#!/bin/sh\ngit checkout -q HEAD^\n' > scripts/check; git add -A; git commit -qm moves-head
+if push HEAD:main; then ng "検査が HEAD を動かしたコミットが main に入った"
+else [ "$(main)" = "$m0" ] && ok "検査が HEAD を動かしたら拒否する" || ng "HEAD の拒否の後: $(cat "$T/err")"; fi
 # 検査の途中でフックが TERM で止められても、一時ディレクトリを残さない（検査 → サブシェル → フックの順の親）
 mkdir -p scripts; printf '#!/bin/sh\nkill -TERM "$(ps -o ppid= -p $PPID | tr -d " ")"\nexit 0\n' > scripts/check; chmod +x scripts/check
 git add -A; git commit -qm term

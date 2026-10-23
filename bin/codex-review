@@ -14,14 +14,23 @@ case "${1:-}" in
     skip=--skip-git-repo-check # 計画書はリポジトリの外にあってもよい
     prompt="厳しいレビュアーとして、計画書 $2 を読んでください。方針の誤り、見落としている要件、もっと単純な代替案を重要度順に挙げてください。問題がなければ「指摘なし」とだけ書いてください。" ;;
   branch)
+    # 比較する 2 つのコミットは SHA で固定する（レビューの途中で参照が動いても、保存名と同じ差分を見る）
     base="${2:-main}"
+    from="$(git merge-base "$base" HEAD)"
+    head="$(git rev-parse HEAD)"
     dir="$(git rev-parse --path-format=absolute --git-common-dir)/codex-review"
     mkdir -p "$dir"
-    out="$dir/$(date +%Y%m%d-%H%M%S)-branch-$(git merge-base "$base" HEAD)-$(git rev-parse HEAD).md"
-    prompt="厳しいレビュアーとして、git diff $base...HEAD の変更をレビューしてください。バグ、壊れやすい箇所、不要な複雑さ、テストの不足を、重要度順にファイルと行を添えて挙げてください。
+    out="$dir/$(date +%Y%m%d-%H%M%S)-branch-$from-$head.md"
+    prompt="厳しいレビュアーとして、git diff $from...$head（$base との差分）の変更をレビューしてください。バグ、壊れやすい箇所、不要な複雑さ、テストの不足を、重要度順にファイルと行を添えて挙げてください。
 テストを削除・無効化して検査を通していないかも確かめてください。最後の行には、直すべき指摘がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」とだけ書いてください。" ;;
   *) usage ;;
 esac
 # フックは止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる。ponytail のフックも止まる）。
 # codex exec は標準入力が端末でないと入力の終わりを待って止まるので、標準入力は渡さない
-exec codex exec $skip ${out:+-o "$out"} --sandbox read-only -c model_reasoning_effort=xhigh -c features.hooks=false "$prompt" </dev/null
+codex exec $skip ${out:+-o "$out"} --sandbox read-only -c model_reasoning_effort=xhigh -c features.hooks=false "$prompt" </dev/null || exit
+# レビューの途中で HEAD が変わったら、作業ツリーと結果が合わないので保存しない
+if [ -n "$out" ] && [ "$(git rev-parse HEAD)" != "$head" ]; then
+  rm -f "$out"
+  echo "レビューの途中で HEAD が変わったので、結果を保存しません。やり直してください" >&2
+  exit 1
+fi

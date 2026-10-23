@@ -24,8 +24,9 @@ while read -r old new ref; do
     git checkout -q --detach "$new" || exit 1
     [ -x scripts/check ] || { echo "scripts/check が無いので受け付けません" >&2; exit 1; }
     scripts/check >&2 || { echo "検査（scripts/check）が通らないので受け付けません" >&2; exit 1; }
-    # 検査がファイルを書き換えて通ったなら、検査した内容は受け取ったコミットと違う
-    [ -z "$(git status --porcelain)" ] || { echo "検査（scripts/check）がファイルを書き換えたので受け付けません" >&2; exit 1; }
+    # 検査がファイルや HEAD を変えて通ったなら、検査した内容は受け取ったコミットと違う
+    [ -z "$(git status --porcelain)" ] && [ "$(git rev-parse HEAD)" = "$new" ] \
+      || { echo "検査（scripts/check）がファイルか HEAD を変えたので受け付けません" >&2; exit 1; }
   ); then rm -rf "$tmp"
   else exit 1; fi
 done
