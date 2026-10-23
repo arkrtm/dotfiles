@@ -3,3 +3,19 @@
 	email = arkrithm@gmail.com
 [init]
 	defaultBranch = main
+[pull]
+	rebase = true
+[rebase]
+	autoStash = true
+[push]
+	autoSetupRemote = true
+[fetch]
+	prune = true
+[rerere]
+	enabled = true
+[merge]
+	conflictStyle = diff3
+# push を受け取る bare 側で効く（この端末の bare は新旧とも、早送りでない push と削除を拒む）
+[receive]
+	denyNonFastForwards = true
+	denyDeletes = true

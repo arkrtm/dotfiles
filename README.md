@@ -57,10 +57,10 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、レビュー（計画と最終は codex-review）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/codex/config.toml.tmpl` | —（`~/.codex/config.toml` を生成） | Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分は install.sh の再実行で消える。ただしフックの承認（`hooks.state`）・プロジェクトの信頼（`projects`）・表示（`tui`）の表は引き継ぐ |
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
-| `config/git/config` | `~/.config/git/config` | user / defaultBranch。端末固有設定は `~/.gitconfig`（リポジトリ外） |
+| `config/git/config` | `~/.config/git/config` | user / defaultBranch、rebase 中心の pull・push（`push.autoSetupRemote` は git 2.37 から）、衝突は diff3、bare の守り（この端末の bare は新旧とも、早送りでない push とブランチの削除を拒む）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
 | `config/pi/` `config/herdr/` | `~/.pi/agent/…` `~/.config/herdr/…` | Pi と herdr の設定（詳細は `config/pi/README.md`） |
-| `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`） |
+| `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`、issue ごとの worktree `.worktrees/`） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale。端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |
