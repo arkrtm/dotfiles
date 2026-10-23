@@ -21,6 +21,7 @@ config/tmux/tmux.conf    .config/tmux/tmux.conf
 config/ghostty/config    .config/ghostty/config
 config/claude/settings.json  .claude/settings.json
 config/claude/hooks          .claude/hooks
+config/claude/statusline.sh  .claude/statusline.sh
 config/agents/AGENTS.md         .claude/CLAUDE.md
 config/agents/AGENTS.md         .pi/agent/AGENTS.md
 config/agents/AGENTS.md         .codex/AGENTS.md

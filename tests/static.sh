@@ -1,5 +1,5 @@
 #!/bin/sh
-# 静的な検査（ネットワーク無し・数秒）: #!/bin/sh のファイルの構文（dash があれば dash）、zsh・bash の起動ファイルの構文、
+# 静的な検査（ネットワーク無し・数秒）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
 # tmux.conf の読み込み、ssh/config の構文、SKILL.md の frontmatter、settings.json（JSON として読める、hooks の event 名が既知、
 # hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、
 # mac では plist
@@ -10,12 +10,17 @@ fail=0
 ok() { echo "ok   $1"; }
 ng() { echo "FAIL $1"; fail=1; }
 
-# ---- 構文: #!/bin/sh のファイルは dash（Debian の /bin/sh。無ければ sh）、zsh・bash の起動ファイルはそれぞれのシェル
+# ---- 構文: #!/bin/sh のファイルは dash（Debian の /bin/sh。無ければ sh）、#!/usr/bin/env bash のファイルと zsh・bash の起動ファイルはそれぞれのシェル
 SH="$(command -v dash || echo sh)"
 for f in $(git -C "$ROOT" ls-files); do
   [ -f "$ROOT/$f" ] || continue
   case "$(head -n 1 "$ROOT/$f")" in '#!/bin/sh'*) ;; *) continue ;; esac
   "$SH" -n "$ROOT/$f" 2>/dev/null && ok "構文（$(basename "$SH") -n）: $f" || ng "構文エラー: $f"
+done
+for f in $(git -C "$ROOT" ls-files); do
+  [ -f "$ROOT/$f" ] || continue
+  case "$(head -n 1 "$ROOT/$f")" in '#!/usr/bin/env bash'*) ;; *) continue ;; esac
+  bash -n "$ROOT/$f" 2>/dev/null && ok "構文（bash -n）: $f" || ng "構文エラー: $f"
 done
 if command -v zsh >/dev/null 2>&1; then
   for f in shell/zshenv shell/zprofile shell/zshrc; do
