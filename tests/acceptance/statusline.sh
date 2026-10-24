@@ -97,5 +97,12 @@ touch -t 202610241100 "$d/rollout-2026-10-24T09-00-00-a.jsonl"; touch -t 2026102
 c="$(cx2 "$T/u8")"; c="${c##*"$I_OPENAI"}"
 case "$c" in *" 90%"*) ok "再開したセッション（名前は古いが更新が新しいファイル）の記録を出す" ;; *) ng "再開したセッション: $c" ;; esac
 
+d="$T/u9/sessions/2026/10"
+for x in 10 11 12 13 14 15 16 17; do mkdir -p "$d/$x"; rl "$(win 5.0 10080 "$f7")" null > "$d/$x/rollout-a.jsonl"; touch -t "2026101${x#1}0900" "$d/$x/rollout-a.jsonl"; done
+rl "$(win 66.0 10080 "$f7")" null > "$d/10/rollout-a.jsonl"; touch -t 202610301200 "$d/10/rollout-a.jsonl" # 名前で 8 番目に新しい日: 更新は一番新しいが見ない
+rl "$(win 22.0 10080 "$f7")" null > "$d/17/rollout-a.jsonl"; touch -t 202610170900 "$d/17/rollout-a.jsonl" # 見る 7 日のうち更新が一番新しい
+c="$(cx2 "$T/u9")"; c="${c##*"$I_OPENAI"}"
+case "$c" in *" 22%"*) ok "新しい 7 日分の日のディレクトリだけを見る" ;; *) ng "7 日より前の日のディレクトリ: $c" ;; esac
+
 [ "$fail" = 0 ] && echo "acceptance statusline: ok"
 [ "$fail" = 0 ]
