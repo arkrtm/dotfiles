@@ -53,12 +53,12 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/yazi/` | `~/.config/yazi/` | GeoTIFF プレビュー（`geotiff.yazi` → `geoview`） |
 | `config/claude/settings.json` | `~/.claude/settings.json` | プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、remote-control を常に（`remoteControlAtStartup`）、hooks（状態表示 + compact・resume 後の記憶の注入 + integrate-hook・handoff・context-nudge・agent-pane）、permissions（`git push`・`gh pr merge`・`integrate --human-approved`・`integrate setup --force` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取り、`~/.config/integrate/` の編集を禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` や `bin/integrate setup --force` などは捕らえない。機械的な関門は integrate 自身。設定の上書きは integrate が端末からだけ受け付ける）、ステータスライン、ログ 365 日 |
 | `config/claude/statusline.sh` | `~/.claude/statusline.sh` | ステータスライン（2 行。Claude のモデルと effort → Codex のモデルと effort（`~/.codex/config.toml` から）→ ブランチと、コンテキスト・5 時間・週の上限のメーター → Codex の 5 時間・週の上限のメーター（`~/.codex/sessions` の更新の新しいセッションの最後の記録から）。Nerd Font のアイコン。Claude・OpenAI のアイコン（`nf-cod-claude`・`nf-cod-openai`）は Nerd Fonts 3.5.0 以降のフォントが要る） |
-| `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.pi/agent/AGENTS.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Pi・Codex で 1 本。ツールごとの読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、レビュー（計画と最終は codex-review）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
+| `config/agents/AGENTS.md` | `~/.claude/CLAUDE.md` `~/.codex/AGENTS.md` | 全プロジェクト共通の指示（Claude Code・Codex で 1 本。Codex への読み替えも書く）: 作業の哲学（優先順位と、質問・変更の量・検証・リファクタの判断。コードの書き方と量は ponytail のプラグインに任せる）、レビュー（計画と最終は codex-review）、Linear の使い方、スクショの場所（開発の手順は superpowers の skill に任せる） |
 | `config/codex/config.toml.tmpl` | —（`~/.codex/config.toml` を生成） | Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分は install.sh の再実行で消える。ただしフックの承認（`hooks.state`）・プロジェクトの信頼（`projects`）・表示（`tui`）の表は引き継ぐ |
-| `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Pi・Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
+| `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch、rebase 中心の pull・push（`push.autoSetupRemote` は git 2.37 から）、衝突は diff3、bare の守り（この端末の bare は新旧とも、早送りでない push とブランチの削除を拒む）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
-| `config/pi/` `config/herdr/` | `~/.pi/agent/…` `~/.config/herdr/…` | Pi と herdr の設定（詳細は `config/pi/README.md`） |
+| `config/herdr/config.toml` | `~/.config/herdr/config.toml` | herdr の設定（キー操作は tmux と同じ。prefix `C-g`。kitty 方式の画像を通す） |
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`、issue ごとの worktree `.worktrees/`） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
@@ -141,10 +141,12 @@ cd <各リポジトリ> && integrate setup  # 端末なら推測を既定値に�
 常時起動のサーバー（どの端末でも同じ）で herdr を立ち上げ、その中で Claude Code を動かす。PC からは herdr に入って見る。モバイルからは Claude アプリの remote-control でメインの会話を見て指示する（ARK-90）:
 
 ```sh
+curl -fsSL https://herdr.dev/install.sh | sh   # 初回だけ: herdr を ~/.local/bin に入れる（sudo なし）
 herdr                       # サーバーの persistent session に入る（無ければ作る）
 claude                      # メインの pane で。初回は /login（claude.ai）と remote-control の確認
 ```
 
+- herdr の導入: install.sh の対象外（インストーラーは版を固定しないリモートのスクリプトなので埋め込まない）。使う端末で一度、上の 1 行目を手で実行する。Claude Code の状態は herdr が画面から読むので、herdr の連携（`herdr integration install claude`）は入れない（resume のための hook を `~/.claude/settings.json` に書き足し、リンク先のリポジトリの settings.json が変わる）
 - remote-control: settings.json の `remoteControlAtStartup: true` で、対話のセッションはすべて最初からモバイルにつながる（Pro/Max の claude.ai ログインが要る。`DISABLE_TELEMETRY`・`DO_NOT_TRACK` などを設定すると使えない）。モバイルからも `/clear` を送れる
 - 自分で clear して続ける（待っている間に人が同じ pane で /clear・/resume・/branch したら取り消す）: 文脈が 60% を超えたとき（context-nudge が促す）と、issue の統合の後に次の issue を始めるとき（wrap-up skill の 5）に、Claude は handoff skill の手順で引き継ぎ（relay の記憶と Linear）を保存して `handoff` を呼ぶ。`handoff` はターンの終わりを待って `/clear` を送り、clear の後の SessionStart を待って続きの指示を送る。続きの指示は普通の入力として入るので、PC でもモバイルでも見える。続きの指示には合言葉（`[handoff <id>]`）が付き、clear の SessionStart が同じ合言葉を会話に入れたときだけ Claude が従う（送る直前に人が会話を切り替えた一瞬の隙間への備え）。閉じきれない隙間: idle を確かめてから `/clear` を送るまでの一瞬に人が `/resume` すると、再開した会話に `/clear` が届く（herdr から送る入力はセッションを指定できない）。`/clear` は会話を消さず新しい会話を始めるだけなので、`/resume` で戻せる。続きの指示は合言葉で拒まれる。経過は `~/.local/state/handoff.log`、止めたときは notify
 - サブエージェントの進み（PC だけ）: 開始で `agent-pane view` の pane を開き、終了で閉じる。1 つ目はメインの下に 3 分の 1 の高さ、2 つ目はその右（フォーカスは移さない）。同時に 2 つまで。workflow のエージェント（`agent_type` が `workflow-subagent`）は数が多いので開かず、バックグラウンドのまま

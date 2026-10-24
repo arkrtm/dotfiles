@@ -1,7 +1,7 @@
 #!/bin/sh
 # install.sh の検査: 空の HOME に対して実行し、(1) LINKS 表の全項目がリンクされること、(2) 既存ファイルが
 # 退避されること、(3) Claude Code の skill は issue と wrap-up だけを置き（ほかの skill には触らない）、
-# git の共通 hooks の設定と旧来のハーネスのものを置かないこと（ARK-67）、(4) 再実行しても同じ結果になること、(5) ponytail の band を隠すファイル（中身 off）を無ければ置き、あれば書き換えないこと
+# git の共通 hooks の設定と旧来のハーネスのもの（ARK-67）と ~/.pi（ARK-94）を置かないこと、(4) 再実行しても同じ結果になること、(5) ponytail の band を隠すファイル（中身 off）を無ければ置き、あれば書き換えないこと
 #   sh tests/install.sh
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
@@ -54,6 +54,9 @@ done | grep STALE && ng "ハーネスのものが置かれている" || ok "ハ�
 B="$HOME/.claude/.ponytail-band"
 [ "$(cat "$B" 2>/dev/null)" = off ] && ok "ponytail の band を隠すファイル（off）を置く" || ng "ponytail の band のファイル: $(cat "$B" 2>/dev/null || echo なし)"
 echo on > "$B"
+
+# pi はやめた（ARK-94）: ~/.pi に何も置かない
+[ ! -e "$HOME/.pi" ] && ok "~/.pi を作らない" || ng "~/.pi が作られた: $(ls -A "$HOME/.pi")"
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
 out=$(DOTFILES_LINKS_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 sh "$DOTFILES/install.sh")

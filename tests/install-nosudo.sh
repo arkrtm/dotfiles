@@ -1,7 +1,6 @@
 #!/bin/sh
 # sudo の無い Linux で install.sh が最後まで通り、必要なものがすべてユーザー領域に入ることの検査（ARK-37）
 # debian:12（sudo も python3 も zsh も tmux も node も無い）に git と curl だけ入れ、一般ユーザーで実行する。
-# 併せて config/pi/setup.sh（Pi/herdr エージェント層）も sudo なしでユーザー領域に入ることを確認する（Pi パッケージを取得するぶん遅い）。
 # 作業ツリー（未コミットの変更を含む）をコンテナに送るので、docker を別の端末で動かしてもよい:
 #   sh tests/install-nosudo.sh                         # docker がある端末（NAS）で
 #   DOCKER='ssh nas docker' sh tests/install-nosudo.sh # mac から NAS の docker を使う
@@ -55,13 +54,6 @@ if [ "${1:-}" = --check ]; then
   sh="$(clean sh -c 'PATH="$HOME/.local/bin:$PATH"; command -v tinymemory' 2>&1 || true)"
   [ "$sh" = "$HOME/.local/bin/tinymemory" ] && ok "tinymemory の shim が ~/.local/bin にある（Claude Code の hook が探す場所）" || ng "tinymemory の shim: ${sh:-なし}"
 
-  # config/pi/setup.sh の成果物がすべてユーザー領域に入ったか（Pi 本体・パッケージ・yamlfix、sudo なし）
-  pb="$(zq 'command -v pi' || true)"
-  under_home "$pb" && ok "pi がユーザー領域に入る（$pb）" || ng "pi がユーザー領域に無い（${pb:-なし}）"
-  [ -d "$HOME/.pi/agent/npm/node_modules/pi-subagents" ] && ok "Pi パッケージが ~/.pi に入る（pi-subagents）" || ng "Pi パッケージが ~/.pi に無い"
-  yf="$(zq 'command -v yamlfix' || true)"
-  under_home "$yf" && ok "yamlfix がユーザー領域に入る（$yf）" || ng "yamlfix がユーザー領域に無い（${yf:-なし}）"
-
   # Codex（ARK-87）: 公式のインストーラーで ~/.local/bin に入り、起動ファイルに PATH を書き足さない。config.toml はテンプレートから生成され、
   # 既存は 1 回だけ退避（2 回目は同じ中身なので退避しない）。ponytail が入り、tinymemory の hook がある
   cv="$(clean "$HOME/.local/bin/codex" --version 2>&1 || true)"
@@ -93,9 +85,6 @@ if [ "${1:-}" = --in-container ]; then
     # 想定外の warning / error は失敗にする（2 回目の fnm の「インストール済み」だけは想定内）
     if grep -iE "warning|error" /tmp/install.log | grep -v "Version already installed"; then echo "FAIL install.sh（$run 回目）が warning / error を出した"; exit 1; fi
   done
-  # Pi/herdr エージェント層（config/pi/setup.sh、sudo なし）。npm は warning が多いので
-  # 終了コードだけで判定し、成果物は --check で確認する。ネットワークで Pi パッケージを入れるので遅い
-  su - u -c "sh ~/dotfiles/config/pi/setup.sh" >/tmp/setup.log 2>&1 || { tail -40 /tmp/setup.log; echo "FAIL config/pi/setup.sh が失敗した"; exit 1; }
   exec su - u -c "sh ~/dotfiles/tests/install-nosudo.sh --check"
 fi
 

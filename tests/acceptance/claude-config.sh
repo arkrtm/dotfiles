@@ -74,11 +74,14 @@ done
 # handoff は Claude Code の skill（herdr と Claude Code の clear に依る）なので ~/.claude/skills だけ
 check "install.sh の LINKS 表に skill の handoff（.claude/skills）があり、.agents/skills には無い" \
   sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/skills/handoff  *.claude/skills/handoff\$' && ! printf '%s\n' \"\$1\" | grep -qF ' .agents/skills/handoff'" _ "$links"
-for d in .claude/CLAUDE.md .pi/agent/AGENTS.md .codex/AGENTS.md; do
+for d in .claude/CLAUDE.md .codex/AGENTS.md; do
   check "install.sh の LINKS 表にグローバル指示（$d）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/agents/AGENTS.md  *$d\$'" _ "$links"
 done
 check "install.sh の LINKS 表にグローバルの gitignore（config/git/ignore）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/git/ignore  *\.config/git/ignore\$'" _ "$links"
 check "config/git/ignore は .superpowers/ を除外する" grep -qx '\.superpowers/' "$ROOT/config/git/ignore"
+
+# ---- pi はやめた（ARK-94）: config/pi が無い
+check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
 
 # ---- グローバルの CLAUDE.md: 手順は superpowers、Linear の記録は /issue・/wrap-up、plan の置き場所
 C="$ROOT/config/agents/AGENTS.md"
