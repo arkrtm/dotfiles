@@ -1,5 +1,6 @@
 #!/bin/sh
-# agent-pane の受け入れ検査（ARK-90）: 偽の herdr で、herdr の中ではサブエージェントの開始で pane を分けて view を動かし（同時に 2 つまで。
+# agent-pane の受け入れ検査（ARK-90・ARK-100）: 偽の herdr で、herdr の中ではサブエージェントの開始で pane を分けて view を動かし
+# （1 つ目はメインの上に 3 分の 1、2 つ目はその右。同時に 2 つまで。workflow のエージェントでは開かない。
 # 同じエージェントの再通知・並行の開始でも上限を守る）、終了で閉じること。消えた pane・中断で finished のものは数えず閉じ、
 # cleanup はすべて閉じること。herdr の外では何もしないこと。view は記録（jsonl）の文とツールの呼び出しを 1 行ずつ出すこと
 #   sh tests/acceptance/agent-pane.sh      失敗した項目と要約だけ
@@ -22,6 +23,7 @@ cat > "$T/bin/herdr" <<SH
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "pane run") [ -e "$T/run_fail" ] && exit 1 ;;
+  "pane swap") [ -e "$T/swap_fail" ] && exit 1 ;;
   "pane split") n=\$(( \$(ls "$T/live" | wc -l) + 10 )); touch "$T/live/w1:p\$n"; printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "\$n" ;;
   "pane get"|"pane close")
     # $T/broken があれば通信の失敗（pane_not_found 以外のエラー）
@@ -34,8 +36,8 @@ SH
 chmod +x "$T/bin/herdr"
 export PATH="$ROOT/bin:$T/bin:$PATH"
 in_herdr() { HERDR_ENV=1 HERDR_PANE_ID=w1:p1 "$@"; }
-ev() { printf '{"session_id":"s1","transcript_path":"%s/proj/s1.jsonl","cwd":"%s","agent_id":"%s"}' "$T" "$T" "$1"; }
-start() { ev "$1" | in_herdr agent-pane start; }
+ev() { printf '{"session_id":"s1","transcript_path":"%s/proj/s1.jsonl","cwd":"%s","agent_id":"%s","agent_type":"%s"}' "$T" "$T" "$1" "${2:-general-purpose}"; }
+start() { ev "$@" | in_herdr agent-pane start; }
 stop() { ev "$1" | in_herdr agent-pane stop; }
 splits() { grep -c '^pane split' "$LOG" 2>/dev/null || true; }
 reset() { rm -rf "$LOG" "$XDG_STATE_HOME" "$T/live"/*; }
@@ -45,14 +47,26 @@ ev a1 | agent-pane start; [ $? = 0 ] && [ ! -e "$LOG" ] && ok "herdr の外で�
 
 # ---- 開始で pane を分けて view、上限 2
 start a1; start a2
-[ "$(splits)" = 2 ] && [ "$(grep -c '^pane run' "$LOG")" = 2 ] && grep -q "^pane split --pane w1:p1 --direction right --no-focus" "$LOG" \
-  && ok "開始でメインの pane を分け（フォーカスは移さない）view を動かす" || ng "開始: $(cat "$LOG")"
+[ "$(splits)" = 2 ] && [ "$(grep -c '^pane run' "$LOG")" = 2 ] && ok "開始で pane を分けて view を動かす" || ng "開始: $(cat "$LOG")"
+[ "$(sed -n 1,2p "$LOG" | tr '\n' '|')" = "pane split --pane w1:p1 --direction down --ratio 0.333 --no-focus --cwd $T|pane swap --source-pane w1:p1 --target-pane w1:p10|" ] \
+  && ok "1 つ目はメインを下に分けて入れ替える（新しい pane が上 3 分の 1、フォーカスは移さない）" || ng "1 つ目の分け方: $(cat "$LOG")"
+grep -q "^pane split --pane w1:p10 --direction right --no-focus --cwd $T\$" "$LOG" && [ "$(grep -c '^pane swap' "$LOG")" = 1 ] \
+  && ok "2 つ目は開いているサブの pane を右に分ける（入れ替えない）" || ng "2 つ目の分け方: $(cat "$LOG")"
 grep -q "pane run w1:p10 agent-pane view '$T/proj/s1/subagents/agent-a1.jsonl'" "$LOG" && ok "view にサブエージェントの記録のパスを渡す" || ng "view の引数: $(grep 'pane run' "$LOG")"
 start a3; [ "$(splits)" = 2 ] && ok "同時に 2 つを超えたら開かない（バックグラウンドのまま）" || ng "上限: $(splits)"
 start a1; [ "$(splits)" = 2 ] && ok "同じエージェントの再通知では開かない" || ng "再通知で開いた"
 stop a1; ! [ -e "$T/live/w1:p10" ] && grep -q '^pane close w1:p10' "$LOG" && ok "終了でその pane を閉じる" || ng "終了: $(cat "$LOG")"
 start a4; [ "$(splits)" = 3 ] && ok "閉じた分だけまた開ける" || ng "閉じた後: $(splits)"
 rm -f "$T/live/w1:p11"; start a2; [ "$(splits)" = 4 ] && ok "人が閉じた pane は、同じエージェントの再通知で開き直す" || ng "開き直し: $(splits)"
+
+# ---- workflow のエージェントでは開かず、何も記録しない
+reset; start w1 workflow-subagent
+[ ! -e "$LOG" ] && [ -z "$(ls "$XDG_STATE_HOME/agent-pane/w1_p1" 2>/dev/null)" ] && ok "workflow のエージェントでは開かない" || ng "workflow: $(cat "$LOG" 2>/dev/null)"
+
+# ---- 入れ替えに失敗したら、開いた pane を閉じて記録を残さない
+reset; touch "$T/swap_fail"; start s1; rm -f "$T/swap_fail"
+[ -z "$(ls "$T/live")" ] && [ ! -e "$XDG_STATE_HOME/agent-pane/w1_p1/s1" ] && ! grep -q '^pane run' "$LOG" \
+  && ok "入れ替えに失敗したら pane を閉じて記録を消す" || ng "入れ替えの失敗: $(cat "$LOG")"
 
 # ---- 記録のパスに ' があっても view のコマンドが壊れない（シェルが解釈した結果がそのパス）
 reset; Q="$T/it's"; mkdir -p "$Q/s1/subagents"

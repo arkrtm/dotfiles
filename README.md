@@ -147,8 +147,8 @@ claude                      # メインの pane で。初回は /login（claude.
 
 - remote-control: settings.json の `remoteControlAtStartup: true` で、対話のセッションはすべて最初からモバイルにつながる（Pro/Max の claude.ai ログインが要る。`DISABLE_TELEMETRY`・`DO_NOT_TRACK` などを設定すると使えない）。モバイルからも `/clear` を送れる
 - 自分で clear して続ける（待っている間に人が同じ pane で /clear・/resume・/branch したら取り消す）: 文脈が 60% を超えると context-nudge が促し、Claude は handoff skill の手順で引き継ぎ（relay の記憶と Linear）を保存して `handoff` を呼ぶ。`handoff` はターンの終わりを待って `/clear` を送り、clear の後の SessionStart を待って続きの指示を送る。続きの指示は普通の入力として入るので、PC でもモバイルでも見える。続きの指示には合言葉（`[handoff <id>]`）が付き、clear の SessionStart が同じ合言葉を会話に入れたときだけ Claude が従う（送る直前に人が会話を切り替えた一瞬の隙間への備え）。閉じきれない隙間: idle を確かめてから `/clear` を送るまでの一瞬に人が `/resume` すると、再開した会話に `/clear` が届く（herdr から送る入力はセッションを指定できない）。`/clear` は会話を消さず新しい会話を始めるだけなので、`/resume` で戻せる。続きの指示は合言葉で拒まれる。経過は `~/.local/state/handoff.log`、止めたときは notify
-- サブエージェントの進み（PC だけ）: 開始でメインの pane を右に分けて `agent-pane view` を動かし、終了で閉じる。同時に 2 つまで（workflow のように数が多いときはバックグラウンドのまま）
-- 限界: workflow のエージェントを見分ける情報がフックに無いので数で近似している。チームのメンバー（agent teams）の split pane は tmux・iTerm2 だけで、herdr には出ない（in-process のメンバーは SubagentStart で上と同じ pane に出る）。`/clear` の後もモバイルの接続が続くことは資料の記述から読み取ったもの
+- サブエージェントの進み（PC だけ）: 開始で `agent-pane view` の pane を開き、終了で閉じる。1 つ目はメインの上に 3 分の 1 の高さ、2 つ目はその右。同時に 2 つまで。workflow のエージェント（`agent_type` が `workflow-subagent`）は数が多いので開かず、バックグラウンドのまま
+- 限界: workflow で `agentType` を指定したエージェントはフックの入力で見分けられないので、普通のサブエージェントと同じに開く（2 つまで）。チームのメンバー（agent teams）の split pane は tmux・iTerm2 だけで、herdr には出ない（in-process のメンバーは SubagentStart で上と同じ pane に出る）。`/clear` の後もモバイルの接続が続くことは実機で確かめた（2026-10-24）
 
 ### GitHub の main の保護
 

@@ -2,7 +2,8 @@
 # サブエージェントの進みを herdr の別 pane に見せる（ARK-90。PC 用。モバイルには出ない）。
 #   usage: agent-pane start|stop|cleanup   SubagentStart・SubagentStop・SessionStart（clear）と SessionEnd のフック（標準入力にフックの JSON）
 #          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）
-# herdr の中だけ。同時に開くのは 2 つまで（workflow のように数が多いときはバックグラウンドのまま。workflow を見分ける情報がフックに無いので数で近似）。
+# herdr の中だけ。1 つ目はメインの上に 3 分の 1 の高さ（下に分けてから入れ替える。herdr の split は right と down だけ）、2 つ目はその右。
+# 同時に開くのは 2 つまで。workflow のエージェント（agent_type が workflow-subagent）は数が多いので開かない（ARK-100）。
 # 開いた pane は state/agent-pane/<メインの pane>/<agent_id>（1 行目 pane、2 行目 記録）に覚え、消えた pane・中断（meta.json の finished）は数えずに閉じる
 MAX=2
 if [ "${1:-}" = view ]; then
@@ -48,16 +49,17 @@ case "$aid" in */*) exit 0 ;; esac
 case "${1:-}" in
   start)
     [ -n "$aid" ] || exit 0
+    [ "$(j .agent_type)" = workflow-subagent ] && exit 0
     lock
     # 同じエージェントの pane がまだあれば何もしない。人が閉じていたら開き直す
     if [ -e "$D/$aid" ]; then gone get "$(sed -n 1p "$D/$aid")" || exit 0; rm -f "$D/$aid"; fi
-    n=0
+    n=0 top=""
     for f in "$D"/*; do
       [ -f "$f" ] || continue
       if gone get "$(sed -n 1p "$f")"; then rm -f "$f"; continue; fi
       r="$(sed -n 2p "$f")"
       if [ "$(jq -r '.finished // false' "${r%.jsonl}.meta.json" 2>/dev/null)" = true ]; then close "$f"; [ -e "$f" ] || continue; fi
-      n=$((n + 1))
+      n=$((n + 1)); top="$(sed -n 1p "$f")"
     done
     [ "$n" -lt "$MAX" ] || exit 0
     tp="$(j .transcript_path)"
@@ -65,9 +67,12 @@ case "${1:-}" in
     case "$aid" in agent-*) a="$aid" ;; *) a="agent-$aid" ;; esac
     rec="${tp%.jsonl}/subagents/$a.jsonl"
     cwd="$(j .cwd)"
-    new="$(herdr pane split --pane "$HERDR_PANE_ID" --direction right --no-focus ${cwd:+--cwd "$cwd"} 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
+    # 開いているサブの pane があればその右、無ければメインの下に分けてメインと入れ替える（サブが上、メインが下）
+    if [ -n "$top" ]; then set -- --pane "$top" --direction right; else set -- --pane "$HERDR_PANE_ID" --direction down --ratio 0.333; fi
+    new="$(herdr pane split "$@" --no-focus ${cwd:+--cwd "$cwd"} 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
     [ -n "$new" ] || exit 0
     printf '%s\n%s\n' "$new" "$rec" > "$D/$aid"
+    if [ -z "$top" ]; then herdr pane swap --source-pane "$HERDR_PANE_ID" --target-pane "$new" >/dev/null 2>&1 || { close "$D/$aid"; exit 0; }; fi
     q="$(printf '%s' "$rec" | sed "s/'/'\\\\''/g")" # ' を '\'' にしてシングルクォートで囲む
     # 表示を起動できなければ、空の pane と記録を残さない（上限を詰まらせず、再通知で開き直せるように）
     herdr pane run "$new" "agent-pane view '$q'" >/dev/null 2>&1 || close "$D/$aid" ;;
