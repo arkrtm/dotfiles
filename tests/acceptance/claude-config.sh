@@ -38,7 +38,7 @@ for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force
   check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
 done
 # 既定のモデルは Opus 5.5 high（ARK-101。Opus 5.5 では最上位の effortLevel は無視されるので modelSettings に書く）
-check "settings.json の model が opus" [ "$(jq -r '.model' "$S")" = opus ]
+check "settings.json の model が opus[1m]（claude plugin が書き換える形。Opus 5.5 では opus と同じ）" [ "$(jq -r '.model' "$S")" = 'opus[1m]' ]
 check "settings.json の modelSettings の claude-opus-5-5 の effortLevel が high" [ "$(jq -r '.modelSettings["claude-opus-5-5"].effortLevel' "$S")" = high ]
 check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.type) \(.command)"' "$S")" = 'command $HOME/.claude/statusline.sh' ]
 # check・fmt のフック（scripts/check・scripts/fmt の決まり）と bare の pre-receive はやめた（ARK-98）
