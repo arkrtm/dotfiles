@@ -1,6 +1,6 @@
 # bash 用（zsh が入っていない linux のログインシェル向け）
 
-# 環境変数（PATH・FNM_DIR・EDITOR・GODEBUG の除去）は shell/zshenv と共通（POSIX sh で読める書き方にしてある）
+# 環境変数（PATH・FNM_DIR・EDITOR）は shell/zshenv と共通（POSIX sh で読める書き方にしてある）
 [ -f "$HOME/.zshenv" ] && . "$HOME/.zshenv"
 
 # 以降は対話シェルのみ

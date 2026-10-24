@@ -1,4 +1,4 @@
-# chsh できない環境（UGOS 等）向け: 対話ログインなら zsh に切り替える
+# chsh できない環境向け: 対話ログインなら zsh に切り替える
 # zsh が無ければ bash のまま。bash を使いたい時は NO_ZSH=1 bash -l
 # install.sh が入れる zsh（~/.local/bin）は bashrc で PATH に入る前なので、ここで探す場所に足す
 case $- in

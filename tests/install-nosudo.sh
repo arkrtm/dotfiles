@@ -46,8 +46,6 @@ if [ "${1:-}" = --check ]; then
   i="$(clean script -qec "$HOME/.local/bin/zsh -ic 'echo fnm=\${FNM_MULTISHELL_PATH:+ok}'" /dev/null 2>&1 | tr -d '\r' | sed "s/$(printf '\033')\[[?0-9;]*[a-zA-Z]//g" || true)" # 端末の制御シーケンスは除く
   [ "$i" = "fnm=ok" ] && ok "対話 zsh で zshrc がエラーなく読まれ、fnm env が効く" || ng "対話 zsh の zshrc: $i"
 
-  g="$(clean env GODEBUG=tlskyber=0 "$HOME/.local/bin/zsh" -c 'echo "g=${GODEBUG:-none}"' 2>&1 || true)"
-  [ "$g" = "g=none" ] && ok "廃止済みの GODEBUG を zshenv が外す（NAS の go.sh 対策）" || ng "GODEBUG が残る: $g"
   p="$(clean "$HOME/.local/bin/zsh" -lc 'echo "$PATH"' 2>&1 || true)"
   case "$p" in "$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.local/share/mise/shims:"*) ok "ログイン zsh（zprofile）でも PATH の先頭はユーザー領域で重複が無い" ;; *) ng "ログイン zsh の PATH: $p" ;; esac
   sh="$(clean sh -c 'PATH="$HOME/.local/bin:$PATH"; command -v tinymemory' 2>&1 || true)"
