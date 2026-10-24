@@ -1,9 +1,8 @@
 #!/bin/sh
 # sudo の無い Linux で install.sh が最後まで通り、必要なものがすべてユーザー領域に入ることの検査（ARK-37）
 # debian:12（sudo も python3 も zsh も tmux も node も無い）に git と curl だけ入れ、一般ユーザーで実行する。
-# 作業ツリー（未コミットの変更を含む）をコンテナに送るので、docker を別の端末で動かしてもよい:
-#   sh tests/install-nosudo.sh                         # docker がある端末（NAS）で
-#   DOCKER='ssh nas docker' sh tests/install-nosudo.sh # mac から NAS の docker を使う
+# 作業ツリー（未コミットの変更を含む）を標準入力でコンテナに送る。この端末の docker で実行する（DOCKER で docker のコマンドを替えられる）:
+#   sh tests/install-nosudo.sh
 # ネットワークからツールを取得するので数分かかる。
 set -eu
 
