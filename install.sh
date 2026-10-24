@@ -154,7 +154,7 @@ if [ ! -x "$CODEX" ]; then
   fi
   [ -x "$CODEX" ] || echo "warning: Codex を入れられなかった（続行。install.sh の再実行で入れ直す）"
 fi
-# ponytail は宣言だけでは入らない（ログインは要らない）。superpowers は Codex 公式のカタログにあり、ログインの後に README の手順で入れる
+# ponytail は宣言だけでは入らない（ログインは要らない）。superpowers は Codex 公式のカタログにあり、ログインの後に config/codex/README.md の手順で入れる
 if [ -x "$CODEX" ]; then
   "$CODEX" plugin marketplace add DietrichGebert/ponytail >/dev/null && "$CODEX" plugin add ponytail@ponytail >/dev/null \
     || echo "warning: Codex に ponytail を入れられなかった（続行）"

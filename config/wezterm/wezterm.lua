@@ -1,4 +1,4 @@
--- WezTerm（Windows）。Windows の環境変数 WEZTERM_CONFIG_FILE でこのファイルを指す（README の WezTerm の節）
+-- WezTerm（Windows）。Windows の環境変数 WEZTERM_CONFIG_FILE でこのファイルを指す（config/wezterm/README.md）
 -- WSL へは WezTerm 内蔵の SSH で localhost の sshd につなぐ。ConPTY（WSL ドメイン）は kitty 方式の画像を落とし、
 -- iTerm2 方式でも位置がずれる。wsl.exe 越しの `wezterm cli proxy` は Windows の GUI からだと応答が返らず止まる
 -- 既定は WSL。Ctrl+Shift+1 で WSL、Ctrl+Shift+2 で PowerShell のタブ、Ctrl+Shift+O でランチャー

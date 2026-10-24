@@ -1,8 +1,8 @@
 #!/bin/sh
 # Claude Code の構成の受け入れ検査: settings.json（プラグインの宣言と hook の配線）、skill（issue・wrap-up のリンク）、
-# グローバル指示（config/agents/AGENTS.md。CC・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、README の新しい端末の手順。
+# グローバル指示（config/agents/AGENTS.md。CC・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、config/claude/README.md の新しい端末の手順。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・sh tests/install-nosudo.sh）は別に実行する。
-# LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で README の
+# LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で config/claude/README.md の
 # 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
 # 本物の設定で claude を動かすので、tmux の中では hook がウィンドウ名と通知に副作用を出す）
 #   sh tests/acceptance/claude-config.sh        失敗した項目と要約だけ
@@ -105,7 +105,7 @@ for w in '| 設計・計画 | サブエージェント | `opus`・`xhigh` |' '| 
 done
 check "グローバルの CLAUDE.md: 作業の哲学に優先順位がある" grep -q '正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ' "$C"
 check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
-check "グローバルの CLAUDE.md: 経緯（harness）は書かず README に任せる" [ "$(grep -c harness "$C")" = 0 ]
+check "グローバルの CLAUDE.md: 経緯（harness）は書かない" [ "$(grep -c harness "$C")" = 0 ]
 check "グローバルの CLAUDE.md: issue は /issue で始める" grep -q '`/issue ARK-nn`' "$C"
 check "グローバルの CLAUDE.md: /wrap-up は統合の前に作業ブランチの上で" grep -q '統合の前に、作業ブランチの上で `/wrap-up`' "$C"
 check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/ に置き、本文が正本" sh -c "grep -q '\.superpowers/plans/' '$C' && grep -q '本文が正本' '$C'"
@@ -169,20 +169,20 @@ done
 check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q '開発の手順はプラグイン superpowers' "$ROOT/CLAUDE.md"
 check "dotfiles の CLAUDE.md がコミットの前に流すテストを書く（static・install・acceptance）" \
   sh -c "grep -q 'sh tests/static.sh' '$ROOT/CLAUDE.md' && grep -q 'sh tests/install.sh' '$ROOT/CLAUDE.md' && grep -q 'sh tests/acceptance.sh' '$ROOT/CLAUDE.md'"
-check "README に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/README.md"
-check "README に tests/ の説明がある" grep -q '`tests/`' "$ROOT/README.md"
-# README の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
-steps="$(grep -F '新しい端末では' "$ROOT/README.md" | grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' | grep -o '`claude plugin [^`]*`' | tr -d '`')"
-check "README の新しい端末の手順を読み取れた（claude plugin が 6 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 6 ]
+check "config/claude/README.md に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/config/claude/README.md"
+check "tests/README.md に tests/ の説明がある" grep -q '`tests/`' "$ROOT/tests/README.md"
+# config/claude/README.md の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
+steps="$(grep -F '新しい端末では' "$ROOT/config/claude/README.md" | grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' | grep -o '`claude plugin [^`]*`' | tr -d '`')"
+check "config/claude/README.md の新しい端末の手順を読み取れた（claude plugin が 6 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 6 ]
 add_before_install() { printf '%s\n' "$steps" | sed -n "\|marketplace add $1|,\$p" | grep -q "install $2"; } # $1 = marketplace の repo、$2 = plugin
-check "README の手順で、公式の marketplace の add が superpowers の install より前" add_before_install anthropics/claude-plugins-official superpowers@claude-plugins-official
-check "README の手順で、tinymemory の marketplace の add が tinymemory の install より前" add_before_install arkrtm/tinymemory tinymemory@tinymemory
-check "README の手順で、ponytail の marketplace の add が ponytail の install より前" add_before_install DietrichGebert/ponytail ponytail@ponytail
+check "config/claude/README.md の手順で、公式の marketplace の add が superpowers の install より前" add_before_install anthropics/claude-plugins-official superpowers@claude-plugins-official
+check "config/claude/README.md の手順で、tinymemory の marketplace の add が tinymemory の install より前" add_before_install arkrtm/tinymemory tinymemory@tinymemory
+check "config/claude/README.md の手順で、ponytail の marketplace の add が ponytail の install より前" add_before_install DietrichGebert/ponytail ponytail@ponytail
 
 # ---- git の設定: 共通 hooks の場所は置かない（ARK-67 の結果。各リポジトリの .git/hooks がそのまま効く）
 check "config/git/config に core.hooksPath が無い" sh -c "! git config -f '$ROOT/config/git/config' --get core.hooksPath"
 
-# ---- LIVE: 新しいセッションの起動情報（init）のプラグインと skill。README の新しい端末の手順
+# ---- LIVE: 新しいセッションの起動情報（init）のプラグインと skill。config/claude/README.md の新しい端末の手順
 if [ -n "${LIVE:-}" ]; then
   D="$(mktemp -d)"; L="$D/live.jsonl"; live_fail=0
   trap 'rm -rf "$D"' EXIT
@@ -196,9 +196,11 @@ if [ -n "${LIVE:-}" ]; then
   for s in superpowers:brainstorming superpowers:test-driven-development tinymemory:remember issue wrap-up; do
     lcheck "（LIVE）skill $s が見える" has '.skills' "$s"
   done
+  # リンクの先は元のチェックアウト（worktree list の最初）。元のチェックアウトから流せば $S と同じ
+  M="$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
   lcheck "（LIVE）~/.claude/settings.json はリポジトリへのリンクのまま（plugin の操作で実ファイルに置き換わっていない）" \
-    [ "$(readlink "$HOME/.claude/settings.json")" = "$S" ]
-  # README の新しい端末の手順（ARK-64 AC3）: 空の設定の置き場に settings.json の写しを置き、手順の `claude plugin …` を順に実行する
+    [ "$(readlink "$HOME/.claude/settings.json")" = "$M/config/claude/settings.json" ]
+  # config/claude/README.md の新しい端末の手順（ARK-64 AC3）: 空の設定の置き場に settings.json の写しを置き、手順の `claude plugin …` を順に実行する
   # 比べる基準は写しを取った時点の内容（実行中に本物の settings.json が書き換わっても誤って落ちないように）
   N="$D/newterm"; mkdir -p "$N"; cp "$S" "$D/settings.before.json"; cp "$D/settings.before.json" "$N/settings.json"
   # 手順の 1 つずつを語に分けて渡す（シェルを通さない）

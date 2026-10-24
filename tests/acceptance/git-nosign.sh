@@ -1,7 +1,7 @@
 #!/bin/sh
 # 業務サーバーの署名消しの受け入れ検査（ARK-85）: core.hooksPath を config/git/hooks-nosign に向けた一時リポジトリで、
 # commit と merge のメッセージから AI の Co-Authored-By 行だけが消え、人の共同作者・件名・本文は残ること。
-# 指さないリポジトリ（私用の端末）では署名が残ること。AGENTS.md に「署名を付けない」が無く、README に業務サーバーの手順があること
+# 指さないリポジトリ（私用の端末）では署名が残ること。AGENTS.md に「署名を付けない」が無く、config/git/README.md に業務サーバーの手順があること
 #   sh tests/acceptance/git-nosign.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/git-nosign.sh  通った項目も
 set -eu
@@ -49,6 +49,6 @@ repo "$T/private" ""
 [ "$(git -C "$T/private" log -1 --format=%B | ai)" = 2 ] && ok "hooksPath なし: 署名の行は残る" || ng "hooksPath なし: 署名の行が消えた"
 
 grep -q '署名' "$ROOT/config/agents/AGENTS.md" && ng "AGENTS.md に署名の記述が残っている" || ok "AGENTS.md に「署名を付けない」が無い"
-grep -q 'hooksPath = ~/.config/git/hooks-nosign' "$ROOT/README.md" && ok "README に業務サーバーの hooksPath の手順がある" || ng "README に業務サーバーの hooksPath の手順が無い"
+grep -q 'hooksPath = ~/.config/git/hooks-nosign' "$ROOT/config/git/README.md" && ok "config/git/README.md に業務サーバーの hooksPath の手順がある" || ng "config/git/README.md に業務サーバーの hooksPath の手順が無い"
 
 exit $fail

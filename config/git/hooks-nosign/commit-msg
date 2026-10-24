@@ -1,4 +1,4 @@
 #!/bin/sh
-# 業務サーバーだけ ~/.gitconfig の core.hooksPath で指す（README）。コミットメッセージから AI の Co-Authored-By 行を消す（人の共同作者は残す）
+# 業務サーバーだけ ~/.gitconfig の core.hooksPath で指す（config/git/README.md の「業務サーバー」）。コミットメッセージから AI の Co-Authored-By 行を消す（人の共同作者は残す）
 grep -viE '^co-authored-by:.*(claude|anthropic|codex|openai)' "$1" > "$1.nosign"
 mv "$1.nosign" "$1"
