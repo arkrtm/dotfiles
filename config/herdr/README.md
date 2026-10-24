@@ -1,6 +1,6 @@
 # config/herdr
 
-- `config/herdr/config.toml`: herdr の設定（キー操作は tmux に合わせる。kitty 方式の画像を通す）
+- `config/herdr/config.toml`: herdr の設定（キー操作は tmux に合わせる。ただし prefix `r` はサイズ変更モード（続けて h/j/k/l、Esc で抜ける）、設定の再読込は prefix `R`。prefix `C-g`。kitty 方式の画像を通す）
 
 ## 常時起動サーバー（herdr と Claude Code）
 
