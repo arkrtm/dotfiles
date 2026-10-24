@@ -50,13 +50,13 @@ fi
 d7=$(get .rate_limits.seven_day.used_percentage)
 [ -n "$d7" ] && line2+="$(meter "$I_7D" "$d7" 50 80)   "
 
-# Codex の使用量（ARK-95）: 更新の新しいセッションから遡り、rate_limits のある最新の記録（ファイルが数 MB あるので jq には grep で絞った行だけを渡す）
-# 更新の新しいファイルから、記録のある 2 ファイルの最後の 5 行ずつを古い順に集める（再開したセッションは古いファイルに追記されるので、名前でなく更新時刻で選ぶ）
-# shortcut: 2 ファイルとも最後の 5 行が途切れた行だけなら出さない。Codex を並列で何本も動かす使い方になったら増やす
+# Codex の使用量（ARK-95）: 更新の新しいセッションから、記録のある 2 ファイルの最後の 5 行ずつを古い順に集める（ファイルが数 MB あるので jq には grep で絞った行だけを渡す。
+# 再開したセッションは古いファイルに追記されるので、名前でなく更新時刻で選ぶ）
+# shortcut: 2 ファイルとも最後の 5 行が読めない行（} で終わるのに JSON でない）だけなら出さない。Codex を並列で何本も動かす使い方になったら増やす
 l=""; n=0
 while ((n < 2)) && IFS= read -r f; do
-  # 読めないファイルがあると grep は 2 を返すので、終了コードでなく出力で決める
-  m=$(grep -F '"rate_limits":{"limit_id":"codex"' "$f" 2>/dev/null | tail -n 5); [ -n "$m" ] || continue
+  # 読めないファイルがあると grep は 2 を返すので、終了コードでなく出力で決める。書き込み途中の行は } で終わらないことが多いので、途切れた行だけのファイルは数えない
+  m=$(grep -F '"rate_limits":{"limit_id":"codex"' "$f" 2>/dev/null | grep '}$' | tail -n 5); [ -n "$m" ] || continue
   l="$m"$'\n'"$l"; n=$((n + 1))
 done < <(ls -t "${CODEX_HOME:-$HOME/.codex}/sessions"/*/*/*/*.jsonl 2>/dev/null | head -n 20)
 cr=""

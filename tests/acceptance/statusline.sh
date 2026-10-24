@@ -80,10 +80,10 @@ case "$c" in *" 33%"*) ok "rate_limits の無い新しいファイルは飛ば�
 cut() { printf '{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","primary":'; } # 書き込み途中の行
 d="$T/u6/sessions/2026/10/24"; mkdir -p "$d"
 rl "$(win 33.0 10080 "$f7")" null > "$d/rollout-a.jsonl"
-cut > "$d/rollout-b.jsonl"
-touch -t 202610240900 "$d/rollout-a.jsonl"; touch -t 202610241000 "$d/rollout-b.jsonl"
+for x in b c d; do cut > "$d/rollout-$x.jsonl"; done
+touch -t 202610240900 "$d/rollout-a.jsonl"; touch -t 202610241000 "$d/rollout-b.jsonl" "$d/rollout-c.jsonl" "$d/rollout-d.jsonl"
 c="$(cx2 "$T/u6")"; c="${c##*"$I_OPENAI"}"
-case "$c" in *" 33%"*) ok "同じ日に書き込み途中の新しいファイルがあっても、その前の読める記録を出す" ;; *) ng "同じ日の途切れた行: $c" ;; esac
+case "$c" in *" 33%"*) ok "書き込み途中の新しいファイルが続いても、その前の読める記録を出す" ;; *) ng "途切れた行が複数: $c" ;; esac
 d="$T/u7/sessions/2026/10"; mkdir -p "$d/23" "$d/24"
 rl "$(win 33.0 10080 "$f7")" null > "$d/23/rollout-a.jsonl"
 cut > "$d/24/rollout-b.jsonl"
