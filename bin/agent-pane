@@ -26,17 +26,17 @@ case "$sid" in ''|.|..|*/*) exit 0 ;; esac
 # 記録はメインの pane ごと（clear でセッションが替わっても、前のセッションで閉じられなかった pane を数えて片づけられるように）
 D="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/$(printf '%s' "$HERDR_PANE_ID" | tr ':/' '__')"
 mkdir -p "$D" 2>/dev/null || exit 0
-# lockfd [wait]: fd 9 のファイルを排他でロックする（カーネルのロック: 持ち主のプロセスが消えると外れるので回収が要らない）。
+# lockfd <fd> [wait]: その fd のファイルを排他でロックする（カーネルのロック: 持ち主のプロセスが消えると外れるので回収が要らない）。
 # wait なら最大 5 秒待つ。flock が無ければ（macOS）perl の flock
 lockfd() {
   if command -v flock >/dev/null 2>&1; then
-    if [ "${1:-}" = wait ]; then flock -w 5 9; else flock -n 9; fi
+    if [ "${2:-}" = wait ]; then flock -w 5 "$1"; else flock -n "$1"; fi
   else
-    perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or exit 2; for (1 .. ($ARGV[0] eq "wait" ? 50 : 1)) { exit 0 if flock($f, LOCK_EX | LOCK_NB); select(undef, undef, undef, 0.1) } exit 1' "${1:-now}"
+    perl -MFcntl=:flock -e 'open(my $f, ">&=", $ARGV[0]) or exit 2; for (1 .. ($ARGV[1] eq "wait" ? 50 : 1)) { exit 0 if flock($f, LOCK_EX | LOCK_NB); select(undef, undef, undef, 0.1) } exit 1' "$1" "${2:-now}"
   fi
 }
 # メインの pane ごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）
-lock() { exec 9>>"$D.lock"; lockfd wait || exit 0; }
+lock() { exec 9>>"$D.lock"; lockfd 9 wait || exit 0; }
 # gone <pane>: herdr がその pane は無い（pane_not_found）と答えたら 0。通信の失敗は「ある」として扱う（覚えた pane を失わない）
 gone() { out="$(herdr pane "$1" "$2" 2>&1)" && return 1; printf '%s' "$out" | grep -q '"pane_not_found"'; }
 # close <記録>: pane を閉じられた、または既に無いときだけ記録を消す
@@ -44,10 +44,10 @@ close() {
   p="$(sed -n 1p "$1" 2>/dev/null)"
   if [ -z "$p" ] || herdr pane close "$p" >/dev/null 2>&1 || gone get "$p"; then rm -f "$1"; fi
 }
-# api <JSON>: herdr の socket API を直接呼び、応答の 1 行を出す（CLI に無い pane.current・pane.focus 用）
+# api <JSON>: herdr の socket API を直接呼び、応答の 1 行を出す（CLI に無い pane.current・pane.focus 用）。応答が無ければ 2 秒で諦める
 api() {
   [ -S "${HERDR_SOCKET_PATH:-}" ] && command -v perl >/dev/null 2>&1 || return 1
-  perl -MIO::Socket::UNIX -e '$s = IO::Socket::UNIX->new(Peer => $ARGV[0]) or exit 1; print $s "$ARGV[1]\n"; print scalar <$s>' "$HERDR_SOCKET_PATH" "$1"
+  perl -MIO::Socket::UNIX -e '$SIG{ALRM} = sub { exit 1 }; alarm 2; $s = IO::Socket::UNIX->new(Peer => $ARGV[0]) or exit 1; print $s "$ARGV[1]\n"; defined($l = <$s>) or exit 1; print $l' "$HERDR_SOCKET_PATH" "$1"
 }
 aid="$(j .agent_id)"
 case "$aid" in */*) exit 0 ;; esac
@@ -74,18 +74,22 @@ case "${1:-}" in
     rec="${tp%.jsonl}/subagents/$a.jsonl"
     cwd="$(j .cwd)"
     # 開いているサブの pane があればその右、無ければメインの下に分けてメインと入れ替える（サブが上、メインが下）
-    foc=""
-    if [ -n "$top" ]; then set -- --pane "$top" --direction right
-    else
-      set -- --pane "$HERDR_PANE_ID" --direction down --ratio 0.333
-      foc="$(api '{"id":"agent-pane","method":"pane.current","params":{}}' | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
-    fi
+    if [ -n "$top" ]; then set -- --pane "$top" --direction right; else set -- --pane "$HERDR_PANE_ID" --direction down --ratio 0.333; fi
     new="$(herdr pane split "$@" --no-focus ${cwd:+--cwd "$cwd"} 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
     [ -n "$new" ] || exit 0
     printf '%s\n%s\n' "$new" "$rec" > "$D/$aid"
-    if [ -n "$foc" ]; then
-      herdr pane swap --source-pane "$HERDR_PANE_ID" --target-pane "$new" >/dev/null 2>&1 || { close "$D/$aid"; exit 0; }
-      [ "$foc" = "$HERDR_PANE_ID" ] || api "$(jq -cn --arg p "$foc" '{id: "agent-pane", method: "pane.focus", params: {pane_id: $p}}')" >/dev/null
+    if [ -z "$top" ]; then
+      # フォーカスは herdr 全体で 1 つなので、読む → 入れ替える → 戻す は別のメインの pane の開始とも交互にしない（ロックは状態のディレクトリで 1 つ）。
+      # ロックか今のフォーカスが取れなければ入れ替えない（サブはメインの下のまま）
+      exec 8>>"${D%/*}/focus.lock"
+      if lockfd 8 wait; then
+        foc="$(api '{"id":"agent-pane","method":"pane.current","params":{}}' | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
+        if [ -n "$foc" ]; then
+          herdr pane swap --source-pane "$HERDR_PANE_ID" --target-pane "$new" >/dev/null 2>&1 || { close "$D/$aid"; exit 0; }
+          [ "$foc" = "$HERDR_PANE_ID" ] || api "$(jq -cn --arg p "$foc" '{id: "agent-pane", method: "pane.focus", params: {pane_id: $p}}')" >/dev/null
+        fi
+      fi
+      exec 8>&-
     fi
     q="$(printf '%s' "$rec" | sed "s/'/'\\\\''/g")" # ' を '\'' にしてシングルクォートで囲む
     # 表示を起動できなければ、空の pane と記録を残さない（上限を詰まらせず、再通知で開き直せるように）
