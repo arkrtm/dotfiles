@@ -134,6 +134,14 @@ for w in Done relay 'tinymemory archive' 'git worktree remove' headRefOid '--ff-
   check "wrap-up の「統合の後」に「$w」" sh -c "sed -n '/^## 5. 統合の後/,\$p' '$W' | grep -qF -- '$w'"
 done
 
+# ---- 統合の後に次の issue を始める（ARK-106）: handoff skill の使い方
+H="$ROOT/config/agents/skills/handoff/SKILL.md"
+check "handoff の description に「統合の後に次の issue を始める」" \
+  sh -c "sed -n '2,/^---\$/p' '$H' | grep '^description:' | grep -qF '統合の後に次の issue を始める'"
+for w in '統合の後に次の issue を始める' 'relay の記憶のタイトルと Linear のコメントを次の issue の番号で書き' '`/issue ARK-nn` から始める'; do
+  check "handoff の「使う条件」に「$w」" sh -c "sed -n '/^## 使う条件/,/^## /p' '$H' | grep -qF -- '$w'"
+done
+
 # ---- dotfiles の文書
 check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q '開発の手順はプラグイン superpowers' "$ROOT/CLAUDE.md"
 check "dotfiles の CLAUDE.md がコミットの前に流すテストを書く（static・install・acceptance）" \

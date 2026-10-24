@@ -1,13 +1,14 @@
 ---
 name: handoff
-description: 文脈が埋まってきたとき（context-nudge が促したとき、長い作業の区切り）に使う。issue の作業の引き継ぎを保存し、herdr の中なら自分で /clear して続きを自動で始める
+description: 文脈が埋まってきたとき（context-nudge が促したとき、長い作業の区切り）と、統合の後に次の issue を始めるとき（wrap-up の 5）に使う。issue の作業の引き継ぎを保存し、herdr の中なら自分で /clear して続きを自動で始める
 ---
 
-文脈を空けて、同じ issue の作業を続ける。Claude Code の中からは /clear を打てないので、`handoff` が herdr を通して、このターンの後に `/clear` と続きの指示を自分の pane に送る。
+文脈を空けて、同じ issue の作業を続ける（統合の後なら次の issue を始める）。Claude Code の中からは /clear を打てないので、`handoff` が herdr を通して、このターンの後に `/clear` と続きの指示を自分の pane に送る。
 
 ## 使う条件
 
-- issue（ARK-nn）の作業中で、次の手順が決まっている
+- issue（ARK-nn）の作業中で、次の手順が決まっている。または、統合の後に次の issue を始める（wrap-up の 5 で決まった）
+  - 統合の後に次の issue を始めるときは、手順 1 の relay の記憶のタイトルと Linear のコメントを次の issue の番号で書き、手順 2 の続きの指示は `/issue ARK-nn` から始める
 - ユーザーの判断や返事を待っているときは使わない（止まって待つ。続けても進めない）
 - サブエージェントの中では使わない（メインの会話の pane を操作してしまう）
 
