@@ -17,7 +17,7 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 
 `install.sh` がやること:
 
-1. 下表のファイルをシンボリックリンクで配置
+1. 下表のファイルをシンボリックリンクで配置し、ponytail の band（プロンプトの上の行）を既定で隠す（`~/.claude/.ponytail-band` が無ければ `off` を書く。出し続ける端末は中身を `on` にする）
 2. `~/.ssh` を 700、`ssh/config` を 600 にする（ssh は他ユーザーが書ける設定ファイルを拒むため）
 3. zsh プラグイン 2 つを clone（プラグインマネージャなし。版は固定せず再実行で最新に）
 4. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる

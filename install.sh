@@ -73,6 +73,10 @@ echo "$LINKS" | while read -r src dst; do
   if [ -n "$src" ]; then link "$src" "$dst"; fi
 done
 
+# ponytail の band（プロンプトの上の行）を既定で隠す。ファイルがあれば触らない。`/ponytail band on` はファイルを消すだけで再実行で隠れるので、
+# 出し続ける端末は中身を on にする（off 以外なら出る）。リンクと同じく tests/install.sh で確かめるので、早期終了の前に置く
+[ -e "$HOME/.claude/.ponytail-band" ] || echo off > "$HOME/.claude/.ponytail-band"
+
 # リンク配置だけを検査したい時（tests/install.sh）はここで終わる
 [ -n "${DOTFILES_LINKS_ONLY:-}" ] && exit 0
 
