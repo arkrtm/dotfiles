@@ -1,8 +1,7 @@
 #!/bin/sh
 # 静的な検査（ネットワーク無し・数秒）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
 # tmux.conf の読み込み、ssh/config の構文、SKILL.md の frontmatter、settings.json（JSON として読める、hooks の event 名が既知、
-# hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、
-# mac では plist
+# hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある
 #   sh tests/static.sh
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -91,10 +90,5 @@ if command -v mise >/dev/null 2>&1; then
   MISE_GLOBAL_CONFIG_FILE="$ROOT/config/mise/config.toml" mise config ls >/dev/null 2>&1 && ok "mise の config.toml が読める" || ng "mise の config.toml が読めない"
 fi
 grep -q '^jq = ' "$ROOT/config/mise/config.toml" && ok "jq は mise で入る（tests/acceptance が使う）" || ng "config/mise/config.toml に jq が無い"
-
-# ---- mac: launchd の plist
-if command -v plutil >/dev/null 2>&1; then
-  plutil -lint -s "$ROOT"/mac/*.plist && ok "mac の plist が読める" || ng "mac の plist にエラーがある"
-fi
 
 exit "$fail"

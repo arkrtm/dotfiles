@@ -34,8 +34,6 @@ config/agents/skills/handoff    .claude/skills/handoff
 config/agents/skills/issue      .agents/skills/issue
 config/agents/skills/wrap-up    .agents/skills/wrap-up
 config/herdr/config.toml                  .config/herdr/config.toml
-config/ss-sync           .config/ss-sync
-bin/ss-sync              .local/bin/ss-sync
 bin/lan-reachable        .local/bin/lan-reachable
 config/nvim              .config/nvim
 config/yazi              .config/yazi
@@ -171,7 +169,7 @@ if "$MISE" which nvim >/dev/null 2>&1; then
   "$MISE" exec -- nvim --headless "+Lazy! restore" +qa >/dev/null 2>&1 || echo "warning: nvim プラグインの restore に失敗"
 fi
 
-# mac 専用（Homebrew、スクリーンショット設定、launchd）
+# mac 専用（Homebrew、スクリーンショット設定）
 if [ "$(uname -s)" = Darwin ]; then
   "$DOTFILES/mac/setup.sh"
 fi

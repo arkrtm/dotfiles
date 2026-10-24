@@ -25,7 +25,7 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 6. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
 7. Codex: `~/.codex/config.toml` を `config/codex/config.toml.tmpl` から生成（承認と信頼の表は引き継ぐ。中身が違えば既存を `*.bak.<日時>` に退避）。codex が無ければ[公式のインストーラー](https://github.com/openai/codex)で `~/.local/bin` に入れ、ponytail のプラグインと `tinymemory init codex` の hook を入れる
 8. Neovim プラグインを `lazy-lock.json` の版に揃える
-9. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定、launchd 登録）
+9. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定）
 
 install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
@@ -61,10 +61,9 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/herdr/config.toml` | `~/.config/herdr/config.toml` | herdr の設定（キー操作は tmux と同じ。prefix `C-g`。kitty 方式の画像を通す） |
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`、issue ごとの worktree `.worktrees/`） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
-| `config/ss-sync/targets` | `~/.config/ss-sync/targets` | スクショ送信先ホスト（`nas`） |
 | `ssh/config` | `~/.ssh/config` | `nas`: LAN に居れば 192.168.0.49、外では Tailscale。端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |
 | `bin/*` | `~/.local/bin/*` | 下記 |
-| `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ, launchd） |
+| `Brewfile` `mac/` | — | mac 専用（ghostty, スクショ） |
 | `scripts/check` | — | dotfiles のテスト（`tests/static.sh`・`install.sh`・`acceptance.sh`。dotfiles の `integrate setup` の test と CI が呼ぶ。ほかのリポジトリに同じ名前を求める決まりではない） |
 | `.github/workflows/check.yml` | — | GitHub の CI。PR と main への push で `scripts/check` を ubuntu で実行する（push の後の知らせ。main の保護の必須チェックではない） |
 | `tests/` | — | コミット前の検査（何を通すかは `CLAUDE.md`）。`static.sh` は構文と設定、`install.sh` はリンク、`acceptance/*.sh` は受け入れ、`install-nosudo.sh` はコンテナでのフル install、`nvim.sh` は Neovim |
@@ -73,7 +72,6 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 
 - `agent-status` — Claude Code hooks から呼ばれ、tmux のウィンドウ名に `● 作業中 / ? 入力待ち / ✓ 完了` を出し、入力待ち・完了でデスクトップ通知（OSC 777）
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
-- `ss-sync` — `~/Screenshots` の新しい画像を `ss-YYYYmmdd-HHMMSS.png`（保存時刻。同じ秒は `-2`）の名前で送信先の `~/screenshots/` へ `scp -O`（送信のたびに 7 日より古いものを削除。元のファイルはそのまま）。送信先は `config/ss-sync/targets`（1 行 1 ホスト、`#` はコメント）。失敗は `~/.local/state/ss-sync/log`（mac は `launchd.err` も）。`BatchMode` なので、新しい端末では一度手で `ssh nas` して known_hosts に入れる
 - `lan-reachable HOST PORT` — 1 秒の TCP 到達判定（ssh config の Match exec 用）
 - `integrate [--human-approved]` — 統合はこれだけで行う。関門（`integrate setup` の設定がある・最上位のブランチ（base）の最新を含む・未コミットの変更が無い・設定の test が通る・今のコミットの origin/<base> との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（設定の remote が origin と違う・origin の push 先が取得先と違う設定でも止まる）。kind が `bare`・`github` なら base へ push（早送りだけ）、`pr` ならブランチを push して base に向けた PR を作るだけ（マージはチーム）。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
 - `integrate setup` — リポジトリごとの設定（下の「integrate setup」）
@@ -196,12 +194,6 @@ WSL へは ConPTY を通らずに、WezTerm 内蔵の SSH で localhost の sshd
    printf 'from="127.0.0.1,::1" %s\n' "$(cat /mnt/c/Users/<Windows のユーザー>/.ssh/wezterm_wsl.pub)" >> ~/.ssh/authorized_keys
    ```
 3. WezTerm を起動し、初回はホスト鍵の確認に答える
-
-### スクリーンショット → NAS の Claude Code
-
-- mac: `mac/setup.sh` が保存先を `~/Screenshots` に変え、撮影後サムネイルを無効化（保存が約 5 秒遅れるため）、launchd の WatchPaths で `ss-sync` を起動
-- Ubuntu: **未実装**。GNOME は `~/Pictures/Screenshots` に保存するので `~/Screenshots` をそこへのリンクにし、systemd ユーザーの path unit（`PathChanged=`）で `ss-sync` を起動する想定
-- NAS 側の Claude Code は `~/.claude/CLAUDE.md` の指示で「スクショ」と言われたら `~/screenshots/` の最新を見る
 
 ### NAS (UGOS / Debian 12) の癖
 

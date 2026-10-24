@@ -50,6 +50,11 @@ done | grep STALE && ng "ハーネスのものが置かれている" || ok "ハ�
 [ -z "$(git config --file "$HOME/.config/git/config" --get core.hooksPath || true)" ] \
   && ok "git の設定は共通 hooks の場所を指さない" || ng "git の設定に共通 hooks の場所が残っている"
 
+# スクショの転送（ss-sync）はやめた（ARK-73）。そのリンクを置かない
+for p in .local/bin/ss-sync .config/ss-sync; do
+  if [ -e "$HOME/$p" ] || [ -L "$HOME/$p" ]; then echo "STALE $p"; fi
+done | grep STALE && ng "やめたもののリンクが置かれている" || ok "やめたもの（ss-sync）のリンクを置かない"
+
 # ponytail の band（プロンプトの上の行）は既定で隠す: 無ければ中身 off のファイルを置く。あれば書き換えない（下の再実行の後で確かめる）
 B="$HOME/.claude/.ponytail-band"
 [ "$(cat "$B" 2>/dev/null)" = off ] && ok "ponytail の band を隠すファイル（off）を置く" || ng "ponytail の band のファイル: $(cat "$B" 2>/dev/null || echo なし)"

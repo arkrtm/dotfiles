@@ -19,15 +19,3 @@ if [ "$(defaults read com.apple.screencapture location 2>/dev/null)" != "$HOME/S
   killall SystemUIServer 2>/dev/null || true
   echo "screencapture: ~/Screenshots, サムネイル無効"
 fi
-
-# スクリーンショット自動送信（launchd）
-label=com.arkrithm.ss-sync
-plist="$HOME/Library/LaunchAgents/$label.plist"
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.local/state/ss-sync"
-new=$(sed "s|@HOME@|$HOME|g" "$DOTFILES/mac/$label.plist")
-if [ ! -f "$plist" ] || [ "$new" != "$(cat "$plist")" ]; then
-  printf '%s\n' "$new" >"$plist"
-  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  # GUI セッションが無い時（ssh 越しなど）は登録できない。plist は置いたので次回ログインで launchd が読む
-  launchctl bootstrap "gui/$(id -u)" "$plist" && echo "launchd: $label を登録" || echo "warning: launchd の登録に失敗（次回ログインで有効になる）"
-fi
