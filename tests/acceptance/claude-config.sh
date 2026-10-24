@@ -138,7 +138,7 @@ done
 # ---- 統合の後に次の issue を始める（ARK-106）: wrap-up の 5 の最後と handoff skill の使い方
 W5="$(sed -n '/^## 5. 統合の後/,$p' "$W" | sed -n '/^5\. /,$p')" # 5 の最後の項目（5.）とその下の行
 check "wrap-up の 5 の最後の項目（5.）を読めた" [ -n "$W5" ]
-for w in 'ユーザーが示した作業' '同じリポジトリ' '優先度の高い順' '番号の小さい順' 'Todo・Backlog' 'ほかのリポジトリの Todo' '新しいセッション' '選択肢' '答えを待つ' 'handoff skill' 'herdr の中なら' '`/clear`' '`/new`' '続きの指示' '`/issue ARK-nn`'; do
+for w in 'ユーザーが示した作業' '続きの指示に書かれたもの' 'そのリポジトリで新しいセッションを開いて続きの指示の文' '同じリポジトリ' '優先度の高い順' '番号の小さい順' 'Todo・Backlog' 'ほかのリポジトリの Todo' '新しいセッション' '選択肢' '答えを待つ' 'handoff skill' 'herdr の中なら' '`/clear`' '`/new`' '続きの指示' '`/issue ARK-nn`'; do
   check "wrap-up の 5 の最後の項目に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$W5" "$w"
 done
 check "wrap-up の 5 の最後: 次の作業は 示された作業 → 同じリポジトリの Todo → 尋ねて待つ の順（1 行）" \

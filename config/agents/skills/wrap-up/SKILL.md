@@ -49,5 +49,5 @@ argument-hint: "[ARK-nn]"
 3. relay の片づけ: `tinymemory list --json | jq -r '.[] | select((.tags | index("relay")) and (.title | test("^ARK-nn([^0-9]|$)"))) | .id'`（`ARK-nn` はこの issue の番号）の各 id を `tinymemory archive <id>`
 4. worktree とブランチ: `<元>` に移る。`<元>` のブランチが `<base>` なら `git pull --ff-only`（失敗したら止めて人に聞く）、違えば切り替えず更新もしない（そう報告する）。`git worktree remove <元>/.worktrees/<作業内容>`（未コミット・未追跡のファイルで拒まれたら消さずに人に聞く）。ブランチは `git branch -D feature/<作業内容>` で消す（`-d` は `<元>` のブランチや上流への取り込みで判定するので、`<base>` と違うブランチの上や `pr` のマージでコミットが作り直されたときに拒む。取り込みは 1 で `<base>` に対して確かめ済み）
 5. 残したものを 1 行ずつ報告し、次の作業を決めて始める
-   - 決め方: ユーザーが示した作業があればそれ。無ければ同じリポジトリ（issue のタイトルの先頭の `[<リポジトリ名>]` で見分ける）の Todo から優先度の高い順（No priority は最後。同じ優先度なら番号の小さい順）に選ぶ。同じリポジトリの Todo が無ければ、Todo・Backlog の候補（同じリポジトリの Backlog と、ほかのリポジトリの Todo）を選択肢で示して尋ね、答えを待つ
-   - 始め方: Claude Code は handoff skill で始める（herdr の中なら自分で clear して次を始め、外なら `/clear` と続きの指示を促す）。Pi・Codex は `/new` を促し、続きの指示の文（`/issue ARK-nn` から始める）を示す。ほかのリポジトリの issue に決まったら handoff せず、そのリポジトリで新しいセッションを開いて続きの指示を送るよう促す（clear しても作業ディレクトリは変わらない）
+   - 決め方: ユーザーが示した作業（続きの指示に書かれたものを含む）があればそれ。無ければ同じリポジトリ（issue のタイトルの先頭の `[<リポジトリ名>]` で見分ける）の Todo から優先度の高い順（No priority は最後。同じ優先度なら番号の小さい順）に選ぶ。同じリポジトリの Todo が無ければ、Todo・Backlog の候補（同じリポジトリの Backlog と、ほかのリポジトリの Todo）を選択肢で示して尋ね、答えを待つ
+   - 始め方: Claude Code は handoff skill で始める（herdr の中なら自分で clear して次を始め、外なら `/clear` と続きの指示を促す）。Pi・Codex は `/new` を促し、続きの指示の文（`/issue ARK-nn` から始める）を示す。ほかのリポジトリの issue に決まったら handoff せず、そのリポジトリで新しいセッションを開いて続きの指示の文を送るよう促す（clear しても作業ディレクトリは変わらない）
