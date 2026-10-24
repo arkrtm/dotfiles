@@ -15,7 +15,7 @@
 
 - skill の呼び出し: CC は `/issue`、Pi は `/skill:issue`、Codex は `$issue`
 - 選択肢での質問: CC は AskUserQuestion、Pi は ask_user_question、Codex は選択肢に番号を付けて尋ねる
-- 会話の区切り: CC は `/clear`、Pi と Codex は `/new`
+- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Pi と Codex は `/new`
 
 ## 規約
 

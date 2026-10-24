@@ -107,9 +107,10 @@ check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/
 check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 'docs/superpowers/.*作らない' "$C"
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
 check "グローバルの CLAUDE.md: スクショの名前の時刻は保存時刻" grep -q 'HHMMSS.png`（保存時刻' "$C"
+check "グローバルの CLAUDE.md: 会話の区切りは CC は /clear（herdr の中では handoff skill）、Pi と Codex は /new" \
+  grep -qxF -- '- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Pi と Codex は `/new`' "$C"
 
-# ---- skill: wrap-up は統合の前に /clear を促さない。issue はコメントの規則をグローバル指示に委ねる
-check "wrap-up の締めは、統合して Done にしてから /clear" grep -q 'Done にしてから `/clear`' "$ROOT/config/agents/skills/wrap-up/SKILL.md"
+# ---- skill: issue はコメントの規則をグローバル指示に委ねる
 check "issue のコメントの節目はグローバル指示の Linear の節に従う（書き写さない）" grep -q 'コメントの節目はグローバル指示の Linear の節に従う' "$ROOT/config/agents/skills/issue/SKILL.md"
 
 # ---- Git の運用（ARK-88）: 1 issue = 1 ブランチ = 1 worktree、統合は origin で決める、relay は統合の後に片づける。
@@ -134,7 +135,14 @@ for w in Done relay 'tinymemory archive' 'git worktree remove' headRefOid '--ff-
   check "wrap-up の「統合の後」に「$w」" sh -c "sed -n '/^## 5. 統合の後/,\$p' '$W' | grep -qF -- '$w'"
 done
 
-# ---- 統合の後に次の issue を始める（ARK-106）: handoff skill の使い方
+# ---- 統合の後に次の issue を始める（ARK-106）: wrap-up の 5 の最後と handoff skill の使い方
+W5="$(sed -n '/^## 5. 統合の後/,$p' "$W" | sed -n '/^5\. /,$p')" # 5 の最後の項目（5.）とその下の行
+check "wrap-up の 5 の最後の項目（5.）を読めた" [ -n "$W5" ]
+for w in 'ユーザーが示した作業' '同じリポジトリ' '優先度の高い順' '番号の小さい順' 'Todo・Backlog' 'ほかのリポジトリの Todo' '新しいセッション' '選択肢' '答えを待つ' 'handoff skill' 'herdr の中なら' '`/clear`' '`/new`' '続きの指示' '`/issue ARK-nn`'; do
+  check "wrap-up の 5 の最後の項目に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$W5" "$w"
+done
+check "wrap-up の 5 の最後: 次の作業は 示された作業 → 同じリポジトリの Todo → 尋ねて待つ の順（1 行）" \
+  sh -c 'printf "%s\n" "$1" | grep -q "ユーザーが示した作業.*同じリポジトリ.*Todo.*答えを待つ"' _ "$W5"
 H="$ROOT/config/agents/skills/handoff/SKILL.md"
 check "handoff の description に「統合の後に次の issue を始める」" \
   sh -c "sed -n '2,/^---\$/p' '$H' | grep '^description:' | grep -qF '統合の後に次の issue を始める'"
