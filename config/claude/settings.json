@@ -241,5 +241,6 @@
     }
   },
   "theme": "dark",
-  "remoteControlAtStartup": true
+  "remoteControlAtStartup": true,
+  "skipWorkflowUsageWarning": true
 }
