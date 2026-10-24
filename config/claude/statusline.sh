@@ -50,16 +50,15 @@ fi
 d7=$(get .rate_limits.seven_day.used_percentage)
 [ -n "$d7" ] && line2+="$(meter "$I_7D" "$d7" 50 80)   "
 
-# Codex の使用量（ARK-95）: 新しい日のディレクトリから遡り、rate_limits のある最新のセッションの最後の記録（ファイルが数 MB あるので jq には grep で絞った行だけを渡す）
-days=("${CODEX_HOME:-$HOME/.codex}/sessions"/*/*/*/)
-# 記録のある新しい 2 日の最後の 5 行ずつを古い順に集め、jq 1 回で JSON として読める最後の記録を取る（書き込み途中で途切れた行は fromjson? で飛ばす）
-# shortcut: 新しい 2 日とも最後の 5 行が途切れた行だけなら出さない。Codex を並列で何本も動かす使い方になったら増やす
+# Codex の使用量（ARK-95）: 更新の新しいセッションから遡り、rate_limits のある最新の記録（ファイルが数 MB あるので jq には grep で絞った行だけを渡す）
+# 更新の新しいファイルから、記録のある 2 ファイルの最後の 5 行ずつを古い順に集める（再開したセッションは古いファイルに追記されるので、名前でなく更新時刻で選ぶ）
+# shortcut: 2 ファイルとも最後の 5 行が途切れた行だけなら出さない。Codex を並列で何本も動かす使い方になったら増やす
 l=""; n=0
-for ((i = ${#days[@]} - 1; i >= 0 && n < 2; i--)); do
+while ((n < 2)) && IFS= read -r f; do
   # 読めないファイルがあると grep は 2 を返すので、終了コードでなく出力で決める
-  m=$(grep -hF '"rate_limits":{"limit_id":"codex"' "${days[i]}"*.jsonl 2>/dev/null | tail -n 5); [ -n "$m" ] || continue
+  m=$(grep -F '"rate_limits":{"limit_id":"codex"' "$f" 2>/dev/null | tail -n 5); [ -n "$m" ] || continue
   l="$m"$'\n'"$l"; n=$((n + 1))
-done
+done < <(ls -t "${CODEX_HOME:-$HOME/.codex}/sessions"/*/*/*/*.jsonl 2>/dev/null | head -n 20)
 cr=""
 # 窓は位置（primary・secondary）でなく長さ（分）で見分ける。リセット時刻を過ぎた窓は 0%（時刻は出さない）
 [ -n "$l" ] && cr=$(jq -Rnr 'last(inputs | fromjson? | .payload.rate_limits) // empty | [.primary, .secondary] | map(select(.)) | sort_by(.window_minutes)[]

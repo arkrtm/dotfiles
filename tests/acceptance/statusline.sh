@@ -2,7 +2,7 @@
 # ステータスラインの受け入れ検査（ARK-86）: サンプルの入力で 2 行を出し、1 行目に Claude（アイコン・モデル・effort）→ Codex（アイコン・モデル・effort）→ ブランチの順、2 行目にコンテキスト・5 時間（リセット時刻）・週の %。
 # Codex の設定（CODEX_HOME/config.toml の先頭の model と model_reasoning_effort）があれば 1 行目の右に出す（ARK-87）。
 # session_id があれば文脈の使用率を $XDG_STATE_HOME/claude-context/<session_id> に整数で書く（ARK-90。context-nudge が読む）。
-# Codex のセッションの記録（CODEX_HOME/sessions の rate_limits のある最新のファイルの最後の記録）があれば 2 行目の右に Codex のアイコンと 5 時間（リセット時刻）・週のメーター。窓は window_minutes で見分け、リセット時刻を過ぎた窓は 0%（ARK-95）。
+# Codex のセッションの記録（CODEX_HOME/sessions の rate_limits のある更新の新しいファイルの最後の記録）があれば 2 行目の右に Codex のアイコンと 5 時間（リセット時刻）・週のメーター。窓は window_minutes で見分け、リセット時刻を過ぎた窓は 0%（ARK-95）。
 # rate_limits・effort・Codex の設定と記録が無く git でないディレクトリでも終了コード 0 で、1 行目はモデルだけ、2 行目はコンテキストだけ
 #   sh tests/acceptance/statusline.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/statusline.sh  通った項目も
@@ -73,19 +73,29 @@ rl "$(win 77.0 10080 "$f7")" null > "$d/22/rollout-2026-10-22T10-00-00-z.jsonl"
 { rl "$(win 10.0 10080 "$f7")" null; printf '{"type":"response_item","payload":{}}\n'; rl "$(win 33.0 10080 "$f7")" null; } > "$d/23/rollout-2026-10-23T10-00-00-a.jsonl"
 printf '{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":null}}\n' > "$d/24/rollout-2026-10-24T09-00-00-b.jsonl"
 rl null null premium > "$d/24/rollout-2026-10-24T10-00-00-c.jsonl"
+touch -t 202610220900 "$d/22/"*.jsonl; touch -t 202610231000 "$d/23/"*.jsonl # 更新時刻: 22 日 < 23 日 < 24 日の 2 ファイル
+touch -t 202610240900 "$d/24/rollout-2026-10-24T09-00-00-b.jsonl"; touch -t 202610241000 "$d/24/rollout-2026-10-24T10-00-00-c.jsonl"
 c="$(cx2 "$T/u5")"; c="${c##*"$I_OPENAI"}"
 case "$c" in *" 33%"*) ok "rate_limits の無い新しいファイルは飛ばし、その前のファイルの最後の記録を出す" ;; *) ng "前のファイルの最後の記録: $c" ;; esac
 cut() { printf '{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","primary":'; } # 書き込み途中の行
 d="$T/u6/sessions/2026/10/24"; mkdir -p "$d"
 rl "$(win 33.0 10080 "$f7")" null > "$d/rollout-a.jsonl"
-for x in b c d; do cut > "$d/rollout-$x.jsonl"; done
+cut > "$d/rollout-b.jsonl"
+touch -t 202610240900 "$d/rollout-a.jsonl"; touch -t 202610241000 "$d/rollout-b.jsonl"
 c="$(cx2 "$T/u6")"; c="${c##*"$I_OPENAI"}"
-case "$c" in *" 33%"*) ok "書き込み途中の行が続いても、その前の読める記録を出す" ;; *) ng "途切れた行が複数: $c" ;; esac
+case "$c" in *" 33%"*) ok "同じ日に書き込み途中の新しいファイルがあっても、その前の読める記録を出す" ;; *) ng "同じ日の途切れた行: $c" ;; esac
 d="$T/u7/sessions/2026/10"; mkdir -p "$d/23" "$d/24"
 rl "$(win 33.0 10080 "$f7")" null > "$d/23/rollout-a.jsonl"
 cut > "$d/24/rollout-b.jsonl"
+touch -t 202610230900 "$d/23/rollout-a.jsonl"; touch -t 202610240900 "$d/24/rollout-b.jsonl"
 c="$(cx2 "$T/u7")"; c="${c##*"$I_OPENAI"}"
 case "$c" in *" 33%"*) ok "最新の日に読める記録が無ければ前の日の記録を出す" ;; *) ng "日をまたぐ途切れ: $c" ;; esac
+d="$T/u8/sessions/2026/10/24"; mkdir -p "$d"
+rl "$(win 90.0 10080 "$f7")" null > "$d/rollout-2026-10-24T09-00-00-a.jsonl" # 名前は古いが、再開して追記されたので更新が新しい
+rl "$(win 20.0 10080 "$f7")" null > "$d/rollout-2026-10-24T10-00-00-b.jsonl"
+touch -t 202610241100 "$d/rollout-2026-10-24T09-00-00-a.jsonl"; touch -t 202610241000 "$d/rollout-2026-10-24T10-00-00-b.jsonl"
+c="$(cx2 "$T/u8")"; c="${c##*"$I_OPENAI"}"
+case "$c" in *" 90%"*) ok "再開したセッション（名前は古いが更新が新しいファイル）の記録を出す" ;; *) ng "再開したセッション: $c" ;; esac
 
 [ "$fail" = 0 ] && echo "acceptance statusline: ok"
 [ "$fail" = 0 ]
