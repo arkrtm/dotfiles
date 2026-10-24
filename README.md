@@ -58,7 +58,7 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | `config/agents/skills/issue` `config/agents/skills/wrap-up` | `~/.claude/skills/…` `~/.agents/skills/…`（Codex が読む） | Linear の記録の skill（`/issue ARK-nn` で issue から始める、`/wrap-up` で統合の前に結果を振り分けて残す）。ほかの skill は置かない |
 | `config/git/config` | `~/.config/git/config` | user / defaultBranch、rebase 中心の pull・push（`push.autoSetupRemote` は git 2.37 から）、衝突は diff3、bare の守り（この端末の bare は新旧とも、早送りでない push とブランチの削除を拒む）。端末固有設定は `~/.gitconfig`（リポジトリ外） |
 | `config/git/hooks-nosign/` | `~/.config/git/hooks-nosign/` | コミットメッセージから AI の `Co-Authored-By` 行を消す commit-msg フック。業務サーバーだけが使う（下の「業務サーバー」） |
-| `config/herdr/config.toml` | `~/.config/herdr/config.toml` | herdr の設定（キー操作は tmux と同じ。prefix `C-g`。kitty 方式の画像を通す） |
+| `config/herdr/config.toml` | `~/.config/herdr/config.toml` | herdr の設定（キー操作は tmux に合わせる。ただし prefix `r` はサイズ変更モード（続けて h/j/k/l、Esc で抜ける）、設定の再読込は prefix `R`。prefix `C-g`。kitty 方式の画像を通す） |
 | `config/git/ignore` | `~/.config/git/ignore` | 全リポジトリ共通の除外（superpowers の plan と台帳 `.superpowers/`、issue ごとの worktree `.worktrees/`） |
 | `config/bat/config` | `~/.config/bat/config` | TwoDark |
 | `ssh/config` | `~/.ssh/config` | 端末固有の Host は `~/.ssh/config.local`（リポジトリ外、`Include`） |

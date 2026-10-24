@@ -1,6 +1,6 @@
 onboarding = false
 
-# Keybindings ported from ~/.config/tmux/tmux.conf (same keys as tmux).
+# Keybindings ported from ~/.config/tmux/tmux.conf (same keys as tmux, except prefix r/R: see below).
 [keys]
 prefix = "ctrl+g"
 
@@ -19,10 +19,11 @@ resize_pane_left = "prefix+shift+h"
 resize_pane_down = "prefix+shift+j"
 resize_pane_up = "prefix+shift+k"
 resize_pane_right = "prefix+shift+l"
-resize_mode = ""                      # unbind default prefix+r so r is free for reload
+# Resize mode: r, then h/j/k/l or arrows repeat without prefix; Esc/Enter/r exits (tmux: bind -r)
+resize_mode = "prefix+r"              # herdr default
 
-# Reload config: r (tmux: bind r source-file)
-reload_config = "prefix+r"
+# Reload config: R (herdr default; tmux uses r, taken by resize mode here)
+reload_config = "prefix+shift+r"
 
 # yazi などの画像を外の端末へ通す（kitty 方式だけ。WezTerm は enable_kitty_graphics、Windows Terminal は sixel のみで非対応）
 [experimental]
