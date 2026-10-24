@@ -19,7 +19,7 @@ Linear の issue（引数の先頭の ARK-nn）を起点に作業する。
      - 「正しく動く」「要件を満たす」のような確かめられない書き方はしない
 5. 4 の内容を示して**ユーザーの合意を得てから**進める
 6. ブランチと worktree: 名前と作り方はグローバル指示の Git の節に従う（元のチェックアウトの下の `.worktrees/<作業内容>` に、fetch した `origin/<最上位>`（`integrate setup --show` の base。設定が無ければ先に setup）から `--no-track` で `feature/<作業内容>` を作る）。作ったら中に移り、本文の先頭の説明の後に `ブランチ: feature/<作業内容>` を追記する。本文にブランチ名がすでにあれば作らない: `git worktree list` に登録済みの worktree があればそこへ移り、無ければ `git -C <元> worktree add <元>/.worktrees/<作業内容> feature/<作業内容>`
-7. 設計・計画・実装は開発手順の skill（CC・Codex: superpowers、Pi: bigpowers）で、worktree の中で進める。コミットの前に、そのリポジトリの指示ファイル（CLAUDE.md / AGENTS.md）に書いたテストを今の内容で通す
+7. 設計・計画・実装は開発手順の skill（superpowers）で、worktree の中で進める。コミットの前に、そのリポジトリの指示ファイル（CLAUDE.md / AGENTS.md）に書いたテストを今の内容で通す
 8. コメントの節目はグローバル指示の Linear の節に従う。要件が変わったら本文を直す
 9. 完了時: 統合の前に wrap-up skill（結果のコメントも兼ねる）、グローバル指示の Git の節の方法で統合、統合の後にもう一度 wrap-up skill（Done・relay・worktree の片づけ）
 

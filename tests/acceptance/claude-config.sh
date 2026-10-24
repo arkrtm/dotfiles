@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code の構成の受け入れ検査: settings.json（プラグインの宣言と hook の配線）、skill（issue・wrap-up のリンク）、
-# グローバル指示（config/agents/AGENTS.md。CC・Pi・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、README の新しい端末の手順。
+# グローバル指示（config/agents/AGENTS.md。CC・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、README の新しい端末の手順。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・DOCKER='ssh nas docker' sh tests/install-nosudo.sh）は別に実行する。
 # LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で README の
 # 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
@@ -80,8 +80,10 @@ done
 check "install.sh の LINKS 表にグローバルの gitignore（config/git/ignore）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/git/ignore  *\.config/git/ignore\$'" _ "$links"
 check "config/git/ignore は .superpowers/ を除外する" grep -qx '\.superpowers/' "$ROOT/config/git/ignore"
 
-# ---- pi はやめた（ARK-94）: config/pi が無い
+# ---- pi はやめた（ARK-94）: config/pi が無く、pi 向けの記述も無い（パターンの [ ] は、この行自身に当たらないため）
 check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
+git -C "$ROOT" grep -q -I -E '\b[P]i\b|\.p[i]/|bigpower[s]|/skil[l]:|pi-tinymemor[y]|yamlfi[x]|ask_user_questio[n]'; rc=$? # 1 = 一致なし、0 = 記述がある、ほかは実行の失敗
+check "pi 向けの記述が無い（AC1 の git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
 
 # ---- グローバルの CLAUDE.md: 手順は superpowers、Linear の記録は /issue・/wrap-up、plan の置き場所
 C="$ROOT/config/agents/AGENTS.md"
@@ -110,8 +112,12 @@ check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/
 check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 'docs/superpowers/.*作らない' "$C"
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
 check "グローバルの CLAUDE.md: スクショの名前の時刻は保存時刻" grep -q 'HHMMSS.png`（保存時刻' "$C"
-check "グローバルの CLAUDE.md: 会話の区切りは CC は /clear（herdr の中では handoff skill）、Pi と Codex は /new" \
-  grep -qxF -- '- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Pi と Codex は `/new`' "$C"
+check "グローバルの CLAUDE.md: 会話の区切りは CC は /clear（herdr の中では handoff skill）、Codex は /new" \
+  grep -qxF -- '- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Codex は `/new`' "$C"
+for w in 'この指示は Claude Code と Codex の共通' 'Codex での読み替え:' '- skill の呼び出し: CC は `/issue`、Codex は `$issue`' \
+  '- 選択肢での質問: CC は AskUserQuestion、Codex は選択肢に番号を付けて尋ねる'; do
+  check "グローバルの CLAUDE.md: 読み替えは Codex だけ（$w）" grep -qF -- "$w" "$C"
+done
 
 # ---- skill: issue はコメントの規則をグローバル指示に委ねる
 check "issue のコメントの節目はグローバル指示の Linear の節に従う（書き写さない）" grep -q 'コメントの節目はグローバル指示の Linear の節に従う' "$ROOT/config/agents/skills/issue/SKILL.md"

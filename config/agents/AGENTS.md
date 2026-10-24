@@ -9,13 +9,13 @@
 - **検証**: 目標を検証可能な形にして確認するまで繰り返す。テストは superpowers の TDD に従う。完了と言う前に検査を通し、結果を示す
 - **リファクタ**: 無関係な箇所は触らない（気づいた不要なコードは伝えるだけ）。ただし**触った箇所は触る前より整った状態で終える**（TDD の REFACTOR）。それを超える整理は別 issue に切り出して提案する
 
-開発の手順（設計・計画・TDD・レビュー）は superpowers の skill に従う（Pi では同じ役割の bigpowers の skill）。ここには手順を書かない（二重にしない）。統合は下の「Git」の節の方法で行う（superpowers の finishing-a-development-branch は使わない）。Linear の記録の手順は skill の `/issue`・`/wrap-up`（dotfiles）。
+開発の手順（設計・計画・TDD・レビュー）は superpowers の skill に従う。ここには手順を書かない（二重にしない）。統合は下の「Git」の節の方法で行う（superpowers の finishing-a-development-branch は使わない）。Linear の記録の手順は skill の `/issue`・`/wrap-up`（dotfiles）。
 
-この指示は Claude Code・Pi・Codex の共通（dotfiles の `config/agents/AGENTS.md`）。以下は Claude Code の書き方で記す。ツールごとの読み替え:
+この指示は Claude Code と Codex の共通（dotfiles の `config/agents/AGENTS.md`）。以下は Claude Code の書き方で記す。Codex での読み替え:
 
-- skill の呼び出し: CC は `/issue`、Pi は `/skill:issue`、Codex は `$issue`
-- 選択肢での質問: CC は AskUserQuestion、Pi は ask_user_question、Codex は選択肢に番号を付けて尋ねる
-- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Pi と Codex は `/new`
+- skill の呼び出し: CC は `/issue`、Codex は `$issue`
+- 選択肢での質問: CC は AskUserQuestion、Codex は選択肢に番号を付けて尋ねる
+- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Codex は `/new`
 
 ## 規約
 
@@ -34,7 +34,7 @@
 
 ## モデルの割り当て
 
-Claude Code だけ（Pi・Codex には適用しない）。メインのセッション（settings.json の既定の Opus 5.5 high）は、人との会話、要件と受け入れ条件の合意、取りまとめ、Linear・git・テストを受け持つ。ほかのフェーズは独立したエージェントに任せ、Agent ツールに次の `model`・`effort` を渡す:
+Claude Code だけ（Codex には適用しない）。メインのセッション（settings.json の既定の Opus 5.5 high）は、人との会話、要件と受け入れ条件の合意、取りまとめ、Linear・git・テストを受け持つ。ほかのフェーズは独立したエージェントに任せ、Agent ツールに次の `model`・`effort` を渡す:
 
 | フェーズ | 担当 | model・effort |
 | -- | -- | -- |
