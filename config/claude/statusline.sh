@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Claude Code のステータスライン（Nerd Font アイコン付き 2 行）。macOS 標準の bash 3.2 でも動く書き方
-# 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）
+# 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）→ Codex の 5 時間・週の上限のメーター（ARK-95）
 in=$(cat)
 get() { jq -r "$1 // empty" <<<"$in"; }
 
@@ -48,6 +48,29 @@ if [ -n "$h5" ]; then
   line2+="   "
 fi
 d7=$(get .rate_limits.seven_day.used_percentage)
-[ -n "$d7" ] && line2+="$(meter "$I_7D" "$d7" 50 80)"
+[ -n "$d7" ] && line2+="$(meter "$I_7D" "$d7" 50 80)   "
+
+# Codex の使用量（ARK-95）: 新しい日のディレクトリから遡り、rate_limits のある最新のセッションの最後の記録（ファイルが数 MB あるので jq には grep で絞った行だけを渡す）
+days=("${CODEX_HOME:-$HOME/.codex}/sessions"/*/*/*/)
+# 記録のある新しい 2 日の最後の 5 行ずつを古い順に集め、jq 1 回で JSON として読める最後の記録を取る（書き込み途中で途切れた行は fromjson? で飛ばす）
+# shortcut: 新しい 2 日とも最後の 5 行が途切れた行だけなら出さない。Codex を並列で何本も動かす使い方になったら増やす
+l=""; n=0
+for ((i = ${#days[@]} - 1; i >= 0 && n < 2; i--)); do
+  # 読めないファイルがあると grep は 2 を返すので、終了コードでなく出力で決める
+  m=$(grep -hF '"rate_limits":{"limit_id":"codex"' "${days[i]}"*.jsonl 2>/dev/null | tail -n 5); [ -n "$m" ] || continue
+  l="$m"$'\n'"$l"; n=$((n + 1))
+done
+cr=""
+# 窓は位置（primary・secondary）でなく長さ（分）で見分ける。リセット時刻を過ぎた窓は 0%（時刻は出さない）
+[ -n "$l" ] && cr=$(jq -Rnr 'last(inputs | fromjson? | .payload.rate_limits) // empty | [.primary, .secondary] | map(select(.)) | sort_by(.window_minutes)[]
+  | if .resets_at < now then "\(.window_minutes) 0" else "\(.window_minutes) \(.used_percent) \(.resets_at)" end' <<<"$l" 2>/dev/null)
+cx=""
+[ -n "$cr" ] && while read -r w p r; do
+  case "$w" in
+    300) cx+="$(meter "$I_5H" "$p" 50 80)"; [ -n "$r" ] && cx+=" ${DIM}${I_RESET} $(hm "$r")${R}"; cx+="   " ;;
+    10080) cx+="$(meter "$I_7D" "$p" 50 80)   " ;;
+  esac
+done <<<"$cr"
+[ -n "$cx" ] && line2+="${I_OPENAI} ${cx}"
 
 printf '%s\n%s\n' "$line1" "$line2"
