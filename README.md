@@ -1,6 +1,6 @@
 # dotfiles
 
-mac / linux（Ubuntu・WSL・NAS = Debian 12）共通の開発環境。Windows ネイティブは対象外。
+mac / linux（Ubuntu・WSL）共通の開発環境。Windows ネイティブは対象外。
 環境構築は **sudo 不要・ユーザー領域のみ**（`~/.local` 以下。システム全体には何も入れない）。Python は uv、Node は fnm で管理する。設定は `$HOME` へのシンボリックリンクなので、
 **どの端末で編集してもこのリポジトリが変わる** → commit / push → 他端末で `git pull`（LINKS を変えたとき、または `ssh/config` を変えたときは `./install.sh` も。umask 002 の端末では pull で `ssh/config` が 664 になり、ssh が拒むため）。
 
@@ -29,14 +29,14 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 
 install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
-| | mac | Ubuntu / WSL | NAS (UGOS) |
-|---|---|---|---|
-| Ghostty | Brewfile（Homebrew が無ければ省略されるので、先に Homebrew を入れる） | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows の WezTerm（`winget install wez.wezterm`。設定は下の「WezTerm（Windows）」） | 不要 |
-| フォント | Hack Nerd Font（手動導入済み。Nerd Fonts 3.5.0 以降: ステータスラインの Claude・OpenAI のアイコン） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` | 不要 |
-| Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` | Docker（下記） |
-| GitHub | `gh auth login` | `gh auth login` | `gh auth login` |
-| ログインシェル | 標準で zsh | 任意: `chsh -s "$(command -v zsh)"`（`/etc/shells` に無い zsh は不可）。しなくても ssh・コンソールでは `bash_profile` が `exec zsh`（GUI 端末は非ログインの bash なので chsh か Ghostty の `command` が要る） | chsh 不可 → `exec zsh` |
-| クリップボード | — | `sudo apt install wl-clipboard`（Neovim のヤンクをデスクトップのクリップボードへ。SSH 越しは OSC52 で不要） | 不要 |
+| | mac | Ubuntu / WSL |
+|---|---|---|
+| Ghostty | Brewfile（Homebrew が無ければ省略されるので、先に Homebrew を入れる） | Ubuntu 24.04 以前: `snap install ghostty --classic`（26.04+ は apt） / WSL は Windows の WezTerm（`winget install wez.wezterm`。設定は下の「WezTerm（Windows）」） |
+| フォント | Hack Nerd Font（手動導入済み。Nerd Fonts 3.5.0 以降: ステータスラインの Claude・OpenAI のアイコン） | Hack Nerd Font を `~/.local/share/fonts` に置いて `fc-cache -f` |
+| Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` |
+| GitHub | `gh auth login` | `gh auth login` |
+| ログインシェル | 標準で zsh | 任意: `chsh -s "$(command -v zsh)"`（`/etc/shells` に無い zsh は不可）。しなくても ssh・コンソールでは `bash_profile` が `exec zsh`（GUI 端末は非ログインの bash なので chsh か Ghostty の `command` が要る） |
+| クリップボード | — | `sudo apt install wl-clipboard`（Neovim のヤンクをデスクトップのクリップボードへ。SSH 越しは OSC52 で不要） |
 
 ## 構成
 
@@ -124,7 +124,7 @@ Codex はレビュー役（`bin/codex-review`。AGENTS.md の「レビュー」�
 - `integrate setup --show` で今の設定を出す。既にある設定は上書きしない（終了コード 1）。上書きは `integrate setup --force …` を人が端末で実行する。端末の確かめと settings.json の deny は抑止で（`--human-approved` と同じ水準）、同じユーザーで動くエージェントが擬似端末（`script`）や設定のファイルの rm で越えることまでは防げない
 - この dotfiles は `integrate setup --kind github --base main --test 'sh scripts/check'`
 - 設定の無いリポジトリで Claude Code が編集しようとすると、`integrate-hook` が止めて setup を促す。Claude は推測をユーザーに選択肢で確かめてから引数で setup する
-- ARK-98 より前から使っている端末（業務サーバー・NAS など）の移行:
+- ARK-98 より前から使っている端末（業務サーバーなど）の移行:
 
 ```sh
 cd ~/dotfiles && git pull
@@ -180,18 +180,6 @@ WSL へは ConPTY を通らずに、WezTerm 内蔵の SSH で localhost の sshd
    printf 'from="127.0.0.1,::1" %s\n' "$(cat /mnt/c/Users/<Windows のユーザー>/.ssh/wezterm_wsl.pub)" >> ~/.ssh/authorized_keys
    ```
 3. WezTerm を起動し、初回はホスト鍵の確認に答える
-
-### NAS (UGOS / Debian 12) の癖
-
-- **sudo 不要が前提**（UGOS 更新で apt 導入物が消える可能性）。apt は依存が壊れていた（`ctdb` が `time` 未導入）→ 入れる時は `time` も明示
-- **chsh 不可**（UGOS 管理のユーザー）→ `bash_profile` で `exec zsh`
-- `/etc/profile.d/go.sh` が廃止済み `GODEBUG=tlskyber=0` を設定 → Go 1.24+ のツール（fzf, gh 等）が落ちるので shell 設定で外している
-- glibc 2.36: mise の gnu 版バイナリが動かないものがある → yazi は musl 版、tree-sitter CLI は動かないので nvim-treesitter は自動で無効
-- SFTP は仮想パス（`/home/` = 自分のホーム）。`scp -O`（従来方式）なら実パスで使える。ssh 経由の rsync は不可
-- sshd は 127.0.0.1 からの接続に応答しない
-- UGOS の SSH 設定: オートオフ =「長期有効」（既定では一定時間で自動オフになり `Connection refused` になる）、「ローカルネットワークアクセスのみを許可する」= オン（インターネットからの ssh は UGOS が拒否。Tailscale 経由は NAS 自身からの接続になるので通る）
-- Tailscale: `/volume1/docker/nas-ts/docker-compose.yaml`（host ネットワーク + userspace）。ssh は `tailscale serve --tcp 22 tcp://192.168.0.49:22` で転送。LAN IP を変えたら ssh config と serve の両方を直す
-- LAN IP 192.168.0.49 はルーター（TP-Link AX5400）の「アドレス予約」で固定済み（MAC `6C-1F-F7-AC-BE-8D` = NAS の eth1）。**LAN ケーブルを別ポート（eth0 = `…:8C`）に差し替えたら予約も更新する**
 
 ### mise
 
