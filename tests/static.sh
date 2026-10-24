@@ -53,7 +53,7 @@ if command -v tmux >/dev/null 2>&1; then
   fi
 fi
 
-# ---- ssh/config: 構文（Match の exec を走らせないホスト名で評価する）
+# ---- ssh/config: 構文
 ssh -G -F "$ROOT/ssh/config" example.invalid >/dev/null 2>&1 && ok "ssh/config が読める" || ng "ssh/config か ~/.ssh/config.local（Include で読む）にエラーがある"
 grep -q '^Include config.local$' "$ROOT/ssh/config" && ok "ssh/config は端末固有の Host を ~/.ssh/config.local から読む" || ng "ssh/config に Include config.local が無い"
 

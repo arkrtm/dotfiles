@@ -34,7 +34,6 @@ config/agents/skills/handoff    .claude/skills/handoff
 config/agents/skills/issue      .agents/skills/issue
 config/agents/skills/wrap-up    .agents/skills/wrap-up
 config/herdr/config.toml                  .config/herdr/config.toml
-bin/lan-reachable        .local/bin/lan-reachable
 config/nvim              .config/nvim
 config/yazi              .config/yazi
 bin/agent-status         .local/bin/agent-status
