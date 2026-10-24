@@ -16,7 +16,7 @@ W="$ROOT/.github/workflows/check.yml"
 check "ワークフロー .github/workflows/check.yml がある" [ -f "$W" ]
 check "pull_request で走る" grep -qE '^  pull_request:' "$W"
 check "main への push で走る" grep -qE '^    branches: \[main\]$' "$W"
-check "ジョブの名前は check（main の保護の必須チェック名）" grep -qE '^  check:$' "$W"
+check "ジョブの名前は check（push の後に結果を知らせるだけ。main の保護の必須チェックではない）" grep -qE '^  check:$' "$W"
 check "ubuntu で動く" grep -qE '^    runs-on: ubuntu-latest$' "$W"
 check "sh scripts/check を実行する（成否は終了コード）" grep -qE '^      - run: sh scripts/check$' "$W"
 check "失敗を握りつぶさない（continue-on-error・|| true が無い）" sh -c "! grep -qE 'continue-on-error|\|\| *true' '$W'"

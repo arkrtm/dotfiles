@@ -1,4 +1,4 @@
-# dotfiles の検査（scripts/check）。main の保護の必須チェック（ジョブ名 check。tests/README.md の「GitHub の main の保護」）
+# dotfiles の検査（scripts/check）。push の後に結果を知らせるだけで、main の保護の必須チェックではない（tests/README.md の「GitHub の main の保護」）
 name: check
 on:
   pull_request:
