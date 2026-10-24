@@ -111,7 +111,13 @@ check "グローバルの CLAUDE.md: /wrap-up は統合の前に作業ブラン�
 check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/ に置き、本文が正本" sh -c "grep -q '\.superpowers/plans/' '$C' && grep -q '本文が正本' '$C'"
 check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 'docs/superpowers/.*作らない' "$C"
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
-check "グローバルの CLAUDE.md: スクショの名前の時刻は保存時刻" grep -q 'HHMMSS.png`（保存時刻' "$C"
+# スクショは WSL で Windows のピクチャの Screenshots の最新を見る（ARK-73。転送はやめた）。ユーザー名は glob で書き、固定しない
+ss="$(sed -n '/^## スクリーンショット/,/^## /p' "$C")"
+for w in 'ls -t /mnt/c/Users/*/Pictures/Screenshots/*.png | head' 'WSL 以外'; do
+  check "グローバルの CLAUDE.md の「スクリーンショット」に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$ss" "$w"
+done
+check "グローバルの CLAUDE.md の「スクリーンショット」に転送の記述（~/screenshots・ss-YYYYmmdd）と固定のユーザー名（/mnt/c/Users/<名前>）が無い" \
+  sh -c '! printf "%s\n" "$1" | grep -qE "~/screenshots|ss-YYYYmmdd|/mnt/c/Users/[^*]"' _ "$ss"
 check "グローバルの CLAUDE.md: 会話の区切りは CC は /clear（herdr の中では handoff skill）、Codex は /new" \
   grep -qxF -- '- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Codex は `/new`' "$C"
 for w in 'この指示は Claude Code と Codex の共通' 'Codex での読み替え:' '- skill の呼び出し: CC は `/issue`、Codex は `$issue`' \
