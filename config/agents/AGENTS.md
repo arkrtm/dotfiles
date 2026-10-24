@@ -32,6 +32,22 @@
 - 実装が終わったら、ブランチ全体の最終レビューは superpowers の requesting-code-review でなく `codex-review branch [ベース]` で行う。最後の行が `VERDICT: PASS` になるまで直して実行し直す
 - 2 往復で PASS にならなければ、統合せず `notify "<理由>"` で知らせて人を待つ
 
+## モデルの割り当て
+
+Claude Code だけ（Pi・Codex には適用しない）。メインのセッション（settings.json の既定の Opus 5.5 high）は、人との会話、要件と受け入れ条件の合意、取りまとめ、Linear・git・テストを受け持つ。ほかのフェーズは独立したエージェントに任せ、Agent ツールに次の `model`・`effort` を渡す:
+
+| フェーズ | 担当 | model・effort |
+| -- | -- | -- |
+| 設計・計画 | サブエージェント | `opus`・`xhigh` |
+| 計画のレビュー | Codex（`codex-review plan`） | gpt-6.1-sol xhigh |
+| 実装（plan のタスクごと） | サブエージェント | `sonnet`・`high` |
+| 検証（受け入れ条件を実際に動かす） | 実装と別のサブエージェント | `opus`・`high` |
+| ブランチのレビュー | Codex（`codex-review branch`） | gpt-6.1-sol xhigh |
+| 広い検索 | Explore | `model: haiku`（渡さないとメインのモデルになる） |
+
+- 依頼には Linear の本文（要件・受け入れ条件）と読むファイルを渡す
+- サブエージェントは人に質問できない。設計の役は迷う点を推測で埋めず、質問として返させる。メインが人に聞き、答えを渡して続けさせる
+
 ## Git
 
 1 つの issue に短命なブランチを 1 つ切り、worktree の中で作業する。最上位のブランチ（main や develop。以下 `<最上位>`）は常にテストが通る状態に保つ:

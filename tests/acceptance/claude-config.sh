@@ -37,6 +37,9 @@ for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force
   'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)' 'Bash(integrate setup --force:*)' 'Edit(~/.config/integrate/**)'; do
   check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
 done
+# 既定のモデルは Opus 5.5 high（ARK-101。Opus 5.5 では最上位の effortLevel は無視されるので modelSettings に書く）
+check "settings.json の model が opus" [ "$(jq -r '.model' "$S")" = opus ]
+check "settings.json の modelSettings の claude-opus-5-5 の effortLevel が high" [ "$(jq -r '.modelSettings["claude-opus-5-5"].effortLevel' "$S")" = high ]
 check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.type) \(.command)"' "$S")" = 'command $HOME/.claude/statusline.sh' ]
 # check・fmt のフック（scripts/check・scripts/fmt の決まり）と bare の pre-receive はやめた（ARK-98）
 check "Stop のフックは agent-status だけ（check.sh が無い）" [ "$(jq -r '.hooks.Stop[].hooks[].command' "$S")" = '$HOME/.local/bin/agent-status done' ]
@@ -89,6 +92,11 @@ done
 # レビューは Codex（ARK-87）: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify
 for w in 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' 'notify'; do
   check "グローバルの CLAUDE.md の「レビュー」に「$w」" sh -c "sed -n '/^## レビュー/,/^## /p' '$C' | grep -qF '$w'"
+done
+# フェーズごとのモデル（ARK-101）: 各役の Agent ツールの model・effort
+for w in '| 設計・計画 | サブエージェント | `opus`・`xhigh` |' '| 実装（plan のタスクごと） | サブエージェント | `sonnet`・`high` |' \
+  '| 検証（受け入れ条件を実際に動かす） | 実装と別のサブエージェント | `opus`・`high` |' '`model: haiku`'; do
+  check "グローバルの CLAUDE.md の「モデルの割り当て」に「$w」" sh -c "sed -n '/^## モデルの割り当て/,/^## /p' '$C' | grep -qF -- '$w'"
 done
 check "グローバルの CLAUDE.md: 作業の哲学に優先順位がある" grep -q '正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ' "$C"
 check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
