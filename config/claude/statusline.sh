@@ -2,7 +2,9 @@
 # Claude Code のステータスライン（Nerd Font アイコン付き 2 行）。macOS 標準の bash 3.2 でも動く書き方
 # 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤）→ Codex の 5 時間・週の上限のメーター（ARK-95）
 in=$(cat)
-get() { jq -r "$1 // empty" <<<"$in"; }
+# jq は mise の shim を通すと 1 回 約 0.1 秒かかるので、実体を直接呼ぶ（mise が無い・失敗したら PATH の jq）
+JQ=$(mise which jq 2>/dev/null) && [ -x "$JQ" ] || JQ=jq
+get() { "$JQ" -r "$1 // empty" <<<"$in"; }
 
 # アイコンは UTF-8 のバイト列で指定（エディタで文字化けしないように）
 I_CLAUDE=$(printf '\xee\xb2\x82')  # nf-cod-claude   U+EC82（Nerd Fonts 3.5.0 以降）
@@ -64,7 +66,7 @@ while ((n < 2)) && IFS= read -r f; do
 done < <(ls -t "${files[@]}" 2>/dev/null | head -n 20)
 cr=""
 # 窓は位置（primary・secondary）でなく長さ（分）で見分ける。リセット時刻を過ぎた窓は 0%（時刻は出さない）
-[ -n "$l" ] && cr=$(jq -Rnr 'last(inputs | fromjson? | .payload.rate_limits) // empty | [.primary, .secondary] | map(select(.)) | sort_by(.window_minutes)[]
+[ -n "$l" ] && cr=$("$JQ" -Rnr 'last(inputs | fromjson? | .payload.rate_limits) // empty | [.primary, .secondary] | map(select(.)) | sort_by(.window_minutes)[]
   | if .resets_at < now then "\(.window_minutes) 0" else "\(.window_minutes) \(.used_percent) \(.resets_at)" end' <<<"$l" 2>/dev/null)
 cx=""
 [ -n "$cr" ] && while read -r w p r; do

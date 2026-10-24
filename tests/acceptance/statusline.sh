@@ -3,6 +3,7 @@
 # Codex の設定（CODEX_HOME/config.toml の先頭の model と model_reasoning_effort）があれば 1 行目の右に出す（ARK-87）。
 # session_id があれば文脈の使用率を $XDG_STATE_HOME/claude-context/<session_id> に整数で書く（ARK-90。context-nudge が読む）。
 # Codex のセッションの記録（CODEX_HOME/sessions の rate_limits のある更新の新しいファイルの最後の記録）があれば 2 行目の右に Codex のアイコンと 5 時間（リセット時刻）・週のメーター。窓は window_minutes で見分け、リセット時刻を過ぎた窓は 0%（ARK-95）。
+# jq は mise which の実体を直接呼ぶが、mise が失敗しても PATH の jq で同じ出力（ARK-105）。
 # rate_limits・effort・Codex の設定と記録が無く git でないディレクトリでも終了コード 0 で、1 行目はモデルだけ、2 行目はコンテキストだけ
 #   sh tests/acceptance/statusline.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/statusline.sh  通った項目も
@@ -35,6 +36,8 @@ printf '{"session_id":"../x","context_window":{"used_percentage":50}}' | bash "$
 case "$l1" in "$I_CLAUDE Opus 5.5"*high*"$I_OPENAI gpt-6.1-sol"*xhigh*feature/x*) ok "1 行目は Claude・Codex・ブランチの順で、公式のアイコン付き" ;; *) ng "1 行目: $l1" ;; esac
 case "$l1" in *other*) ng "Codex のモデルを表（profiles）から読んだ: $l1" ;; esac
 case "$l2" in *43%*62%*"$hm"*31%*) ok "2 行目にコンテキスト・5 時間とリセット時刻・週" ;; *) ng "2 行目: $l2" ;; esac
+mkdir -p "$T/fakebin"; printf '#!/bin/sh\nexit 1\n' > "$T/fakebin/mise"; chmod +x "$T/fakebin/mise"
+[ "$(printf '%s' "$in1" | PATH="$T/fakebin:$PATH" bash "$SL")" = "$out" ] && ok "mise が失敗しても PATH の jq で同じ出力" || ng "mise が失敗したときの出力が違う"
 
 out="$(printf '{"model":{"display_name":"Opus 5.5"},"workspace":{"current_dir":"%s"},"context_window":{"used_percentage":12.6}}' "$T" | CODEX_HOME="$T/none" bash "$SL")"; rc=$?
 l1="$(printf '%s\n' "$out" | sed -n 1p)"; l2="$(printf '%s\n' "$out" | sed -n 2p)"
