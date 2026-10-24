@@ -13,7 +13,7 @@ ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID # herdr の中で走らせても本物の pane を触らない
 T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+trap 'kill "$SRV" 2>/dev/null; rm -rf "$T"' EXIT
 export XDG_STATE_HOME="$T/state"
 mkdir -p "$T/bin" "$T/live" "$T/proj/s1/subagents"
 LOG="$T/herdr.log"
@@ -23,7 +23,7 @@ cat > "$T/bin/herdr" <<SH
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "pane run") [ -e "$T/run_fail" ] && exit 1 ;;
-  "pane swap") [ -e "$T/swap_fail" ] && exit 1 ;;
+  "pane swap") [ -e "$T/swap_fail" ] && exit 1; echo "\$4" > "$T/focused" ;; # 本物と同じく source にフォーカスを移す
   "pane split") n=\$(( \$(ls "$T/live" | wc -l) + 10 )); touch "$T/live/w1:p\$n"; printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "\$n" ;;
   "pane get"|"pane close")
     # $T/broken があれば通信の失敗（pane_not_found 以外のエラー）
@@ -34,21 +34,35 @@ esac
 exit 0
 SH
 chmod +x "$T/bin/herdr"
+# 偽の socket API（CLI に無い pane.current・pane.focus）: フォーカスは $T/focused
+perl -MIO::Socket::UNIX -e '
+  my ($sock, $log, $foc) = @ARGV;
+  my $srv = IO::Socket::UNIX->new(Local => $sock, Listen => 5) or die $!;
+  while (my $c = $srv->accept) {
+    my $l = <$c>; my ($m) = $l =~ /"method":"([^"]+)"/; my ($p) = $l =~ /"pane_id":"([^"]+)"/;
+    open my $lf, ">>", $log; print $lf "api $m", ($p ? " $p" : ""), "\n"; close $lf;
+    if ($m eq "pane.current") { open my $f, "<", $foc; chomp(my $id = <$f> // ""); print $c qq({"id":"x","result":{"pane":{"pane_id":"$id"}}}\n) }
+    else { open my $f, ">", $foc; print $f "$p\n"; close $f; print $c qq({"id":"x","result":{}}\n) }
+    close $c;
+  }' "$T/sock" "$LOG" "$T/focused" &
+SRV=$!
+while [ ! -S "$T/sock" ]; do sleep 0.1; done
 export PATH="$ROOT/bin:$T/bin:$PATH"
-in_herdr() { HERDR_ENV=1 HERDR_PANE_ID=w1:p1 "$@"; }
+in_herdr() { HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH="$T/sock" "$@"; }
 ev() { printf '{"session_id":"s1","transcript_path":"%s/proj/s1.jsonl","cwd":"%s","agent_id":"%s","agent_type":"%s"}' "$T" "$T" "$1" "${2:-general-purpose}"; }
 start() { ev "$@" | in_herdr agent-pane start; }
 stop() { ev "$1" | in_herdr agent-pane stop; }
 splits() { grep -c '^pane split' "$LOG" 2>/dev/null || true; }
-reset() { rm -rf "$LOG" "$XDG_STATE_HOME" "$T/live"/*; }
+reset() { rm -rf "$LOG" "$XDG_STATE_HOME" "$T/live"/*; echo w1:p1 > "$T/focused"; }
+reset
 
 # ---- herdr の外では何もしない
-ev a1 | agent-pane start; [ $? = 0 ] && [ ! -e "$LOG" ] && ok "herdr の外では何もしない" || ng "外で herdr を呼んだ"
+ev a1 | HERDR_SOCKET_PATH="$T/sock" agent-pane start; [ $? = 0 ] && [ ! -e "$LOG" ] && ok "herdr の外では何もしない" || ng "外で herdr を呼んだ"
 
 # ---- 開始で pane を分けて view、上限 2
 start a1; start a2
 [ "$(splits)" = 2 ] && [ "$(grep -c '^pane run' "$LOG")" = 2 ] && ok "開始で pane を分けて view を動かす" || ng "開始: $(cat "$LOG")"
-[ "$(sed -n 1,2p "$LOG" | tr '\n' '|')" = "pane split --pane w1:p1 --direction down --ratio 0.333 --no-focus --cwd $T|pane swap --source-pane w1:p1 --target-pane w1:p10|" ] \
+[ "$(grep '^pane ' "$LOG" | sed -n 1,2p | tr '\n' '|')" = "pane split --pane w1:p1 --direction down --ratio 0.333 --no-focus --cwd $T|pane swap --source-pane w1:p1 --target-pane w1:p10|" ] \
   && ok "1 つ目はメインを下に分けて入れ替える（新しい pane が上 3 分の 1、フォーカスは移さない）" || ng "1 つ目の分け方: $(cat "$LOG")"
 grep -q "^pane split --pane w1:p10 --direction right --no-focus --cwd $T\$" "$LOG" && [ "$(grep -c '^pane swap' "$LOG")" = 1 ] \
   && ok "2 つ目は開いているサブの pane を右に分ける（入れ替えない）" || ng "2 つ目の分け方: $(cat "$LOG")"
@@ -62,6 +76,23 @@ rm -f "$T/live/w1:p11"; start a2; [ "$(splits)" = 4 ] && ok "人が閉じた pan
 # ---- workflow のエージェントでは開かず、何も記録しない
 reset; start w1 workflow-subagent
 [ ! -e "$LOG" ] && [ -z "$(ls "$XDG_STATE_HOME/agent-pane/w1_p1" 2>/dev/null)" ] && ok "workflow のエージェントでは開かない" || ng "workflow: $(cat "$LOG" 2>/dev/null)"
+
+# ---- 入れ替えでフォーカスを奪わない（別の pane で作業中なら、入れ替えの後に戻す）
+reset; echo w1:p5 > "$T/focused"; start k1
+grep -q '^pane swap' "$LOG" && [ "$(cat "$T/focused")" = w1:p5 ] && ok "入れ替えの後、元のフォーカスに戻す" || ng "フォーカス: $(cat "$T/focused") $(cat "$LOG")"
+reset; start k2; ! grep -q '^api pane.focus' "$LOG" && ok "フォーカスがメインなら戻す呼び出しをしない" || ng "余計な pane.focus: $(cat "$LOG")"
+# socket が無ければフォーカスを読めないので入れ替えない（サブはメインの下。フォーカスは --no-focus のまま）
+reset; ev k3 | HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH="$T/none" agent-pane start
+grep -q '^pane split --pane w1:p1 --direction down' "$LOG" && ! grep -q '^pane swap' "$LOG" && grep -q '^pane run' "$LOG" \
+  && ok "socket が無ければ入れ替えずに開く" || ng "socket 無し: $(cat "$LOG")"
+
+# ---- 終了は開始と同じロックを取る（開始が既存のサブの pane を分けている間に、その pane を閉じない）
+if command -v flock >/dev/null 2>&1; then
+  reset; start l1; D1="$XDG_STATE_HOME/agent-pane/w1_p1"
+  ( exec 9>>"$D1.lock"; flock 9; sleep 1; echo released >> "$LOG" ) & sleep 0.3; stop l1; wait $!
+  [ "$(grep -n 'released\|^pane close' "$LOG" | cut -d: -f2- | tr '\n' '|')" = "released|pane close w1:p10|" ] \
+    && ok "終了はロックが外れるのを待ってから閉じる" || ng "終了のロック: $(cat "$LOG")"
+fi
 
 # ---- 入れ替えに失敗したら、開いた pane を閉じて記録を残さない
 reset; touch "$T/swap_fail"; start s1; rm -f "$T/swap_fail"
@@ -98,7 +129,7 @@ reset; touch "$T/run_fail"; start g1; rm -f "$T/run_fail"
 start g1; [ "$(splits)" = 2 ] && ok "起動に失敗した後の再通知で開き直す" || ng "再通知: $(splits)"
 
 # ---- 並行の開始でも上限を守る
-reset; for a in d1 d2 d3 d4; do start "$a" & done; wait
+reset; pids=""; for a in d1 d2 d3 d4; do start "$a" & pids="$pids $!"; done; wait $pids
 [ "$(splits)" = 2 ] && ok "4 つ同時に開始しても開くのは 2 つ" || ng "並行: $(splits)"
 
 # ---- 片づけに失敗した pane は、次のセッション（clear の後）の片づけで閉じる（記録はメインの pane ごと）
