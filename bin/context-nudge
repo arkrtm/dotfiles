@@ -1,5 +1,5 @@
 #!/bin/sh
-# 文脈の合図（ARK-90。PostToolUse のフック）: ステータスラインが書いた文脈の使用率（claude-context/<session_id>）が 60% 以上なら、
+# 文脈の合図（PostToolUse のフック）: ステータスラインが書いた文脈の使用率（claude-context/<session_id>）が 60% 以上なら、
 # 10% 刻みに 1 回だけ additionalContext で handoff を促す。サブエージェントの中（入力に agent_id）・値が無い・数字でないときは何もしない
 in="$(cat)"
 command -v jq >/dev/null 2>&1 || exit 0

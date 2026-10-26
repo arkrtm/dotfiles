@@ -1,6 +1,6 @@
 #!/bin/sh
-# notify の受け入れ検査（ARK-86）: 一時 HOME で、notify は標準エラーとログに 1 行。
-# check.sh・fmt.sh のフックは ARK-98 でやめた
+# notify の受け入れ検査: 一時 HOME で、notify は標準エラーとログに 1 行。
+# check.sh・fmt.sh のフックはやめた
 #   sh tests/acceptance/claude-hooks.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/claude-hooks.sh  通った項目も
 set -u

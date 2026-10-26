@@ -1,10 +1,10 @@
 #!/bin/sh
-# ステータスラインの受け入れ検査（ARK-86）: サンプルの入力で 2 行を出し、1 行目に Claude（アイコン・モデル・effort）→ Codex（アイコン・モデル・effort）→ ブランチの順、2 行目にコンテキスト・5 時間（リセット時刻）・週の %。
-# Codex の設定（CODEX_HOME/config.toml の先頭の model と model_reasoning_effort）があれば 1 行目の右に出す（ARK-87）。
-# session_id があれば文脈の使用率を $XDG_STATE_HOME/claude-context/<session_id> に整数で書く（ARK-90。context-nudge が読む）。
-# Codex のセッションの記録（CODEX_HOME/sessions の rate_limits のある更新の新しいファイルの最後の記録）があれば 2 行目の右に Codex のアイコンと 5 時間（リセット時刻）・週のメーター。窓は window_minutes で見分け、リセット時刻を過ぎた窓は 0%（ARK-95）。
-# jq は mise which の実体を直接呼ぶが、mise が失敗しても PATH の jq で同じ出力（ARK-105）。
-# Claude のアイコンは橙（ESC[38;5;173m … ESC[0m）、Codex のアイコンは白（ESC[97m … ESC[0m）。2 行目はコンテキスト・5 時間・週のそれぞれの直前に Claude のアイコンと空白 1 つ（出ているメーターの数だけ）、Codex のアイコン 1 つから Codex のメーター（その前に Claude のアイコンは無い）。Claude のメーターが無ければ 2 行目に Claude のアイコンを出さない（ARK-108）。
+# ステータスラインの受け入れ検査: サンプルの入力で 2 行を出し、1 行目に Claude（アイコン・モデル・effort）→ Codex（アイコン・モデル・effort）→ ブランチの順、2 行目にコンテキスト・5 時間（リセット時刻）・週の %。
+# Codex の設定（CODEX_HOME/config.toml の先頭の model と model_reasoning_effort）があれば 1 行目の右に出す。
+# session_id があれば文脈の使用率を $XDG_STATE_HOME/claude-context/<session_id> に整数で書く（context-nudge が読む）。
+# Codex のセッションの記録（CODEX_HOME/sessions の rate_limits のある更新の新しいファイルの最後の記録）があれば 2 行目の右に Codex のアイコンと 5 時間（リセット時刻）・週のメーター。窓は window_minutes で見分け、リセット時刻を過ぎた窓は 0%。
+# jq は mise which の実体を直接呼ぶが、mise が失敗しても PATH の jq で同じ出力。
+# Claude のアイコンは橙（ESC[38;5;173m … ESC[0m）、Codex のアイコンは白（ESC[97m … ESC[0m）。2 行目はコンテキスト・5 時間・週のそれぞれの直前に Claude のアイコンと空白 1 つ（出ているメーターの数だけ）、Codex のアイコン 1 つから Codex のメーター（その前に Claude のアイコンは無い）。Claude のメーターが無ければ 2 行目に Claude のアイコンを出さない。
 # rate_limits・effort・Codex の設定と記録が無く git でないディレクトリでも終了コード 0 で、1 行目はモデルだけ、2 行目はコンテキストだけ
 #   sh tests/acceptance/statusline.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/statusline.sh  通った項目も
@@ -17,15 +17,15 @@ ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-export XDG_STATE_HOME="$T/state" # 文脈の使用率の書き出し先（ARK-90）
+export XDG_STATE_HOME="$T/state" # 文脈の使用率の書き出し先
 git init -q -b feature/x "$T/repo"
 reset=1792738800
 I_CLAUDE=$(printf '\356\262\202')  # nf-cod-claude U+EC82
 I_OPENAI=$(printf '\356\262\201')  # nf-cod-openai U+EC81
-ORANGE=$(printf '\033[38;5;173m'); WHITE=$(printf '\033[97m'); RST=$(printf '\033[0m') # Claude・Codex のアイコンの色（ARK-108）
+ORANGE=$(printf '\033[38;5;173m'); WHITE=$(printf '\033[97m'); RST=$(printf '\033[0m') # Claude・Codex のアイコンの色
 I_CTX=$(printf '\357\207\200'); I_5H=$(printf '\357\200\227'); I_7D=$(printf '\357\201\263') # nf-fa-database・clock_o・calendar
 GREEN=$(printf '\033[32m'); YELLOW=$(printf '\033[33m'); RED=$(printf '\033[31m')
-nicon() { printf '%s' "$1" | grep -oF "$2" | wc -l | tr -d ' '; } # 文字列 $1 の中のアイコン $2 の数（ARK-108）
+nicon() { printf '%s' "$1" | grep -oF "$2" | wc -l | tr -d ' '; } # 文字列 $1 の中のアイコン $2 の数
 mkdir -p "$T/codex"; printf 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.x]\nmodel = "other"\n' > "$T/codex/config.toml"
 export CODEX_HOME="$T/codex"
 hm="$(date -d "@$reset" +%H:%M 2>/dev/null || date -r "$reset" +%H:%M)"
@@ -35,7 +35,7 @@ out="$(printf '%s' "$in1" | bash "$SL")"; rc=$?
 l1="$(printf '%s\n' "$out" | sed -n 1p)"; l2="$(printf '%s\n' "$out" | sed -n 2p)"
 [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 2 ] && ok "サンプルの入力で 2 行を出す" || ng "rc=$rc 出力: $out"
 printf '{"session_id":"s-1","model":{"display_name":"Opus 5.5"},"context_window":{"used_percentage":43.7}}' | bash "$SL" >/dev/null
-[ "$(cat "$T/state/claude-context/s-1" 2>/dev/null)" = 43 ] && ok "session_id があれば使用率を整数で書く（ARK-90）" || ng "使用率の書き出し: $(cat "$T/state/claude-context/s-1" 2>/dev/null)"
+[ "$(cat "$T/state/claude-context/s-1" 2>/dev/null)" = 43 ] && ok "session_id があれば使用率を整数で書く" || ng "使用率の書き出し: $(cat "$T/state/claude-context/s-1" 2>/dev/null)"
 printf '{"session_id":"../x","context_window":{"used_percentage":50}}' | bash "$SL" >/dev/null
 [ ! -e "$T/state/x" ] && ok "session_id に / があれば書かない" || ng "session_id の / で外に書いた"
 case "$l1" in "$ORANGE$I_CLAUDE$RST Opus 5.5"*high*"$WHITE$I_OPENAI$RST gpt-6.1-sol"*xhigh*feature/x*) ok "1 行目は Claude・Codex・ブランチの順で、橙の Claude・白の Codex のアイコン付き" ;; *) ng "1 行目: $l1" ;; esac
@@ -51,7 +51,7 @@ case "$l1" in *"Opus 5.5") ok "effort が無いと 1 行目はモデルだけ" ;
 [ "$(printf '%s' "$l2" | tr -cd '%' | wc -c | tr -d ' ')" = 1 ] && [ "$(nicon "$l2" "$I_CLAUDE")" = 1 ] && case "$l2" in "$ORANGE$I_CLAUDE$RST $GREEN$I_CTX "*" 12%"*) true ;; *) false ;; esac \
   && ok "rate_limits が無いと 2 行目はコンテキストだけで、Claude のアイコンはその前に 1 つ" || ng "rate_limits が無いときの 2 行目: $l2"
 
-# Codex の使用量（ARK-95）: CODEX_HOME/sessions/YYYY/MM/DD/*.jsonl の token_count の rate_limits
+# Codex の使用量: CODEX_HOME/sessions/YYYY/MM/DD/*.jsonl の token_count の rate_limits
 now=$(date +%s); f5=$((now + 3600)); f7=$((now + 86400)); past=$((now - 60))
 hm5="$(date -d "@$f5" +%H:%M 2>/dev/null || date -r "$f5" +%H:%M)"
 I_RESET=$(printf '\357\200\241') # nf-fa-refresh U+F021

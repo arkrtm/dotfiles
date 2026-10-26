@@ -1,5 +1,5 @@
 #!/bin/sh
-# sudo の無い Linux で install.sh が最後まで通り、必要なものがすべてユーザー領域に入ることの検査（ARK-37）
+# sudo の無い Linux で install.sh が最後まで通り、必要なものがすべてユーザー領域に入ることの検査
 # debian:12（sudo も python3 も zsh も tmux も node も無い）に git と curl だけ入れ、一般ユーザーで実行する。
 # 作業ツリー（未コミットの変更を含む）を標準入力でコンテナに送る。この端末の docker で実行する（DOCKER で docker のコマンドを替えられる）:
 #   sh tests/install-nosudo.sh
@@ -51,7 +51,7 @@ if [ "${1:-}" = --check ]; then
   sh="$(clean sh -c 'PATH="$HOME/.local/bin:$PATH"; command -v tinymemory' 2>&1 || true)"
   [ "$sh" = "$HOME/.local/bin/tinymemory" ] && ok "tinymemory の shim が ~/.local/bin にある（Claude Code の hook が探す場所）" || ng "tinymemory の shim: ${sh:-なし}"
 
-  # Codex（ARK-87）: 公式のインストーラーで ~/.local/bin に入り、起動ファイルに PATH を書き足さない。config.toml はテンプレートから生成され、
+  # Codex: 公式のインストーラーで ~/.local/bin に入り、起動ファイルに PATH を書き足さない。config.toml はテンプレートから生成され、
   # 既存は 1 回だけ退避（2 回目は同じ中身なので退避しない）。ponytail が入り、tinymemory の hook がある
   cv="$(clean "$HOME/.local/bin/codex" --version 2>&1 || true)"
   case "$cv" in codex-cli*) ok "codex が ~/.local/bin に入り動く（$cv）" ;; *) ng "codex が動かない: $cv" ;; esac

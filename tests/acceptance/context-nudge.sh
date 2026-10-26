@@ -1,5 +1,5 @@
 #!/bin/sh
-# context-nudge の受け入れ検査（ARK-90）: ステータスラインが書いた文脈の使用率が 60% 以上なら、10% 刻みに 1 回だけ
+# context-nudge の受け入れ検査: ステータスラインが書いた文脈の使用率が 60% 以上なら、10% 刻みに 1 回だけ
 # PostToolUse の additionalContext で handoff を促すこと。60% 未満・値が無い・数字でない・サブエージェント（agent_id）では何も出さない
 #   sh tests/acceptance/context-nudge.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/context-nudge.sh  通った項目も

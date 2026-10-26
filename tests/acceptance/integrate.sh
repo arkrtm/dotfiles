@@ -1,5 +1,5 @@
 #!/bin/sh
-# integrate の受け入れ検査（ARK-89・ARK-98）: 一時ディレクトリの bare とクローン、integrate setup の設定（一時 HOME）で、
+# integrate の受け入れ検査: 一時ディレクトリの bare とクローン、integrate setup の設定（一時 HOME）で、
 # 関門を 1 つでも満たさなければ統合しない（終了コード 1、notify のログに理由、bare の最上位のブランチは変わらない）こと、
 # 設定が無い・壊れている・remote が違えば統合しないこと、すべて満たせば kind=bare・github は base へ push、
 # kind=pr（偽の gh）はブランチを push して base に向けた PR を作るだけでマージしないこと
@@ -76,55 +76,55 @@ accepted() {
     && ok "統合する: $name" || ng "統合する: $name（rc=$rc $(cat "$T/err")）"
 }
 
-# ---- AC1〜AC3: 今のコミットへの、origin/main との差分のレビューが PASS でなければ通さない
+# ---- 今のコミットへの、origin/main との差分のレビューが PASS でなければ通さない
 setup "$T/r.git"
-refused "レビューが無い（AC1）"
-review FAIL; refused "レビューが VERDICT: FAIL（AC2）"
-review PASS; add a 2; refused "レビューの後にコミットを足した（AC3）"
+refused "レビューが無い"
+review FAIL; refused "レビューが VERDICT: FAIL"
+review PASS; add a 2; refused "レビューの後にコミットを足した"
 setup "$T/r.git"; review PASS HEAD; refused "比較元が HEAD（空の差分）のレビューだけ"
 
-# ---- AC4・AC5: テストや検査を弱める変更は、人の承認（--human-approved）なしでは通さない
-setup "$T/r.git"; add x.py 'import os  # noqa'; review PASS; refused "noqa を足した（AC4）"
+# ---- テストや検査を弱める変更は、人の承認（--human-approved）なしでは通さない
+setup "$T/r.git"; add x.py 'import os  # noqa'; review PASS; refused "noqa を足した"
 setup "$T/r.git"; git config color.ui always; add x.py 'import os  # noqa'; review PASS; refused "色付きの diff の設定でも noqa を見つける"
 setup "$T/r.git"; echo '*.py -diff' > .gitattributes; git add .gitattributes; add x.py 'import os  # noqa'; review PASS
 refused "差分を出さない属性（-diff）でも noqa を見つける"
-setup "$T/r.git"; add tests/test_x.py '@pytest.mark.skip'; review PASS; refused "pytest.mark.skip を足した（AC4）"
-accepted "--human-approved なら無効化の追加も通す（AC4）" --human-approved
+setup "$T/r.git"; add tests/test_x.py '@pytest.mark.skip'; review PASS; refused "pytest.mark.skip を足した"
+accepted "--human-approved なら無効化の追加も通す" --human-approved
 setup "$T/r.git"; add README.md 'skip や noqa の説明'; review PASS; accepted "Markdown の文書の説明は無効化の追加と数えない"
-setup "$T/r.git"; git rm -q tests/t.sh; git commit -qm rm; review PASS; refused "tests/ のファイルを削除した（AC5）"
-accepted "--human-approved ならテストの削除も通す（AC5）" --human-approved
-setup "$T/r.git"; mkdir archive; git mv tests/t.sh archive/t.sh; git commit -qm mv; review PASS; refused "tests/ のファイルを外へ移した（AC5）"
-setup "$T/r.git"; git rm -q tests/日本語.sh; git commit -qm rm; review PASS; refused "日本語名のテストを削除した（AC5）"
-# test/tests の外でも、命名規則でテストと分かるファイル・ディレクトリの削除は通さない（ARK-97）
+setup "$T/r.git"; git rm -q tests/t.sh; git commit -qm rm; review PASS; refused "tests/ のファイルを削除した"
+accepted "--human-approved ならテストの削除も通す" --human-approved
+setup "$T/r.git"; mkdir archive; git mv tests/t.sh archive/t.sh; git commit -qm mv; review PASS; refused "tests/ のファイルを外へ移した"
+setup "$T/r.git"; git rm -q tests/日本語.sh; git commit -qm rm; review PASS; refused "日本語名のテストを削除した"
+# test/tests の外でも、命名規則でテストと分かるファイル・ディレクトリの削除は通さない
 for f in test_app.py src/app_test.py src/conftest.py src/app_test.go web/a.test.ts web/a.spec.js web/__tests__/a.js spec/a_spec.rb; do
   setup "$T/r.git"; mkdir -p "$(dirname "$f")"; echo t > "$f"; git add "$f"; git commit -qm add
   git push -q origin HEAD:main; git fetch -q; git checkout -q -B feature/x origin/main; add a 1
   git rm -q "$f"; git commit -qm rm; review PASS; refused "テストを削除した: $f"
 done
 
-# ---- AC6: main が進んでいたら通さない
+# ---- main が進んでいたら通さない
 setup "$T/r.git"; review PASS
 git clone -q "$BARE" "$T/o" 2>/dev/null && (cd "$T/o" && add b 1 && git push -q origin HEAD:main)
-refused "main が進んでいる（AC6）"
+refused "main が進んでいる"
 
-# ---- AC7: 未コミットの変更・main の上・scripts/check が無い／失敗する／追跡ファイルを書き換える
+# ---- 未コミットの変更・main の上・scripts/check が無い／失敗する／追跡ファイルを書き換える
 setup "$T/r.git"; review PASS
-echo dirty >> a; refused "コミットしていない変更がある（AC7）"; git checkout -q a
+echo dirty >> a; refused "コミットしていない変更がある"; git checkout -q a
 git config status.showUntrackedFiles no; echo x > conftest.py; refused "未追跡のファイルがある（status.showUntrackedFiles=no でも）"
 rm -f conftest.py; git config --unset status.showUntrackedFiles
 mkdir -p "$T/statusbin"; printf '#!/bin/sh\n[ "$1" = status ] && exit 128\nexec %s "$@"\n' "$(command -v git)" > "$T/statusbin/git"; chmod +x "$T/statusbin/git"
 PATH="$T/statusbin:$PATH" refused "git status が失敗する（変更なしと見なさない）"
 grep -q 'git status' "$T/err" && ok "git status の失敗を理由に止まる" || ng "git status の失敗で止まっていない: $(cat "$T/err")"
-git checkout -q main; refused "main の上で実行した（AC7）"; git checkout -q feature/x
-setup "$T/r.git"; git rm -q scripts/check; git commit -qm rm; review PASS; refused "設定の test のコマンドが無い（AC7）"
+git checkout -q main; refused "main の上で実行した"; git checkout -q feature/x
+setup "$T/r.git"; git rm -q scripts/check; git commit -qm rm; review PASS; refused "設定の test のコマンドが無い"
 setup "$T/r.git"; printf '#!/bin/sh\necho check-failed-here\nexit 1\n' > scripts/check; git commit -qam fail; review PASS
-refused "設定の test が失敗する（AC7）"
+refused "設定の test が失敗する"
 grep -q check-failed-here "$T/err" && ok "テストの失敗の出力を見せる" || ng "テストの失敗の出力が出ない: $(cat "$T/err")"
 setup "$T/r.git"; printf '#!/bin/sh\necho x >> a\n' > scripts/check; git commit -qam dirty; review PASS
 refused "設定の test が追跡ファイルを書き換える"
 setup "$T/r.git"; review PASS; resetup --test false; refused "設定の test が false"
 
-# ---- ARK-98: 設定（integrate setup）が無い・壊れている・remote が origin と違えば統合しない
+# ---- 設定（integrate setup）が無い・壊れている・remote が origin と違えば統合しない
 setup "$T/r.git"; review PASS; rm -rf "$HOME/.config/integrate"; refused "設定が無い"
 grep -q 'integrate setup' "$T/err" && ok "設定が無ければ integrate setup を促す" || ng "設定が無いときの案内: $(cat "$T/err")"
 setup "$T/r.git"; review PASS; sed -i.bak 's#^remote=.*#remote=/elsewhere/r.git#' "$(conf)"; rm -f "$(conf).bak"; refused "設定の remote が origin と違う"
@@ -151,8 +151,8 @@ setup "$T/r.git"; review PASS
 integrate --foo >/dev/null 2>"$T/err"; rc=$?
 [ "$rc" = 2 ] && grep -q usage "$T/err" && ok "未知の引数は 2 で使い方を出す" || ng "未知の引数: rc=$rc $(cat "$T/err")"
 
-# ---- AC8: すべて満たせば bare の base（main）へ push する。worktree の中でも（レビューは共通ディレクトリ）
-accepted "すべて満たす（bare。AC8）"
+# ---- すべて満たせば bare の base（main）へ push する。worktree の中でも（レビューは共通ディレクトリ）
+accepted "すべて満たす（bare）"
 # 差分を取れなければ、無効化の記述が無いとは言えないので通さない（diff --no-color だけ失敗する git）
 setup "$T/r.git"; review PASS; mkdir -p "$T/failbin"
 printf '#!/bin/sh\ncase " $* " in *" diff --no-color "*) exit 128 ;; esac\nexec %s "$@"\n' "$(command -v git)" > "$T/failbin/git"; chmod +x "$T/failbin/git"
@@ -160,7 +160,7 @@ PATH="$T/failbin:$PATH" refused "差分を取れない"
 setup "$T/r.git"; git worktree add -q -b feature/wt "$T/wt" && cd "$T/wt"; add c 1; review PASS
 accepted "worktree の中ですべて満たす"
 
-# ---- AC9: kind=pr はブランチを push して base に向けた PR を作るだけ（マージしない）。開いた PR があれば作らない
+# ---- kind=pr はブランチを push して base に向けた PR を作るだけ（マージしない）。開いた PR があれば作らない
 setup "$T/github.com/o/r.git"; review PASS; m0="$(git -C "$BARE" rev-parse main)"
 integrate >"$T/out" 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && [ "$(git -C "$BARE" rev-parse feature/x)" = "$(git rev-parse HEAD)" ] && [ "$(git -C "$BARE" rev-parse main)" = "$m0" ] \

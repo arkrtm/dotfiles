@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code のフック（ARK-99）: origin があって integrate setup の設定が無いリポジトリでは、会話の始まりに setup を案内し
+# Claude Code のフック: origin があって integrate setup の設定が無いリポジトリでは、会話の始まりに setup を案内し
 # （session-start）、編集（Edit・Write・NotebookEdit）を拒む（pre-edit。終了コード 2 で理由を Claude に返す）。
 # 読む・調べる・Bash（integrate setup の実行）は止めない。設定がある・origin が無い・git の外・jq が無いときは何もしない
 #   usage: integrate-hook <session-start|pre-edit>（標準入力にフックの JSON）

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Neovim の設定（config/nvim）の検査: 実際の設定で headless 起動し、エラーが無いこと、noice.nvim（依存の nui.nvim）が
-# lazy.nvim の spec と lazy-lock.json にあり、設定どおりに起動すること（ARK-39）
+# lazy.nvim の spec と lazy-lock.json にあり、設定どおりに起動すること
 #   sh tests/nvim.sh   （install.sh 済みの端末で。プラグインは Lazy! restore で入っていること）
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"

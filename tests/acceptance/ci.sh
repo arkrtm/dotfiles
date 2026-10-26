@@ -1,5 +1,5 @@
 #!/bin/sh
-# GitHub の CI と main の保護の受け入れ検査（ARK-96・ARK-98）: ワークフローが pull_request と main への push で、ubuntu の
+# GitHub の CI と main の保護の受け入れ検査: ワークフローが pull_request と main への push で、ubuntu の
 # ジョブ check に `sh scripts/check` を実行すること（成否は終了コード）。tests/README.md に main の保護（強制 push と削除の禁止だけ。
 # 直接 push するので PR 必須・必須チェックは無し）とマージ方法を入れる gh api のコマンドがあり、AGENTS.md の Git の節が
 # integrate setup を書いていること。GitHub 側の設定は gh api で別に確かめる

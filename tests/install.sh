@@ -1,7 +1,7 @@
 #!/bin/sh
 # install.sh の検査: 空の HOME に対して実行し、(1) LINKS 表の全項目がリンクされること、(2) 既存ファイルが
 # 退避されること、(3) Claude Code の skill は issue と wrap-up だけを置き（ほかの skill には触らない）、
-# git の共通 hooks の設定と旧来のハーネスのもの（ARK-67）と ~/.pi（ARK-94）を置かないこと、(4) 再実行しても同じ結果になること、(5) ponytail の band を隠すファイル（中身 off）を無ければ置き、あれば書き換えないこと
+# git の共通 hooks の設定と旧来のハーネスのものと ~/.pi を置かないこと、(4) 再実行しても同じ結果になること、(5) ponytail の band を隠すファイル（中身 off）を無ければ置き、あれば書き換えないこと
 #   sh tests/install.sh
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
@@ -50,7 +50,7 @@ done | grep STALE && ng "ハーネスのものが置かれている" || ok "ハ�
 [ -z "$(git config --file "$HOME/.config/git/config" --get core.hooksPath || true)" ] \
   && ok "git の設定は共通 hooks の場所を指さない" || ng "git の設定に共通 hooks の場所が残っている"
 
-# スクショの転送（ss-sync）と、ssh の経路の判定（lan-reachable）はやめた（ARK-73）。そのリンクを置かない
+# スクショの転送（ss-sync）と、ssh の経路の判定（lan-reachable）はやめた。そのリンクを置かない
 for p in .local/bin/ss-sync .config/ss-sync .local/bin/lan-reachable; do
   if [ -e "$HOME/$p" ] || [ -L "$HOME/$p" ]; then echo "STALE $p"; fi
 done | grep STALE && ng "やめたもののリンクが置かれている" || ok "やめたもの（ss-sync・lan-reachable）のリンクを置かない"
@@ -60,7 +60,7 @@ B="$HOME/.claude/.ponytail-band"
 [ "$(cat "$B" 2>/dev/null)" = off ] && ok "ponytail の band を隠すファイル（off）を置く" || ng "ponytail の band のファイル: $(cat "$B" 2>/dev/null || echo なし)"
 echo on > "$B"
 
-# pi はやめた（ARK-94）: ~/.pi に何も置かない
+# pi はやめた: ~/.pi に何も置かない
 [ ! -e "$HOME/.pi" ] && ok "~/.pi を作らない" || ng "~/.pi が作られた: $(ls -A "$HOME/.pi")"
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
@@ -68,7 +68,7 @@ out=$(DOTFILES_LINKS_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 sh "$DOTFILES/install.sh")
 case "$out" in *link:*|*backup:*) ng "再実行でリンクや退避が発生した: $out" ;; *) ok "再実行しても何も起きない（べき等）" ;; esac
 [ "$(cat "$B")" = on ] && ok "既にある band のファイル（on）は再実行でも書き換えない" || ng "既にある band のファイルが書き換わった: $(cat "$B")"
 
-# worktree（.git がファイル）からは実行しない: リンクが worktree を指し、worktree を消すと設定が読めなくなる（ARK-88）
+# worktree（.git がファイル）からは実行しない: リンクが worktree を指し、worktree を消すと設定が読めなくなる
 W="$(mktemp -d)"; cp "$DOTFILES/install.sh" "$W/"; echo 'gitdir: /nonexistent' > "$W/.git"
 H="$(mktemp -d)"
 if HOME="$H" DOTFILES_LINKS_ONLY=1 sh "$W/install.sh" >/dev/null 2>&1; then ng "worktree からの実行が止まらなかった"

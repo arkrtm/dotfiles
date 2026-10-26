@@ -1,7 +1,7 @@
 #!/bin/sh
-# codex-review の受け入れ検査（ARK-87）: 偽の codex を PATH の先頭に置き、使い方の誤りは終了コード 2、
+# codex-review の受け入れ検査: 偽の codex を PATH の先頭に置き、使い方の誤りは終了コード 2、
 # plan と branch は codex exec を読み取り専用の sandbox・effort xhigh で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと、
-# branch は結果を <共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存すること（ARK-89）
+# branch は結果を <共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存すること
 #   sh tests/acceptance/codex.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/codex.sh  通った項目も
 set -u

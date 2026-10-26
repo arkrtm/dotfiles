@@ -126,7 +126,7 @@ export FNM_DIR="$HOME/.local/share/fnm"
 # 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く
 ln -sfn "$HOME/.local/share/mise/shims/tinymemory" "$HOME/.local/bin/tinymemory"
 
-# Codex（ARK-87）: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）。
+# Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）。
 # 中身が違うときだけ既存を退避して置き換える。Codex が書いた表のうち、フックの承認（hooks.state）・プロジェクトの信頼（projects）・
 # 表示の状態（tui）は既存から引き継ぐ（消すと /hooks の承認が要り直す）。ほかに Codex が書き込んだ分は再実行で消える
 mkdir -p "$HOME/.codex"

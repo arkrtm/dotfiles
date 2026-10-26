@@ -29,7 +29,7 @@ check "extraKnownMarketplaces.tinymemory は github の arkrtm/tinymemory" \
   [ "$(jq -r '.extraKnownMarketplaces.tinymemory.source | "\(.source) \(.repo)"' "$S")" = "github arkrtm/tinymemory" ]
 check "extraKnownMarketplaces.ponytail は github の DietrichGebert/ponytail" \
   [ "$(jq -r '.extraKnownMarketplaces.ponytail.source | "\(.source) \(.repo)"' "$S")" = "github DietrichGebert/ponytail" ]
-# ---- permissions・statusLine（ARK-86）。integrate setup の上書きと設定の直接の編集を禁止（ARK-98）
+# ---- permissions・statusLine。integrate setup の上書きと設定の直接の編集を禁止
 for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)' 'Bash(codex-review:*)'; do
   check "permissions.allow に $r" jq -e --arg r "$r" '.permissions.allow | index($r)' "$S"
 done
@@ -37,21 +37,21 @@ for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force
   'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)' 'Bash(integrate setup --force:*)' 'Edit(~/.config/integrate/**)'; do
   check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
 done
-# 既定のモデルは Opus 5.5 high（ARK-101。Opus 5.5 では最上位の effortLevel は無視されるので modelSettings に書く）
+# 既定のモデルは Opus 5.5 high（Opus 5.5 では最上位の effortLevel は無視されるので modelSettings に書く）
 check "settings.json の model が opus[1m]（claude plugin が書き換える形。Opus 5.5 では opus と同じ）" [ "$(jq -r '.model' "$S")" = 'opus[1m]' ]
 check "settings.json の modelSettings の claude-opus-5-5 の effortLevel が high" [ "$(jq -r '.modelSettings["claude-opus-5-5"].effortLevel' "$S")" = high ]
 check "statusLine は ~/.claude/statusline.sh" [ "$(jq -r '.statusLine | "\(.type) \(.command)"' "$S")" = 'command $HOME/.claude/statusline.sh' ]
-# check・fmt のフック（scripts/check・scripts/fmt の決まり）と bare の pre-receive はやめた（ARK-98）
+# check・fmt のフック（scripts/check・scripts/fmt の決まり）と bare の pre-receive はやめた
 check "Stop のフックは agent-status だけ（check.sh が無い）" [ "$(jq -r '.hooks.Stop[].hooks[].command' "$S")" = '$HOME/.local/bin/agent-status done' ]
 check "settings.json のフックに check.sh・fmt.sh が無い" sh -c "! jq -r '.hooks[][].hooks[].command' '$S' | grep -qE 'check\.sh|fmt\.sh'"
-# integrate setup の無いリポジトリでは会話の始まりに案内し、編集を止める（ARK-99）
+# integrate setup の無いリポジトリでは会話の始まりに案内し、編集を止める
 check "SessionStart に integrate-hook session-start" sh -c "jq -r '.hooks.SessionStart[].hooks[].command' '$S' | grep -qx '\$HOME/.local/bin/integrate-hook session-start'"
 check "PreToolUse の Edit|Write|NotebookEdit に integrate-hook pre-edit" \
   [ "$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Edit|Write|NotebookEdit") | .hooks[].command' "$S")" = '$HOME/.local/bin/integrate-hook pre-edit' ]
 check "config/claude/hooks・pre-receive とその検査が無い" \
   sh -c "[ ! -e '$ROOT/config/claude/hooks' ] && [ ! -e '$ROOT/config/git/hooks/pre-receive' ] && [ ! -e '$ROOT/tests/acceptance/pre-receive.sh' ]"
 
-# ---- herdr 連携（ARK-90）: モバイルは remote-control を常に、文脈の合図、サブエージェントの pane、clear の後の印と片づけ
+# ---- herdr 連携: モバイルは remote-control を常に、文脈の合図、サブエージェントの pane、clear の後の印と片づけ
 hk() { jq -r --arg e "$1" '.hooks[$e][]? | .hooks[].command' "$S"; }
 check "remoteControlAtStartup が true" [ "$(jq -r '.remoteControlAtStartup' "$S")" = true ]
 check "PostToolUse（全ツール）に context-nudge" [ "$(jq -r '.hooks.PostToolUse[] | select(.matcher == null) | .hooks[].command' "$S" | grep -c '^\$HOME/.local/bin/context-nudge$')" = 1 ]
@@ -80,25 +80,25 @@ done
 check "install.sh の LINKS 表にグローバルの gitignore（config/git/ignore）がある" sh -c "printf '%s\n' \"\$1\" | grep -q '^config/git/ignore  *\.config/git/ignore\$'" _ "$links"
 check "config/git/ignore は .superpowers/ を除外する" grep -qx '\.superpowers/' "$ROOT/config/git/ignore"
 
-# ---- pi はやめた（ARK-94）: config/pi が無く、pi 向けの記述も無い（パターンの [ ] は、この行自身に当たらないため）
+# ---- pi はやめた: config/pi が無く、pi 向けの記述も無い（パターンの [ ] は、この行自身に当たらないため）
 check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
 git -C "$ROOT" grep -q -I -E '\b[P]i\b|\.p[i]/|bigpower[s]|/skil[l]:|pi-tinymemor[y]|yamlfi[x]|ask_user_questio[n]'; rc=$? # 1 = 一致なし、0 = 記述がある、ほかは実行の失敗
-check "pi 向けの記述が無い（AC1 の git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
+check "pi 向けの記述が無い（git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
 
 # ---- グローバルの CLAUDE.md: 手順は superpowers、Linear の記録は /issue・/wrap-up、plan の置き場所
 C="$ROOT/config/agents/AGENTS.md"
 for h in 作業の哲学 規約 Linear スクリーンショット; do
   check "グローバルの CLAUDE.md に「$h」の節がある" grep -Eq "^#+ .*$h" "$C"
 done
-# Karpathy と Ponytail は全文を取り込まず要約にする（ponytail はプラグインが毎ターン入れる。ARK-86）
+# Karpathy と Ponytail は全文を取り込まず要約にする（ponytail はプラグインが毎ターン入れる）
 for h in 'Karpathy guidelines' 'Ponytail, lazy senior dev mode'; do
   check "グローバルの CLAUDE.md に「$h」の全文が無い" sh -c "! grep -q '$h' '$C'"
 done
-# レビューは Codex（ARK-87）: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify
+# レビューは Codex: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify
 for w in 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' 'notify'; do
   check "グローバルの CLAUDE.md の「レビュー」に「$w」" sh -c "sed -n '/^## レビュー/,/^## /p' '$C' | grep -qF '$w'"
 done
-# フェーズごとのモデル（ARK-101）: 各役の Agent ツールの model・effort
+# フェーズごとのモデル: 各役の Agent ツールの model・effort
 for w in '| 設計・計画 | サブエージェント | `opus`・`xhigh` |' '| 実装（plan のタスクごと） | サブエージェント | `sonnet`・`high` |' \
   '| 検証（受け入れ条件を実際に動かす） | 実装と別のサブエージェント | `opus`・`high` |' '`model: haiku`'; do
   check "グローバルの CLAUDE.md の「モデルの割り当て」に「$w」" sh -c "sed -n '/^## モデルの割り当て/,/^## /p' '$C' | grep -qF -- '$w'"
@@ -111,7 +111,7 @@ check "グローバルの CLAUDE.md: /wrap-up は統合の前に作業ブラン�
 check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/ に置き、本文が正本" sh -c "grep -q '\.superpowers/plans/' '$C' && grep -q '本文が正本' '$C'"
 check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 'docs/superpowers/.*作らない' "$C"
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
-# スクショは WSL で Windows のピクチャの Screenshots の最新を見る（ARK-73。転送はやめた）。ユーザー名は glob で書き、固定しない
+# スクショは WSL で Windows のピクチャの Screenshots の最新を見る（転送はやめた）。ユーザー名は glob で書き、固定しない
 ss="$(sed -n '/^## スクリーンショット/,/^## /p' "$C")"
 for w in 'ls -t /mnt/c/Users/*/Pictures/Screenshots/*.png | head' 'WSL 以外'; do
   check "グローバルの CLAUDE.md の「スクリーンショット」に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$ss" "$w"
@@ -128,9 +128,9 @@ done
 # ---- skill: issue はコメントの規則をグローバル指示に委ねる
 check "issue のコメントの節目はグローバル指示の Linear の節に従う（書き写さない）" grep -q 'コメントの節目はグローバル指示の Linear の節に従う' "$ROOT/config/agents/skills/issue/SKILL.md"
 
-# ---- Git の運用（ARK-88）: 1 issue = 1 ブランチ = 1 worktree、統合は origin で決める、relay は統合の後に片づける。
-#      統合は integrate だけ（ARK-89）。テストを弱めるときは人が --human-approved。
-#      最上位のブランチ・種類・テストはリポジトリごとの integrate setup（ARK-98）
+# ---- Git の運用: 1 issue = 1 ブランチ = 1 worktree、統合は origin で決める、relay は統合の後に片づける。
+#      統合は integrate だけ。テストを弱めるときは人が --human-approved。
+#      最上位のブランチ・種類・テストはリポジトリごとの integrate setup
 for w in 'feature/' '.worktrees/' '--no-track' 'origin/<最上位>' 'refactor:' 'issue 番号' 'PR を出す前だけ' \
   'integrate setup' 'git rebase origin/<最上位>' '強制 push' 'codex-review branch origin/<最上位>' '`integrate`' 'integrate --human-approved'; do
   check "グローバルの CLAUDE.md の「Git」に「$w」" sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF -- '$w'"
@@ -150,7 +150,7 @@ for w in Done relay 'tinymemory archive' 'git worktree remove' headRefOid '--ff-
   check "wrap-up の「統合の後」に「$w」" sh -c "sed -n '/^## 5. 統合の後/,\$p' '$W' | grep -qF -- '$w'"
 done
 
-# ---- 統合の後に次の issue を始める（ARK-106）: wrap-up の 5 の最後と handoff skill の使い方
+# ---- 統合の後に次の issue を始める: wrap-up の 5 の最後と handoff skill の使い方
 W5="$(sed -n '/^## 5. 統合の後/,$p' "$W" | sed -n '/^5\. /,$p')" # 5 の最後の項目（5.）とその下の行
 check "wrap-up の 5 の最後の項目（5.）を読めた" [ -n "$W5" ]
 for w in 'ユーザーが示した作業' '続きの指示に書かれたもの' 'そのリポジトリで新しいセッションを開いて続きの指示の文' '同じリポジトリ' '優先度の高い順' '番号の小さい順' 'Todo・Backlog' 'ほかのリポジトリの Todo' '新しいセッション' '選択肢' '答えを待つ' 'handoff skill' 'herdr の中なら' '`/clear`' '`/new`' '続きの指示' '`/issue ARK-nn`'; do
@@ -179,7 +179,7 @@ check "config/claude/README.md の手順で、公式の marketplace の add が 
 check "config/claude/README.md の手順で、tinymemory の marketplace の add が tinymemory の install より前" add_before_install arkrtm/tinymemory tinymemory@tinymemory
 check "config/claude/README.md の手順で、ponytail の marketplace の add が ponytail の install より前" add_before_install DietrichGebert/ponytail ponytail@ponytail
 
-# ---- git の設定: 共通 hooks の場所は置かない（ARK-67 の結果。各リポジトリの .git/hooks がそのまま効く）
+# ---- git の設定: 共通 hooks の場所は置かない（各リポジトリの .git/hooks がそのまま効く）
 check "config/git/config に core.hooksPath が無い" sh -c "! git config -f '$ROOT/config/git/config' --get core.hooksPath"
 
 # ---- LIVE: 新しいセッションの起動情報（init）のプラグインと skill。config/claude/README.md の新しい端末の手順
@@ -200,7 +200,7 @@ if [ -n "${LIVE:-}" ]; then
   M="$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')"
   lcheck "（LIVE）~/.claude/settings.json はリポジトリへのリンクのまま（plugin の操作で実ファイルに置き換わっていない）" \
     [ "$(readlink "$HOME/.claude/settings.json")" = "$M/config/claude/settings.json" ]
-  # config/claude/README.md の新しい端末の手順（ARK-64 AC3）: 空の設定の置き場に settings.json の写しを置き、手順の `claude plugin …` を順に実行する
+  # config/claude/README.md の新しい端末の手順: 空の設定の置き場に settings.json の写しを置き、手順の `claude plugin …` を順に実行する
   # 比べる基準は写しを取った時点の内容（実行中に本物の settings.json が書き換わっても誤って落ちないように）
   N="$D/newterm"; mkdir -p "$N"; cp "$S" "$D/settings.before.json"; cp "$D/settings.before.json" "$N/settings.json"
   # 手順の 1 つずつを語に分けて渡す（シェルを通さない）

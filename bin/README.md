@@ -27,7 +27,7 @@
 - `integrate setup --show` で今の設定を出す。既にある設定は上書きしない（終了コード 1）。上書きは `integrate setup --force …` を人が端末で実行する。端末の確かめと settings.json の deny は抑止で（`--human-approved` と同じ水準）、同じユーザーで動くエージェントが擬似端末（`script`）や設定のファイルの rm で越えることまでは防げない
 - この dotfiles は `integrate setup --kind github --base main --test 'sh scripts/check'`
 - 設定の無いリポジトリで Claude Code が編集しようとすると、`integrate-hook` が止めて setup を促す。Claude は推測をユーザーに選択肢で確かめてから引数で setup する
-- ARK-98 より前から使っている端末（業務サーバーなど）の移行:
+- `~/.claude/hooks`（やめた check・fmt のフック）のリンクが残っている端末（業務サーバーなど）の移行:
 
 ```sh
 cd ~/dotfiles && git pull

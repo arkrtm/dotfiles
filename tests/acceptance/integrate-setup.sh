@@ -1,5 +1,5 @@
 #!/bin/sh
-# integrate setup の受け入れ検査（ARK-98）: 一時 HOME と一時的な bare で、引数で全部渡せば ~/.config/integrate/repos/<鍵> に
+# integrate setup の受け入れ検査: 一時 HOME と一時的な bare で、引数で全部渡せば ~/.config/integrate/repos/<鍵> に
 # kind・base・test・remote の 4 行を書くこと、既にあれば書かない（上書きは --force を setup の直後に置き、端末からだけ）、
 # 改行・不正な kind を拒むこと、引数が足りず端末でなければ推測（kind・base・test）を出して書かないこと、--show、端末での確認
 #   sh tests/acceptance/integrate-setup.sh      失敗した項目と要約だけ

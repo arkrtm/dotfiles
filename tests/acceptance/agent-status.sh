@@ -1,5 +1,5 @@
 #!/bin/sh
-# agent-status の受け入れ検査（ARK-68 I2）: 私設ソケットの本物の tmux で、ペインの状態の集約（waiting > working > done、全 idle で消える）と、
+# agent-status の受け入れ検査: 私設ソケットの本物の tmux で、ペインの状態の集約（waiting > working > done、全 idle で消える）と、
 # 状態の読みと書きが 1 回の tmux 呼び出しであること（同時に 2 本走っても通知が二重にならない根拠）を確かめる
 #   sh tests/acceptance/agent-status.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/agent-status.sh  通った項目も

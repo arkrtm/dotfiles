@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Claude Code のステータスライン（Nerd Font アイコン付き 2 行）。macOS 標準の bash 3.2 でも動く書き方
-# 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤。それぞれの前に Claude のアイコン）→ Codex のアイコンと 5 時間・週の上限のメーター（ARK-95）。アイコンは Claude を橙、Codex を白（ARK-108）
+# 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤。それぞれの前に Claude のアイコン）→ Codex のアイコンと 5 時間・週の上限のメーター。アイコンは Claude を橙、Codex を白
 in=$(cat)
 # jq は mise の shim を通すと 1 回 約 0.1 秒かかるので、実体を直接呼ぶ（mise が無い・失敗したら PATH の jq）
 JQ=$(mise which jq 2>/dev/null) && [ -x "$JQ" ] || JQ=jq
 get() { "$JQ" -r "$1 // empty" <<<"$in"; }
 
 # アイコンは UTF-8 のバイト列で指定（エディタで文字化けしないように）
-I_CLAUDE=$(printf '\033[38;5;173m\xee\xb2\x82\033[0m')  # nf-cod-claude   U+EC82（Nerd Fonts 3.5.0 以降）。橙（ARK-108）
-I_OPENAI=$(printf '\033[97m\xee\xb2\x81\033[0m')  # nf-cod-openai   U+EC81（同上）。白（ARK-108）
+I_CLAUDE=$(printf '\033[38;5;173m\xee\xb2\x82\033[0m')  # nf-cod-claude   U+EC82（Nerd Fonts 3.5.0 以降）。橙
+I_OPENAI=$(printf '\033[97m\xee\xb2\x81\033[0m')  # nf-cod-openai   U+EC81（同上）。白
 I_BRANCH=$(printf '\xee\x82\xa0')  # branch          U+E0A0
 I_CTX=$(printf '\xef\x87\x80')     # nf-fa-database  U+F1C0
 I_5H=$(printf '\xef\x80\x97')      # nf-fa-clock_o   U+F017
@@ -35,10 +35,10 @@ cm=$(cx model); ce=$(cx model_reasoning_effort)
 br=$(git -C "$(get .workspace.current_dir)" branch --show-current 2>/dev/null)
 [ -n "$br" ] && line1+="   ${DIM}${I_BRANCH} ${br}${R}"
 
-# 2 行目: コンテキスト・5 時間・週のメーター。それぞれの前に Claude のアイコン（ARK-108）
+# 2 行目: コンテキスト・5 時間・週のメーター。それぞれの前に Claude のアイコン
 line2=""
 ctx=$(get .context_window.used_percentage)
-# 使用率を context-nudge（PostToolUse のフック。入力に使用率が無い）に渡す（ARK-90）
+# 使用率を context-nudge（PostToolUse のフック。入力に使用率が無い）に渡す
 sid=$(get .session_id)
 case "$sid" in ''|.|..|*/*) ;; *) [ -n "$ctx" ] && d="${XDG_STATE_HOME:-$HOME/.local/state}/claude-context" && mkdir -p "$d" 2>/dev/null && printf '%s\n' "${ctx%.*}" > "$d/$sid" 2>/dev/null ;; esac
 [ -n "$ctx" ] && line2+="$I_CLAUDE $(meter "$I_CTX" "$ctx" 50 70)   "
@@ -52,7 +52,7 @@ fi
 d7=$(get .rate_limits.seven_day.used_percentage)
 [ -n "$d7" ] && line2+="$I_CLAUDE $(meter "$I_7D" "$d7" 50 80)   "
 
-# Codex の使用量（ARK-95）: 更新の新しいセッションから、記録のある 2 ファイルの最後の 5 行ずつを古い順に集める（ファイルが数 MB あるので jq には grep で絞った行だけを渡す。
+# Codex の使用量: 更新の新しいセッションから、記録のある 2 ファイルの最後の 5 行ずつを古い順に集める（ファイルが数 MB あるので jq には grep で絞った行だけを渡す。
 # 再開したセッションは古いファイルに追記されるので、名前でなく更新時刻で選ぶ）
 # shortcut: 2 ファイルとも最後の 5 行が読めない行（} で終わるのに JSON でない）だけなら出さない。Codex を並列で何本も動かす使い方になったら増やす
 days=("${CODEX_HOME:-$HOME/.codex}/sessions"/*/*/*/); files=()

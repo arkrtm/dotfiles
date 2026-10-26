@@ -4,7 +4,7 @@
 
 ## 常時起動サーバー（herdr と Claude Code）
 
-常時起動のサーバー（どの端末でも同じ）で herdr を立ち上げ、その中で Claude Code を動かす。PC からは herdr に入って見る。モバイルからは Claude アプリの remote-control でメインの会話を見て指示する（ARK-90）:
+常時起動のサーバー（どの端末でも同じ）で herdr を立ち上げ、その中で Claude Code を動かす。PC からは herdr に入って見る。モバイルからは Claude アプリの remote-control でメインの会話を見て指示する:
 
 ```sh
 curl -fsSL https://herdr.dev/install.sh | sh   # 初回だけ: herdr を ~/.local/bin に入れる（sudo なし）

@@ -1,5 +1,5 @@
 #!/bin/sh
-# integrate-hook の受け入れ検査（ARK-99）: 一時 HOME と一時的なリポジトリで、origin があって integrate setup の設定が無い
+# integrate-hook の受け入れ検査: 一時 HOME と一時的なリポジトリで、origin があって integrate setup の設定が無い
 # リポジトリでは、pre-edit が編集を拒み（終了コード 2、理由に integrate setup）、session-start が案内を出すこと。
 # 設定がある・origin が無い・git の外・空の入力・jq が無いときは何もしない（終了コード 0）
 #   sh tests/acceptance/integrate-hook.sh      失敗した項目と要約だけ

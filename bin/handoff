@@ -1,5 +1,5 @@
 #!/bin/sh
-# 文脈を引き継いで続ける（ARK-90）: herdr の中で、このターンが終わって自分の pane のエージェントが idle になったら /clear を送り、
+# 文脈を引き継いで続ける: herdr の中で、このターンが終わって自分の pane のエージェントが idle になったら /clear を送り、
 # clear の後の SessionStart（handoff --session-start が印を書く）を待ってから、続きの指示をユーザーの入力として送る。
 # 裏の処理は切り離して動かす（呼んだターンが終わらないと /clear を受け付けないため）。引き継ぎの保存は呼ぶ前に済ませる（handoff skill）
 #   usage: handoff <続きの指示>       herdr の外では 1（人が /clear して続きを送る）

@@ -1,10 +1,10 @@
 #!/bin/sh
-# サブエージェントの進みを herdr の別 pane に見せる（ARK-90。PC 用。モバイルには出ない）。
+# サブエージェントの進みを herdr の別 pane に見せる（PC 用。モバイルには出ない）。
 #   usage: agent-pane start|stop|cleanup   SubagentStart・SubagentStop・SessionStart（clear）と SessionEnd のフック（標準入力にフックの JSON）
 #          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）
 # herdr の中だけ。1 つ目はメインの下に 3 分の 1 の高さ、2 つ目はその右（フォーカスは移さない）。
-# メインの上に出すには入れ替え（swap）が要るが、herdr 0.9.5 の swap はフォーカスをメインに移すので使わない（ARK-100）。
-# 同時に開くのは 2 つまで。workflow のエージェント（agent_type が workflow-subagent）は数が多いので開かない（ARK-100）。
+# メインの上に出すには入れ替え（swap）が要るが、herdr 0.9.5 の swap はフォーカスをメインに移すので使わない。
+# 同時に開くのは 2 つまで。workflow のエージェント（agent_type が workflow-subagent）は数が多いので開かない。
 # 開いた pane は state/agent-pane/<メインの pane>/<agent_id>（1 行目 pane、2 行目 記録）に覚え、消えた pane・中断（meta.json の finished）は数えずに閉じる
 MAX=2
 if [ "${1:-}" = view ]; then
