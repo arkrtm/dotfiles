@@ -110,6 +110,8 @@ check "グローバルの CLAUDE.md: issue は /issue で始める" grep -q '`/i
 check "グローバルの CLAUDE.md: /wrap-up は統合の前に作業ブランチの上で" grep -q '統合の前に、作業ブランチの上で `/wrap-up`' "$C"
 check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/ に置き、本文が正本" sh -c "grep -q '\.superpowers/plans/' '$C' && grep -q '本文が正本' '$C'"
 check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 'docs/superpowers/.*作らない' "$C"
+check "グローバルの CLAUDE.md: Linear が使えないときの記録は .superpowers/tasks/ に置き、リポジトリの中には置かない" \
+  sh -c "grep -qF '.superpowers/tasks/<短い名前>.md' '$C' && ! grep -qF 'docs/tasks' '$C'"
 check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
 # スクショは WSL で Windows のピクチャの Screenshots の最新を見る（転送はやめた）。ユーザー名は glob で書き、固定しない
 ss="$(sed -n '/^## スクリーンショット/,/^## /p' "$C")"
@@ -135,6 +137,8 @@ for w in 'feature/' '.worktrees/' '--no-track' 'origin/<最上位>' 'refactor:' 
   'integrate setup' 'git rebase origin/<最上位>' '強制 push' 'codex-review branch origin/<最上位>' '`integrate`' 'integrate --human-approved'; do
   check "グローバルの CLAUDE.md の「Git」に「$w」" sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF -- '$w'"
 done
+check "グローバルの CLAUDE.md の「Git」: Linear の情報はすべて、コミット・PR・ブランチ名だけでなくリポジトリに入るものすべてに書かない" \
+  sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF 'など、すべて）は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない' && ! grep -qF 'issue 番号はコミット・PR・ブランチ名に入れない' '$C'"
 check "グローバルの CLAUDE.md: 作業中の保存は relay のタグ" grep -qF -- '--tags relay' "$C"
 I="$ROOT/config/agents/skills/issue/SKILL.md"
 for w in '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最上位>'; do
@@ -149,6 +153,10 @@ done
 for w in Done relay 'tinymemory archive' 'git worktree remove' headRefOid '--ff-only'; do
   check "wrap-up の「統合の後」に「$w」" sh -c "sed -n '/^## 5. 統合の後/,\$p' '$W' | grep -qF -- '$w'"
 done
+WR="$(grep -F '| **README・設計メモ** |' "$W")" # 置き場所の表の README の行
+check "wrap-up の表の README の行: 仕組みと限界だけ、理由や経緯は Linear にだけ置き、Linear の情報で指さない" \
+  sh -c 'printf "%s\n" "$1" | grep -qF "理由や経緯は書かない（Linear にだけ置く。issue 番号など Linear の情報も書かない）" && ! printf "%s\n" "$1" | grep -qF "issue 番号で指す"' _ "$WR"
+check "wrap-up の振り分け: 同じ内容をリポジトリの中から issue 番号で指させない" sh -c "! grep -qF 'issue 番号やパスで指す' '$W'"
 
 # ---- 統合の後に次の issue を始める: wrap-up の 5 の最後と handoff skill の使い方
 W5="$(sed -n '/^## 5. 統合の後/,$p' "$W" | sed -n '/^5\. /,$p')" # 5 の最後の項目（5.）とその下の行
