@@ -54,6 +54,12 @@ printf '%s\n' "$WANT" > "$T/plain"; cp "$T/plain" "$T/plain.orig"
 sh "$HOOK" "$T/plain"
 cmp -s "$T/plain" "$T/plain.orig" && ok "フック: AI 由来の行が無いメッセージは変わらない" || ng "フック: AI 由来の行が無いメッセージが変わった: $(sed -n l "$T/plain")"
 
+# UTF-8 として不正なバイト（Latin-1 の é）を含む行は、UTF-8 のロケールでも消えない（grep が binary 扱いして黙って落とさない）
+printf 'fix: caf\351\n\nbody caf\351\n\nClaude-Session: https://claude.ai/code/session_0123abc\n' > "$T/latin"
+printf 'fix: caf\351\n\nbody caf\351\n' > "$T/latin.want"
+LC_ALL=C.UTF-8 sh "$HOOK" "$T/latin"
+git stripspace < "$T/latin" | cmp -s - "$T/latin.want" && ok "フック: UTF-8 でないバイトを含む件名・本文は残り、AI の行だけ消える" || ng "フック: UTF-8 でないバイトを含む行が消えたか、AI の行が残った: $(sed -n l "$T/latin")"
+
 # リポジトリを作り、最初のコミットを置く。$2 が空でなければ hooksPath を指す
 repo() {
   git init -q -b main "$1"

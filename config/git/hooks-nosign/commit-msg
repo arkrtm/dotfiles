@@ -2,8 +2,8 @@
 # 業務サーバーだけ ~/.gitconfig の core.hooksPath で指す（config/git/README.md の「業務サーバー」）。コミットメッセージから AI 由来の行を消す:
 # AI のツールの Co-Authored-By（Claude Code の noreply@anthropic.com と Codex の noreply@openai.com。メールアドレスで見るので、名前に Claude などを含む人の共同作者は残る）、
 # Claude-Session:、Generated with Claude Code・Generated with Codex だけの行（行頭の 🤖、リンクの形、行末の . も）、セッションの URL だけの行。文中の言及は残す。
-# 消して残る空行は git の cleanup が詰める（--cleanup=verbatim のときだけ残る）
-grep -viE \
+# 消して残る空行は git の cleanup が詰める（--cleanup=verbatim のときだけ残る）。grep -a は UTF-8 でないバイトの行を binary 扱いで落とさないため
+grep -aviE \
   -e '^co-authored-by:[^<]*<noreply@(anthropic|openai)\.com>[[:space:]]*$' \
   -e '^claude-session:' \
   -e '^(🤖[[:space:]]*)?generated with (claude code|\[claude code\]\([^)]*\)|codex|\[codex\]\([^)]*\))\.?[[:space:]]*$' \
