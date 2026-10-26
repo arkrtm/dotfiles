@@ -6,6 +6,7 @@
 # jq は mise which の実体を直接呼ぶが、mise が失敗しても PATH の jq で同じ出力。
 # Claude のアイコンは橙（ESC[38;5;173m … ESC[0m）、Codex のアイコンは白（ESC[97m … ESC[0m）。2 行目はコンテキスト・5 時間・週のそれぞれの直前に Claude のアイコンと空白 1 つ（出ているメーターの数だけ）、Codex のアイコン 1 つから Codex のメーター（その前に Claude のアイコンは無い）。Claude のメーターが無ければ 2 行目に Claude のアイコンを出さない。
 # rate_limits・effort・Codex の設定と記録が無く git でないディレクトリでも終了コード 0 で、1 行目はモデルだけ、2 行目はコンテキストだけ
+# herdr の中では（偽の herdr）pane の名前を main · モデルの正式な名前 effort にし、今の名前と同じなら付け直さない。herdr の外では呼ばない
 #   sh tests/acceptance/statusline.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/statusline.sh  通った項目も
 set -u
@@ -15,6 +16,7 @@ fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
+unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID # herdr の中で走らせても本物の pane の名前を変えない
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export XDG_STATE_HOME="$T/state" # 文脈の使用率の書き出し先
@@ -126,6 +128,32 @@ rl "$(win 66.0 10080 "$f7")" null > "$d/10/rollout-a.jsonl"; touch -t 2026103012
 rl "$(win 22.0 10080 "$f7")" null > "$d/17/rollout-a.jsonl"; touch -t 202610170900 "$d/17/rollout-a.jsonl" # 見る 7 日のうち更新が一番新しい
 c="$(cx2 "$T/u9")"; c="${c##*"$I_OPENAI"}"
 case "$c" in *" 22%"*) ok "新しい 7 日分の日のディレクトリだけを見る" ;; *) ng "7 日より前の日のディレクトリ: $c" ;; esac
+
+# herdr の中では pane の名前を「main · モデルの正式な名前（[1m] などを除く） effort」にする。今の名前と同じなら付け直さない。herdr の外では呼ばない
+# 偽の herdr: rename は名前を $T/label に覚え、get はそれを label で返す
+mkdir -p "$T/hbin"; cat > "$T/hbin/herdr" <<SH
+#!/bin/sh
+echo "\$*" >> "$T/herdr.log"
+case "\$1 \$2" in
+  "pane get") printf '{"result":{"pane":{"label":%s}}}\n' "\$(cat "$T/label" 2>/dev/null || echo null)" ;;
+  "pane rename") shift 3; printf '"%s"' "\$*" > "$T/label" ;;
+esac
+SH
+chmod +x "$T/hbin/herdr"
+hin='{"model":{"id":"claude-opus-5-5[1m]","display_name":"Opus 5.5 (1M context)"},"effort":{"level":"high"}}'
+hsl() { HERDR_ENV="$1" HERDR_PANE_ID=w1:p2 PATH="$T/hbin:$PATH" CODEX_HOME="$T/none" bash "$SL" >/dev/null; }
+renames() { grep '^pane rename' "$T/herdr.log" 2>/dev/null; }
+printf '%s' "$hin" | hsl ""; [ ! -e "$T/herdr.log" ] && ok "herdr の外では herdr を呼ばない" || ng "外で herdr を呼んだ: $(cat "$T/herdr.log")"
+printf '%s' "$hin" | hsl 1; printf '%s' "$hin" | hsl 1
+[ "$(renames)" = "pane rename w1:p2 main · claude-opus-5-5 high" ] \
+  && ok "herdr の中ではメインの pane の名前を main · モデル effort にし、今の名前と同じなら付け直さない" || ng "メインの pane の名前: $(cat "$T/herdr.log" 2>/dev/null)"
+printf '%s' "$hin" | sed 's/"high"/"xhigh"/' | hsl 1
+[ "$(renames | sed -n 2p)" = "pane rename w1:p2 main · claude-opus-5-5 xhigh" ] && ok "effort が変わったら名前を付け直す" || ng "effort の変更: $(renames)"
+rm -f "$T/label"; printf '%s' "$hin" | sed 's/"high"/"xhigh"/' | hsl 1
+[ "$(renames | sed -n 3p)" = "pane rename w1:p2 main · claude-opus-5-5 xhigh" ] \
+  && ok "名前が消えたら（herdr を立ち上げ直したときなど）同じ名前を付け直す" || ng "名前が消えたとき: $(renames)"
+printf '{"model":{"id":"claude-haiku-5-5"}}' | hsl 1
+[ "$(renames | sed -n 4p)" = "pane rename w1:p2 main · claude-haiku-5-5" ] && ok "effort が無ければ名前はモデルだけ" || ng "effort が無いとき: $(renames)"
 
 [ "$fail" = 0 ] && echo "acceptance statusline: ok"
 [ "$fail" = 0 ]

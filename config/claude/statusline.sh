@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Claude Code のステータスライン（Nerd Font アイコン付き 2 行）。macOS 標準の bash 3.2 でも動く書き方
 # 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤。それぞれの前に Claude のアイコン）→ Codex のアイコンと 5 時間・週の上限のメーター。アイコンは Claude を橙、Codex を白
+# herdr の中では、この pane の名前を main · モデル effort にする（agent-pane のサブエージェントの pane と見分ける）
 in=$(cat)
 # jq は mise の shim を通すと 1 回 約 0.1 秒かかるので、実体を直接呼ぶ（mise が無い・失敗したら PATH の jq）
 JQ=$(mise which jq 2>/dev/null) && [ -x "$JQ" ] || JQ=jq
@@ -76,5 +77,12 @@ cx=""
   esac
 done <<<"$cr"
 [ -n "$cx" ] && line2+="${I_OPENAI} ${cx}"
+
+# herdr の中では、この pane の名前を「main · モデルの正式な名前 effort」にする（agent-pane のサブエージェントの pane と見分ける）。
+# 今の名前と違うときだけ付ける（herdr を立ち上げ直して名前が消えても付け直せるよう、覚えずに毎回聞く。pane get は 2 ms ほど）
+if [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] && mid=$(get .model.id) && [ -n "$mid" ]; then
+  pn="main · ${mid%%\[*}${eff:+ $eff}"
+  [ "$(herdr pane get "$HERDR_PANE_ID" 2>/dev/null | "$JQ" -r '.result.pane.label // empty' 2>/dev/null)" = "$pn" ] || herdr pane rename "$HERDR_PANE_ID" "$pn" >/dev/null 2>&1
+fi
 
 printf '%s\n%s\n' "$line1" "$line2"
