@@ -166,7 +166,12 @@ if command -v timeout >/dev/null 2>&1; then # macOS には無い
   out="$(timeout 2 agent-pane view "$J" 2>/dev/null)"
   [ "$out" = "調べます
 → Bash ls -la" ] && ok "view は文とツールの呼び出しを 1 行ずつ出す" || ng "view: $out"
-  ! grep -q '^pane rename' "$LOG" && ok "herdr の外では pane に名前を付けない" || ng "外で名前を付けた: $(grep '^pane rename' "$LOG")"
+  # herdr の外では、モデルのある記録でも名前を付けない（herdr の中の検査と同じ形の記録で比べる）
+  reset
+  printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}' > "$T/n0.jsonl"
+  printf '{"agentType":"general-purpose","description":"plan: 計画を書く","model":"opus","effort":"xhigh"}' > "$T/n0.meta.json"
+  timeout 2 agent-pane view "$T/n0.jsonl" >/dev/null 2>&1
+  ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "herdr の外では pane に名前を付けない" || ng "外で名前を付けた: $(grep '^pane rename' "$LOG")"
   # herdr の中では、最初の応答を待って名前を付ける: 役割（description の先頭の「名前:」）· モデルの正式な名前 effort
   reset
   printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}' > "$T/n1.jsonl"
