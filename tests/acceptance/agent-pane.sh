@@ -3,7 +3,7 @@
 # （1 つ目はメインを右に半分ずつ、2・3 つ目は右の列のいちばん下を下に分ける。同時に 3 つまで。workflow のエージェントでは開かない。
 # 同じエージェントの再通知・並行の開始でも上限を守る）、終了で閉じること。開いたとき・閉じたときに右の列の高さをそろえること。
 # 消えた pane・中断で finished のものは数えず閉じ、cleanup はすべて閉じること。herdr の外では何もしないこと。
-# view は記録（jsonl）の文とツールの呼び出しを 1 行ずつ出すこと
+# view は記録（jsonl）の文とツールの呼び出しを 1 行ずつ出し、herdr の中では pane に「役割 · モデル effort」の名前を付けること
 #   sh tests/acceptance/agent-pane.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/agent-pane.sh  通った項目も
 set -u
@@ -166,6 +166,33 @@ if command -v timeout >/dev/null 2>&1; then # macOS には無い
   out="$(timeout 2 agent-pane view "$J" 2>/dev/null)"
   [ "$out" = "調べます
 → Bash ls -la" ] && ok "view は文とツールの呼び出しを 1 行ずつ出す" || ng "view: $out"
+  ! grep -q '^pane rename' "$LOG" && ok "herdr の外では pane に名前を付けない" || ng "外で名前を付けた: $(grep '^pane rename' "$LOG")"
+  # herdr の中では、最初の応答を待って名前を付ける: 役割（description の先頭の「名前:」）· モデルの正式な名前 effort
+  reset
+  printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}' > "$T/n1.jsonl"
+  printf '{"agentType":"general-purpose","description":"plan: 計画を書く","model":"opus","effort":"xhigh"}' > "$T/n1.meta.json"
+  HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n1.jsonl" >/dev/null 2>&1
+  [ "$(grep '^pane rename' "$LOG" 2>/dev/null)" = "pane rename w1:p10 plan · claude-opus-5-5 xhigh" ] \
+    && ok "pane の名前は役割名 · 応答のモデルの正式な名前 effort" || ng "名前: $(grep '^pane rename' "$LOG" 2>/dev/null)"
+  # 役割名が無ければ agentType、effort が記録に無ければ出さない
+  reset
+  printf '%s\n' '{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[]}}' > "$T/n2.jsonl"
+  printf '{"agentType":"Explore","description":"Find hook inputs"}' > "$T/n2.meta.json"
+  HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n2.jsonl" >/dev/null 2>&1
+  [ "$(grep '^pane rename' "$LOG" 2>/dev/null)" = "pane rename w1:p10 Explore · claude-haiku-5-5" ] \
+    && ok "役割名が無ければ agentType、effort が無ければ出さない" || ng "役割名・effort が無いときの名前: $(grep '^pane rename' "$LOG" 2>/dev/null)"
+  # 最初の応答が API のエラー（model が <synthetic>）なら名前を付けず、その文は出す
+  reset
+  printf '%s\n' '{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"API Error: 401"}]}}' > "$T/n3.jsonl"
+  printf '{"agentType":"general-purpose","description":"impl: x","model":"sonnet","effort":"high"}' > "$T/n3.meta.json"
+  out="$(HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n3.jsonl" 2>/dev/null)"
+  [ "$out" = "API Error: 401" ] && ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "最初の応答が API のエラーなら名前を付けず、文は出す" || ng "API のエラー: out=$out $(cat "$LOG" 2>/dev/null)"
+  # 最初の応答の記録にモデルが無くても待ち続けず、名前を付けずに文を出す
+  reset
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"調べます"}]}}' > "$T/n4.jsonl"
+  printf '{"agentType":"general-purpose","description":"verify: x","model":"opus","effort":"high"}' > "$T/n4.meta.json"
+  out="$(HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n4.jsonl" 2>/dev/null)"
+  [ "$out" = "調べます" ] && ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "最初の応答にモデルが無ければ名前を付けず、文は出す" || ng "モデルが無い応答: out=$out $(cat "$LOG" 2>/dev/null)"
 fi
 
 [ "$fail" = 0 ] && echo "acceptance agent-pane: ok"

@@ -1,7 +1,8 @@
 #!/bin/sh
 # サブエージェントの進みを herdr の別 pane に見せる（PC 用。モバイルには出ない）。
 #   usage: agent-pane start|stop|cleanup   SubagentStart・SubagentStop・SessionStart（clear）と SessionEnd のフック（標準入力にフックの JSON）
-#          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）
+#          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）。
+#                                           herdr の中では最初の応答を待って、pane に「<役割> · <モデル> <effort>」の名前を付ける
 # herdr の中だけ。1 つ目はメインを右に半分ずつで分け、2 つ目からはその右の列のいちばん下を下に分ける（フォーカスは移さない）。
 # 開いたとき・閉じたときに右の列の高さをそろえる（herdr の split は 1 つを 2 つに割るだけなので、resize で境界を動かす）。
 # 同時に開くのは 3 つまで。workflow のエージェント（agent_type が workflow-subagent）は数が多いので開かない。
@@ -10,6 +11,14 @@ MAX=3
 if [ "${1:-}" = view ]; then
   rec="${2:?usage: agent-pane view <記録>}"
   while [ ! -e "$rec" ]; do sleep 0.5; done
+  # 役割は description の先頭の「名前:」（無ければ agentType）、モデルは応答の正式な名前、effort は meta.json（無ければ出さない）。
+  # meta.json の model は別名（opus）だけなので使わない。最初の assistant の記録を待ち（表示もそれから）、モデルが分からない
+  # （記録に無い・API のエラーの <synthetic>）なら名前を付けない
+  if [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ]; then
+    until m="$(jq -r 'select(.type == "assistant") | .message.model // "-"' "$rec" 2>/dev/null | head -n 1)"; [ -n "$m" ]; do sleep 0.5; done
+    name="$(jq -r --arg m "$m" '[((.description // "") | capture("^(?<r>[^ :]+):").r) // .agentType, "·", $m, .effort // empty] | join(" ")' "${rec%.jsonl}.meta.json" 2>/dev/null)"
+    case "$m" in -|"<synthetic>") ;; *) [ -n "$name" ] && herdr pane rename "$HERDR_PANE_ID" "$name" >/dev/null 2>&1 ;; esac
+  fi
   exec tail -n +1 -F "$rec" 2>/dev/null | jq -r --unbuffered '
     select(.type == "assistant") | .message.content[]? |
     if .type == "text" then .text[0:200]

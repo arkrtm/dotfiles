@@ -103,6 +103,10 @@ for w in '| 設計・計画 | サブエージェント | `opus`・`xhigh` |' '| 
   '| 検証（受け入れ条件を実際に動かす） | 実装と別のサブエージェント | `opus`・`high` |' '`model: haiku`'; do
   check "グローバルの CLAUDE.md の「モデルの割り当て」に「$w」" sh -c "sed -n '/^## モデルの割り当て/,/^## /p' '$C' | grep -qF -- '$w'"
 done
+# Agent の description は役割名で始める（herdr の中では agent-pane がサブエージェントの pane の名前に出す）
+for w in 'Agent の description は役割名とコロンで始める' '`plan`' '`impl`' '`verify`' '`explore`'; do
+  check "グローバルの CLAUDE.md の「モデルの割り当て」に「$w」" sh -c "sed -n '/^## モデルの割り当て/,/^## /p' '$C' | grep -qF -- '$w'"
+done
 check "グローバルの CLAUDE.md: 作業の哲学に優先順位がある" grep -q '正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ' "$C"
 check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
 check "グローバルの CLAUDE.md: 経緯（harness）は書かない" [ "$(grep -c harness "$C")" = 0 ]
