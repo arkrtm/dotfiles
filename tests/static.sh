@@ -1,7 +1,7 @@
 #!/bin/sh
 # 静的な検査（ネットワーク無し・数秒）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
 # tmux.conf の読み込み、ssh/config の構文、SKILL.md の frontmatter、settings.json（JSON として読める、hooks の event 名が既知、
-# hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、herdr の config.toml にエラーが無い
+# hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、herdr の config.toml にエラーが無い、追跡するファイルに Linear の issue 番号が無い
 #   sh tests/static.sh
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -95,5 +95,14 @@ grep -q '^jq = ' "$ROOT/config/mise/config.toml" && ok "jq は mise で入る（
 if command -v herdr >/dev/null 2>&1; then
   r="$(HERDR_CONFIG_PATH="$ROOT/config/herdr/config.toml" herdr config check 2>&1)" && ok "herdr の config.toml にエラーが無い" || ng "herdr の config.toml にエラーがある: $r"
 fi
+
+# ---- Linear の issue 番号: 追跡するファイルに書かない（パターンの [ ] は、この行自身に当たらないため。-I は付けない: binary 扱いのファイルも見る）
+rc=0; hits="$(git -C "$ROOT" grep -nE 'AR[K]-[0-9]')" || rc=$? # 1 = 一致なし、0 = 番号がある、ほかは実行の失敗
+case "$rc" in
+  1) ok "追跡するファイルに Linear の issue 番号が無い" ;;
+  0) ng "追跡するファイルに Linear の issue 番号がある（番号でなく理由の文を書く）:
+$hits" ;;
+  *) ng "issue 番号の検査の git grep が失敗した（rc=$rc）" ;;
+esac
 
 exit "$fail"
