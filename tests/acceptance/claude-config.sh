@@ -145,7 +145,8 @@ done
 G="$(sed -n '/^## Git/,/^## /p' "$C")"
 for w in '- Linear と superpowers の情報は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない' \
   '  - Linear: issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前など、すべて' \
-  '  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて' \
+  '理由や経緯が要る所には番号や spec・plan のパスで指さずにその文を書き' \
+  '  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて（仕組みや設計の判断を、コードから分かる形で README などに書くのは構わない）' \
   '  - 対象外: gitignore した `.superpowers/` の中' \
   '  - dotfiles の例外: Linear・superpowers の使い方の説明と設定（指示・skill・プラグインの宣言など）は入れてよい。issue 番号など実際の情報は dotfiles にも書かない'; do
   check "グローバルの CLAUDE.md の「Git」の、リポジトリに入れない情報の規則に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$G" "$w"

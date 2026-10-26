@@ -59,9 +59,9 @@ Claude Code だけ（Codex には適用しない）。メインのセッショ�
   - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（`<最上位>` が進んで止まったら人に聞く）
 - ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/<最上位>`。作るのは `/issue`
 - コミット: 構造の変更（`refactor:`）と振る舞いの変更（`feat:`・`fix:`）を別にする。テストと実装は同じコミットにし、どのコミットでもテストが通る状態にする。メッセージは英語で最大 3 行（1 行目は型付きの件名、命令形、50 文字以内。必要なら空行の後に理由を 1 行）
-- Linear と superpowers の情報は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない。どちらも個人の作業の道具（タスク管理と開発の手順）で、プロジェクトとは関係ないため。理由や経緯が要る所には番号やパスで指さずにその文を書き、issue との対応は Linear の issue の本文にだけ書く:
+- Linear と superpowers の情報は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない。どちらも個人の作業の道具（タスク管理と開発の手順）で、プロジェクトとは関係ないため。理由や経緯が要る所には番号や spec・plan のパスで指さずにその文を書き、issue との対応は Linear の issue の本文にだけ書く:
   - Linear: issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前など、すべて
-  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて
+  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて（仕組みや設計の判断を、コードから分かる形で README などに書くのは構わない）
   - 対象外: gitignore した `.superpowers/` の中（spec・plan。リポジトリに入らない）
   - dotfiles の例外: Linear・superpowers の使い方の説明と設定（指示・skill・プラグインの宣言など）は入れてよい。issue 番号など実際の情報は dotfiles にも書かない
 - 統合の前の順番: `git fetch` → `git rebase origin/<最上位>`（`bare`・`github` は毎回、`pr` は PR を出す前だけ）→ setup の test → `codex-review branch origin/<最上位>` → `integrate`。レビューの後に変えたら、テストとレビューをやり直す
