@@ -17,13 +17,13 @@ trap 'rm -rf "$T"' EXIT
 export XDG_STATE_HOME="$T/state"
 mkdir -p "$T/bin" "$T/live" "$T/proj/s1/subagents"
 LOG="$T/herdr.log"
-# 偽の herdr: split は新しい pane（w1:p<連番>）を live に作り、get は live にあれば 0、close は live から消す
+# 偽の herdr: split は新しい pane（w1:p<連番。使い回さない>）を live に作り、get は live にあれば 0、close は live から消す
 cat > "$T/bin/herdr" <<SH
 #!/bin/sh
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "pane run") [ -e "$T/run_fail" ] && exit 1 ;;
-  "pane split") n=\$(( \$(ls "$T/live" | wc -l) + 10 )); touch "$T/live/w1:p\$n"; printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "\$n" ;;
+  "pane split") n=\$(( \$(cat "$T/seq" 2>/dev/null || echo 9) + 1 )); echo "\$n" > "$T/seq"; touch "$T/live/w1:p\$n"; printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "\$n" ;;
   "pane get"|"pane close")
     # $T/broken があれば通信の失敗（pane_not_found 以外のエラー）
     [ -e "$T/broken" ] && { echo '{"error":{"code":"server_unavailable"}}'; exit 1; }
@@ -39,7 +39,7 @@ ev() { printf '{"session_id":"s1","transcript_path":"%s/proj/s1.jsonl","cwd":"%s
 start() { ev "$@" | in_herdr agent-pane start; }
 stop() { ev "$1" | in_herdr agent-pane stop; }
 splits() { grep -c '^pane split' "$LOG" 2>/dev/null || true; }
-reset() { rm -rf "$LOG" "$XDG_STATE_HOME" "$T/live"/*; }
+reset() { rm -rf "$LOG" "$XDG_STATE_HOME" "$T/live"/* "$T/seq"; }
 
 # ---- herdr の外では何もしない
 ev a1 | agent-pane start; [ $? = 0 ] && [ ! -e "$LOG" ] && ok "herdr の外では何もしない" || ng "外で herdr を呼んだ"
