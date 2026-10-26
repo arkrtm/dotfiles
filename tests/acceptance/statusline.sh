@@ -4,6 +4,7 @@
 # session_id があれば文脈の使用率を $XDG_STATE_HOME/claude-context/<session_id> に整数で書く（ARK-90。context-nudge が読む）。
 # Codex のセッションの記録（CODEX_HOME/sessions の rate_limits のある更新の新しいファイルの最後の記録）があれば 2 行目の右に Codex のアイコンと 5 時間（リセット時刻）・週のメーター。窓は window_minutes で見分け、リセット時刻を過ぎた窓は 0%（ARK-95）。
 # jq は mise which の実体を直接呼ぶが、mise が失敗しても PATH の jq で同じ出力（ARK-105）。
+# Claude のアイコンは橙（ESC[38;5;173m … ESC[0m）、Codex のアイコンは白（ESC[97m … ESC[0m）。2 行目は Claude のアイコンからコンテキスト・5 時間・週、Codex のアイコンから Codex のメーター。Claude のメーターが無ければ 2 行目に Claude のアイコンを出さない（ARK-108）。
 # rate_limits・effort・Codex の設定と記録が無く git でないディレクトリでも終了コード 0 で、1 行目はモデルだけ、2 行目はコンテキストだけ
 #   sh tests/acceptance/statusline.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/statusline.sh  通った項目も
@@ -21,6 +22,7 @@ git init -q -b feature/x "$T/repo"
 reset=1792738800
 I_CLAUDE=$(printf '\356\262\202')  # nf-cod-claude U+EC82
 I_OPENAI=$(printf '\356\262\201')  # nf-cod-openai U+EC81
+ORANGE=$(printf '\033[38;5;173m'); WHITE=$(printf '\033[97m'); RST=$(printf '\033[0m') # Claude・Codex のアイコンの色（ARK-108）
 mkdir -p "$T/codex"; printf 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.x]\nmodel = "other"\n' > "$T/codex/config.toml"
 export CODEX_HOME="$T/codex"
 hm="$(date -d "@$reset" +%H:%M 2>/dev/null || date -r "$reset" +%H:%M)"
@@ -33,7 +35,7 @@ printf '{"session_id":"s-1","model":{"display_name":"Opus 5.5"},"context_window"
 [ "$(cat "$T/state/claude-context/s-1" 2>/dev/null)" = 43 ] && ok "session_id があれば使用率を整数で書く（ARK-90）" || ng "使用率の書き出し: $(cat "$T/state/claude-context/s-1" 2>/dev/null)"
 printf '{"session_id":"../x","context_window":{"used_percentage":50}}' | bash "$SL" >/dev/null
 [ ! -e "$T/state/x" ] && ok "session_id に / があれば書かない" || ng "session_id の / で外に書いた"
-case "$l1" in "$I_CLAUDE Opus 5.5"*high*"$I_OPENAI gpt-6.1-sol"*xhigh*feature/x*) ok "1 行目は Claude・Codex・ブランチの順で、公式のアイコン付き" ;; *) ng "1 行目: $l1" ;; esac
+case "$l1" in "$ORANGE$I_CLAUDE$RST Opus 5.5"*high*"$WHITE$I_OPENAI$RST gpt-6.1-sol"*xhigh*feature/x*) ok "1 行目は Claude・Codex・ブランチの順で、橙の Claude・白の Codex のアイコン付き" ;; *) ng "1 行目: $l1" ;; esac
 case "$l1" in *other*) ng "Codex のモデルを表（profiles）から読んだ: $l1" ;; esac
 case "$l2" in *43%*62%*"$hm"*31%*) ok "2 行目にコンテキスト・5 時間とリセット時刻・週" ;; *) ng "2 行目: $l2" ;; esac
 mkdir -p "$T/fakebin"; printf '#!/bin/sh\nexit 1\n' > "$T/fakebin/mise"; chmod +x "$T/fakebin/mise"
@@ -43,7 +45,7 @@ out="$(printf '{"model":{"display_name":"Opus 5.5"},"workspace":{"current_dir":"
 l1="$(printf '%s\n' "$out" | sed -n 1p)"; l2="$(printf '%s\n' "$out" | sed -n 2p)"
 [ "$rc" = 0 ] && ok "rate_limits が無く git でなくても 0" || ng "rate_limits が無いとき rc=$rc"
 case "$l1" in *"Opus 5.5") ok "effort が無いと 1 行目はモデルだけ" ;; *) ng "effort が無いときの 1 行目: $l1" ;; esac
-[ "$(printf '%s' "$l2" | tr -cd '%' | wc -c | tr -d ' ')" = 1 ] && case "$l2" in *12%*) true ;; *) false ;; esac \
+[ "$(printf '%s' "$l2" | tr -cd '%' | wc -c | tr -d ' ')" = 1 ] && case "$l2" in "$ORANGE$I_CLAUDE$RST "*12%*) true ;; *) false ;; esac \
   && ok "rate_limits が無いと 2 行目はコンテキストだけ" || ng "rate_limits が無いときの 2 行目: $l2"
 
 # Codex の使用量（ARK-95）: CODEX_HOME/sessions/YYYY/MM/DD/*.jsonl の token_count の rate_limits
@@ -57,6 +59,20 @@ d="$T/u1/sessions/2026/10/24"; mkdir -p "$d"
 rl "$(win 40.0 10080 "$f7")" "$(win 20.0 300 "$f5")" > "$d/rollout-a.jsonl" # primary が週: 位置でなく window_minutes で見分ける
 l2="$(cx2 "$T/u1")"
 case "$l2" in *31%*"$I_OPENAI"*" 20%"*"$hm5"*" 40%"*) ok "Codex は Claude のメーターの後に、アイコン・5 時間とリセット時刻・週の順" ;; *) ng "Codex の 5 時間と週: $l2" ;; esac
+I_CTX=$(printf '\357\207\200'); I_5H=$(printf '\357\200\227'); I_7D=$(printf '\357\201\263') # nf-fa-database・clock_o・calendar
+GREEN=$(printf '\033[32m'); YELLOW=$(printf '\033[33m'); RED=$(printf '\033[31m')
+d="$T/u10/sessions/2026/10/24"; mkdir -p "$d"
+rl "$(win 85.0 300 "$f5")" "$(win 40.0 10080 "$f7")" > "$d/rollout-a.jsonl"
+l2="$(cx2 "$T/u10")"
+case "$l2" in "$ORANGE$I_CLAUDE$RST $GREEN$I_CTX "*" 43%"*"$YELLOW$I_5H "*" 62%"*"$hm"*"$GREEN$I_7D "*" 31%"*"$WHITE$I_OPENAI$RST $RED$I_5H "*" 85%"*"$hm5"*"$GREEN$I_7D "*" 40%"*) ok "2 行目は橙の Claude のアイコン・コンテキスト・5 時間・週、白の Codex のアイコン・5 時間・週の順で、メーターの色は使用率のまま" ;; *) ng "2 行目のアイコンの色とまとまり: $l2" ;; esac
+out="$(printf '{"model":{"display_name":"Opus 5.5"}}' | CODEX_HOME="$T/u10" bash "$SL")"; rc=$?
+l2="$(printf '%s\n' "$out" | sed -n 2p)"
+[ "$rc" = 0 ] && case "$l2" in *"$I_CLAUDE"*) false ;; "$WHITE$I_OPENAI$RST "*) true ;; *) false ;; esac \
+  && ok "Claude のメーターが無ければ 2 行目に Claude のアイコンを出さず、Codex のアイコンから" || ng "Claude のメーターが無いときの 2 行目: rc=$rc $l2"
+out="$(printf '{"model":{"display_name":"Opus 5.5"}}' | CODEX_HOME="$T/none" bash "$SL")"; rc=$?
+[ "$rc" = 0 ] && [ -z "$(printf '%s\n' "$out" | sed -n 2p)" ] && ok "Claude のメーターも Codex の記録も無ければ 2 行目は空" || ng "メーターが何も無いときの 2 行目: rc=$rc $out"
+l2="$(printf '{"model":{"display_name":"Opus 5.5"},"rate_limits":{"five_hour":{"used_percentage":62,"resets_at":%s},"seven_day":{"used_percentage":31}}}' "$reset" | CODEX_HOME="$T/none" bash "$SL" | sed -n 2p)"
+case "$l2" in "$ORANGE$I_CLAUDE$RST $YELLOW$I_5H "*" 62%"*"$GREEN$I_7D "*" 31%"*) ok "コンテキストが無くても rate_limits があれば 2 行目は Claude のアイコンから" ;; *) ng "コンテキストが無いときの 2 行目: $l2" ;; esac
 d="$T/u2/sessions/2026/10/24"; mkdir -p "$d"
 rl "$(win 7.0 10080 "$f7")" null > "$d/rollout-a.jsonl"
 c="$(cx2 "$T/u2")"; c="${c##*"$I_OPENAI"}"
