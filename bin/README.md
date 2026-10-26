@@ -9,7 +9,7 @@
 - `integrate-hook <session-start|pre-edit>` — Claude Code のフック。origin があって `integrate setup` の設定が無いリポジトリでは、会話の始まりに setup を案内し、編集（Edit・Write・NotebookEdit）を拒む（終了コード 2）。読む・調べる・Bash は止めない（Bash での書き換えは捕らえない抑止）。設定がある・origin が無い・git の外では何もしない
 - `handoff <続きの指示>` — herdr の中で、このターンの後に自分の pane へ `/clear` と続きの指示を送る（`config/herdr/README.md` の「常時起動サーバー」）。Claude が handoff skill の手順で呼ぶ。herdr の外では 1
 - `context-nudge` — PostToolUse のフック。ステータスラインが書いた文脈の使用率が 60% 以上なら、10% 刻みに 1 回 handoff を促す（サブエージェントの中では出さない）
-- `agent-pane <start|stop|cleanup|view>` — サブエージェントのフック。herdr の中で、サブエージェントの進みを別の pane に出す（同時に 2 つまで）
+- `agent-pane <start|stop|cleanup|view>` — サブエージェントのフック。herdr の中で、サブエージェントの進みをメインの右の列の pane に出す（同時に 3 つまで）
 - `notify MESSAGE` — エージェントが止めた理由を `~/.local/state/agent-notify.log` に記録して標準エラーに出す（外部には送らない。スマホへは Claude Code mobile が届ける）
 - `codex-review` — Codex のレビュー（`config/codex/README.md`）
 

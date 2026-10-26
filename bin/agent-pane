@@ -2,11 +2,11 @@
 # サブエージェントの進みを herdr の別 pane に見せる（PC 用。モバイルには出ない）。
 #   usage: agent-pane start|stop|cleanup   SubagentStart・SubagentStop・SessionStart（clear）と SessionEnd のフック（標準入力にフックの JSON）
 #          agent-pane view <記録>           記録（jsonl）を追い、文とツールの呼び出しを 1 行ずつ出す（start が pane で動かす）
-# herdr の中だけ。1 つ目はメインの下に 3 分の 1 の高さ、2 つ目はその右（フォーカスは移さない）。
-# メインの上に出すには入れ替え（swap）が要るが、herdr 0.9.5 の swap はフォーカスをメインに移すので使わない。
-# 同時に開くのは 2 つまで。workflow のエージェント（agent_type が workflow-subagent）は数が多いので開かない。
+# herdr の中だけ。1 つ目はメインを右に半分ずつで分け、2 つ目からはその右の列のいちばん下を下に分ける（フォーカスは移さない）。
+# 開いたとき・閉じたときに右の列の高さをそろえる（herdr の split は 1 つを 2 つに割るだけなので、resize で境界を動かす）。
+# 同時に開くのは 3 つまで。workflow のエージェント（agent_type が workflow-subagent）は数が多いので開かない。
 # 開いた pane は state/agent-pane/<メインの pane>/<agent_id>（1 行目 pane、2 行目 記録）に覚え、消えた pane・中断（meta.json の finished）は数えずに閉じる
-MAX=2
+MAX=3
 if [ "${1:-}" = view ]; then
   rec="${2:?usage: agent-pane view <記録>}"
   while [ ! -e "$rec" ]; do sleep 0.5; done
@@ -35,14 +35,34 @@ lockfd() {
     perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or exit 2; for (1 .. ($ARGV[0] eq "wait" ? 50 : 1)) { exit 0 if flock($f, LOCK_EX | LOCK_NB); select(undef, undef, undef, 0.1) } exit 1' "${1:-now}"
   fi
 }
-# メインの pane ごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）
-lock() { exec 9>>"$D.lock"; lockfd wait || exit 0; }
+# メインの pane ごとに 1 つずつ（数える → 開く → 覚える を並行の開始で割り込ませない）。
+# ロックを取った後はどの出口でも、ロックを持ったまま右の列の高さをそろえる（開く前に finished の pane を閉じてから分けられずに終わるときも）
+lock() { exec 9>>"$D.lock"; lockfd wait || exit 0; trap even EXIT; }
 # gone <pane>: herdr がその pane は無い（pane_not_found）と答えたら 0。通信の失敗は「ある」として扱う（覚えた pane を失わない）
 gone() { out="$(herdr pane "$1" "$2" 2>&1)" && return 1; printf '%s' "$out" | grep -q '"pane_not_found"'; }
 # close <記録>: pane を閉じられた、または既に無いときだけ記録を消す
 close() {
   p="$(sed -n 1p "$1" 2>/dev/null)"
   if [ -z "$p" ] || herdr pane close "$p" >/dev/null 2>&1 || gone get "$p"; then rm -f "$1"; fi
+}
+# even: 右の列（覚えた pane）の高さをそろえる。いつもいちばん下を分けて足すので、上から k 番目（0 から）の境界の分割は
+# k 番目から下の n-k 個を持つ。その割合を 1/(n-k) にすれば等分。resize は割合を足し引きするだけ（上の pane の down で増やし、下の pane の up で減らす）。
+# 境界の分割は、pane の下の辺から ±1 行の分割のうちいちばん近いもの（herdr の resize と同じ選び方。1 行の pane が続くと隣の境界も 1 行の内に入る）。
+# herdr は 1 回に 0.5 までしか動かさないので、それを超える分は分けて送る
+even() {
+  set --
+  for f in "$D"/*; do [ -f "$f" ] && set -- "$@" "$(sed -n 1p "$f")"; done
+  [ $# -ge 2 ] || return 0
+  herdr pane layout --pane "$HERDR_PANE_ID" 2>/dev/null | jq -r '.result.layout as $l
+    | [$l.panes[] | select(.pane_id | IN($ARGS.positional[]))] | sort_by(.rect.y) as $c | ($c | length) as $n
+    | range(0; $n - 1) as $k | $c[$k].rect as $r
+    | ([$l.splits[] | select(.direction == "down" and .rect.x <= $r.x and $r.x < .rect.x + .rect.width)
+        | {s: ., e: ((.rect.y + .rect.height * .ratio | round) - ($r.y + $r.height) | fabs)} | select(.e <= 1)] | min_by(.e) | .s) as $s
+    | select($s)
+    | (1 / ($n - $k) - $s.ratio) as $d | ($d | fabs) as $x | select($x > 0.001)
+    | (if $d > 0 then "\($c[$k].pane_id) down" else "\($c[$k + 1].pane_id) up" end) as $pd
+    | range(0; $x / 0.5 | ceil) as $i | "\($pd) \([$x - $i * 0.5, 0.5] | min)"' --args "$@" 2>/dev/null |
+    while read -r p d a; do herdr pane resize --pane "$p" --direction "$d" --amount "$a" >/dev/null 2>&1; done
 }
 aid="$(j .agent_id)"
 case "$aid" in */*) exit 0 ;; esac
@@ -54,13 +74,13 @@ case "${1:-}" in
     lock
     # 同じエージェントの pane がまだあれば何もしない。人が閉じていたら開き直す
     if [ -e "$D/$aid" ]; then gone get "$(sed -n 1p "$D/$aid")" || exit 0; rm -f "$D/$aid"; fi
-    n=0 top=""
+    n=0 ps=""
     for f in "$D"/*; do
       [ -f "$f" ] || continue
       if gone get "$(sed -n 1p "$f")"; then rm -f "$f"; continue; fi
       r="$(sed -n 2p "$f")"
       if [ "$(jq -r '.finished // false' "${r%.jsonl}.meta.json" 2>/dev/null)" = true ]; then close "$f"; [ -e "$f" ] || continue; fi
-      n=$((n + 1)); top="$(sed -n 1p "$f")"
+      n=$((n + 1)); ps="$ps $(sed -n 1p "$f")"
     done
     [ "$n" -lt "$MAX" ] || exit 0
     tp="$(j .transcript_path)"
@@ -68,8 +88,13 @@ case "${1:-}" in
     case "$aid" in agent-*) a="$aid" ;; *) a="agent-$aid" ;; esac
     rec="${tp%.jsonl}/subagents/$a.jsonl"
     cwd="$(j .cwd)"
-    # 開いているサブの pane があればその右、無ければメインの下（ratio は分けた元のメインの割合）
-    if [ -n "$top" ]; then set -- --pane "$top" --direction right; else set -- --pane "$HERDR_PANE_ID" --direction down --ratio 0.667; fi
+    # 開いているサブの pane があれば右の列のいちばん下（layout で y が最大）を下に、無ければメインを右に半分ずつ（ratio は分けた元のメインの割合）。
+    # layout が読めなければ開かない（メインを分けると列が 2 つになる）
+    if [ -n "$ps" ]; then
+      b="$(herdr pane layout --pane "$HERDR_PANE_ID" 2>/dev/null | jq -r '[.result.layout.panes[] | select(.pane_id | IN($ARGS.positional[]))] | max_by(.rect.y) | .pane_id // empty' --args $ps 2>/dev/null)"
+      [ -n "$b" ] || exit 0
+      set -- --pane "$b" --direction down
+    else set -- --pane "$HERDR_PANE_ID" --direction right --ratio 0.5; fi
     new="$(herdr pane split "$@" --no-focus ${cwd:+--cwd "$cwd"} 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
     [ -n "$new" ] || exit 0
     printf '%s\n%s\n' "$new" "$rec" > "$D/$aid"
