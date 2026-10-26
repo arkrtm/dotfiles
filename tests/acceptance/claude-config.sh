@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code の構成の受け入れ検査: settings.json（プラグインの宣言と hook の配線）、skill（issue・wrap-up のリンク）、
-# グローバル指示（config/agents/AGENTS.md。CC・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear の規則が揃っていること）、config/claude/README.md の新しい端末の手順。
+# グローバル指示（config/agents/AGENTS.md。CC・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear・superpowers の情報をリポジトリに入れない規則が揃っていること）、config/claude/README.md の新しい端末の手順。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・sh tests/install-nosudo.sh）は別に実行する。
 # LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で config/claude/README.md の
 # 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
@@ -141,8 +141,16 @@ for w in 'feature/' '.worktrees/' '--no-track' 'origin/<最上位>' 'refactor:' 
   'integrate setup' 'git rebase origin/<最上位>' '強制 push' 'codex-review branch origin/<最上位>' '`integrate`' 'integrate --human-approved'; do
   check "グローバルの CLAUDE.md の「Git」に「$w」" sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF -- '$w'"
 done
-check "グローバルの CLAUDE.md の「Git」: Linear の情報はすべて、コミット・PR・ブランチ名だけでなくリポジトリに入るものすべてに書かない" \
-  sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF 'など、すべて）は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない' && ! grep -qF 'issue 番号はコミット・PR・ブランチ名に入れない' '$C'"
+# Linear と superpowers の情報（すべて）はリポジトリに入るものに書かない。.superpowers/ の中と dotfiles の使い方の説明・設定は対象外
+G="$(sed -n '/^## Git/,/^## /p' "$C")"
+for w in '- Linear と superpowers の情報は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない' \
+  '  - Linear: issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前など、すべて' \
+  '  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて' \
+  '  - 対象外: gitignore した `.superpowers/` の中' \
+  '  - dotfiles の例外: Linear・superpowers の使い方の説明と設定（指示・skill・プラグインの宣言など）は入れてよい。issue 番号など実際の情報は dotfiles にも書かない'; do
+  check "グローバルの CLAUDE.md の「Git」の、リポジトリに入れない情報の規則に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$G" "$w"
+done
+check "グローバルの CLAUDE.md に古い規則（issue 番号はコミット・PR・ブランチ名に入れない）が無い" sh -c "! grep -qF 'issue 番号はコミット・PR・ブランチ名に入れない' '$C'"
 check "グローバルの CLAUDE.md: 作業中の保存は relay のタグ" grep -qF -- '--tags relay' "$C"
 I="$ROOT/config/agents/skills/issue/SKILL.md"
 for w in '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最上位>'; do
@@ -161,6 +169,7 @@ WR="$(grep -F '| **README・設計メモ** |' "$W")" # 置き場所の表の REA
 check "wrap-up の表の README の行: 仕組みと限界だけ、理由や経緯は Linear にだけ置き、Linear の情報で指さない" \
   sh -c 'printf "%s\n" "$1" | grep -qF "理由や経緯は書かない（Linear にだけ置く。issue 番号など Linear の情報も書かない）" && ! printf "%s\n" "$1" | grep -qF "issue 番号で指す"' _ "$WR"
 check "wrap-up の振り分け: 同じ内容をリポジトリの中から issue 番号で指させない" sh -c "! grep -qF 'issue 番号やパスで指す' '$W'"
+check "wrap-up の振り分け: リポジトリに入るものには Linear・superpowers の情報を書かない（グローバル指示の Git の節）" grep -qF 'リポジトリに入るものには Linear・superpowers の情報を書かない: グローバル指示の Git の節' "$W"
 
 # ---- 統合の後に次の issue を始める: wrap-up の 5 の最後と handoff skill の使い方
 W5="$(sed -n '/^## 5. 統合の後/,$p' "$W" | sed -n '/^5\. /,$p')" # 5 の最後の項目（5.）とその下の行

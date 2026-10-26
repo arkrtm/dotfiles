@@ -59,7 +59,11 @@ Claude Code だけ（Codex には適用しない）。メインのセッショ�
   - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（`<最上位>` が進んで止まったら人に聞く）
 - ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/<最上位>`。作るのは `/issue`
 - コミット: 構造の変更（`refactor:`）と振る舞いの変更（`feat:`・`fix:`）を別にする。テストと実装は同じコミットにし、どのコミットでもテストが通る状態にする。メッセージは英語で最大 3 行（1 行目は型付きの件名、命令形、50 文字以内。必要なら空行の後に理由を 1 行）
-- Linear の情報（issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前など、すべて）は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない。Linear は個人のタスク管理で、プロジェクトとは関係ないため。理由や経緯が要る所には番号で指さずにその文を書き、issue との対応は Linear の issue の本文にだけ書く。superpowers のドキュメント（gitignore した `.superpowers/` の spec・plan）は対象外
+- Linear と superpowers の情報は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない。どちらも個人の作業の道具（タスク管理と開発の手順）で、プロジェクトとは関係ないため。理由や経緯が要る所には番号やパスで指さずにその文を書き、issue との対応は Linear の issue の本文にだけ書く:
+  - Linear: issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前など、すべて
+  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて
+  - 対象外: gitignore した `.superpowers/` の中（spec・plan。リポジトリに入らない）
+  - dotfiles の例外: Linear・superpowers の使い方の説明と設定（指示・skill・プラグインの宣言など）は入れてよい。issue 番号など実際の情報は dotfiles にも書かない
 - 統合の前の順番: `git fetch` → `git rebase origin/<最上位>`（`bare`・`github` は毎回、`pr` は PR を出す前だけ）→ setup の test → `codex-review branch origin/<最上位>` → `integrate`。レビューの後に変えたら、テストとレビューをやり直す
 - 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（setup の設定がある、`<最上位>` の最新を含む、未コミットの変更が無い、setup の test が通る、今のコミットへの `codex-review branch origin/<最上位>` の最後の行が `VERDICT: PASS`、テストを削除・移動していない、skip・xfail・`type: ignore`・`noqa` を足していない）を確かめ、1 つでも欠けたら統合せず `notify` して止まる（push 先が取得先と違う設定でも止まる）。直せる理由だけ直してテスト・レビューからやり直し、直せなければ人を待つ。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
 - `<最上位>` への push が早送りでなく拒否されたら（`<最上位>` が進んだ）、fetch・rebase・テスト・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
