@@ -123,6 +123,17 @@ if [ -d /proc/self ]; then
   done
 fi
 
+# tests/acceptance.sh は、受け入れ検査が子に出力（パイプ）をつないだまま残しても戻る（上限 20 秒）。本物の acceptance.sh を一時的な木に写し、偽の検査を置く
+A="$T/a"; mkdir -p "$A/tests/acceptance"; cp "$ROOT/tests/acceptance.sh" "$A/tests/acceptance.sh"
+printf '%s\n' 'sleep 599.5 </dev/null & echo $! >> "$PIDF"' > "$A/tests/acceptance/a-pipe.sh"
+printf '%s\n' 'echo boom-output; exit 1' > "$A/tests/acceptance/b-fail.sh"
+n=$((n + 1)); PF="$T/pid.acc.$n"
+( PIDF="$PF" sh "$A/tests/acceptance.sh" > "$T/out.acc" 2>&1; echo $? > "$T/rc.acc" ) &
+aw=$!; i=0; while [ ! -e "$T/rc.acc" ] && [ "$i" -lt 200 ]; do i=$((i + 1)); sleep 0.1; done
+if [ "$(cat "$T/rc.acc" 2>/dev/null)" = 1 ] && grep -q '^FAIL b-fail.sh' "$T/out.acc" && grep -q 'boom-output' "$T/out.acc" && grep -q 'acceptance: ok 1, FAIL 1' "$T/out.acc"; then
+  ok "子が出力をつないだまま残っても、acceptance.sh は戻り、失敗した検査の出力を出す"; else ng "acceptance.sh: rc=$(cat "$T/rc.acc" 2>/dev/null) 出力=$(cat "$T/out.acc")"; fi
+for p in $(cat "$PF" 2>/dev/null); do case "$(ps -o args= -p "$p" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac; done # 残した子は自分の pid で止める
+wait "$aw"
 # 検査が一時ディレクトリを読めなくしても（find が失敗する）、成功にしない。root は権限で止まらないので省く
 if [ "$(id -u)" != 0 ]; then
   run locked; d="$(cat "$PF.dir" 2>/dev/null)"; chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d"
