@@ -44,7 +44,7 @@ case "${MODE:-}" in
   proc) sleep 599.7 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF" ;;
   tmuxonly) env -u TMPDIR sleep 599.9 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF" ;;
   pipe) sleep 599.6 </dev/null & echo $! >> "$PIDF" ;; # 出力をつないだまま子を残す
-  locked) echo "$TMPDIR" > "$PIDF.dir"; chmod 000 "$TMPDIR" ;; # 一時ディレクトリを読めなくする
+  locked) echo "${TMPDIR%/*}" > "$PIDF.dir"; chmod 000 "$TMPDIR" ;; # 一時ディレクトリを読めなくする
   sub) mkdir "$TMPDIR/sub"; env -u TMUX_TMPDIR TMPDIR="$TMPDIR/sub" sleep 599.8 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF"
     rmdir "$TMPDIR/sub" ;;
 esac
@@ -78,11 +78,17 @@ nl="$T/a$(printf '\nb')"; mkdir "$nl"; run proc "$nl" # 改行を含む一時デ
 if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "名前に改行があっても、検査を走らせず失敗する"; else ng "改行を含む名前: rc=$rc 出力=$out"; fi
 printf 'x' > "$T/notdir"; run proc "$T/notdir" # ディレクトリでない
 if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "ディレクトリでなくても、検査を走らせず失敗する"; else ng "ディレクトリでない: rc=$rc 出力=$out"; fi
+mkdir "$T/w2"; : > "$T/w2/t"; run proc "$T/w2" # 親は作れたが、その中の TMPDIR 用のディレクトリを作れない
+if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "親の中にディレクトリを作れなくても、検査を走らせず失敗する"; else ng "中に作れない: rc=$rc 出力=$out"; fi
 run proc rel # 絶対パスでない
 if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "絶対パスでなくても、検査を走らせず失敗する"; else ng "相対パス: rc=$rc 出力=$out"; fi
 
 run none
 if [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(wc -l < "$MARK" | tr -d ' ')" = 3 ]; then ok "何も残さなければ、3 本とも走って出力なしで通る"; else ng "何も残さない: rc=$rc 印=$(cat "$MARK" 2>/dev/null | wc -l) 出力=$out"; fi
+
+# 出力のファイルは mktemp が作ったディレクトリの中に置く（共有の /tmp に予測できる名前で作ると、先に置かれたシンボリックリンクの先を切り詰める）
+mkdir "$T/w"; echo keep > "$T/victim"; ln -s "$T/victim" "$T/w.out"; run none "$T/w"
+if [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(cat "$T/victim")" = keep ]; then ok "出力のファイルは一時ディレクトリの中にあり、外のシンボリックリンクの先を触らない"; else ng "シンボリックリンク: rc=$rc 先=$(cat "$T/victim") 出力=$out"; fi
 
 run file
 if [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q '^FAIL 検査が普通に終わった後に残っている' && printf '%s\n' "$out" | grep -q '/left$'; then

@@ -6,16 +6,17 @@
 # ただし static.sh と agent-status.sh の tmux のソケットは、パスが 104 バイトを超えないよう、ここの外の /tmp/<名前>-<pid>.* に作るので見ない（残った tmux のサーバは環境で見つかる）。
 # 各検査が自分の trap で消し、残らないことは check-leftovers.sh（普通に終わったとき）と stop-cleanup.sh（止めたとき）が確かめる
 cd "$(dirname "$0")/.." || exit 1
-D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D" "$D.out"}' EXIT
+W=""; trap 'trap "" HUP INT TERM; rm -rf ${W:+"$W"}' EXIT
 trap 'exit 1' HUP INT TERM
-D="$(trap '' HUP INT TERM; mktemp -d /tmp/check.XXXXXX)"
+W="$(trap '' HUP INT TERM; mktemp -d /tmp/check.XXXXXX)" # 親。検査の TMPDIR は $W/t、出力は $W/out（共有の /tmp に予測できる名前のファイルを作らない）
 # 作れなかった・絶対パスでない・ディレクトリでないときは、検査もプロセスの探索（止める処理）も走らせない（作れていれば trap が消す）
-nodir() { echo "FAIL 一時ディレクトリを作れない（mktemp の結果: ${D:-なし}）"; exit 1; }
+nodir() { echo "FAIL 一時ディレクトリを作れない（mktemp の結果: ${W:-なし}）"; exit 1; }
 nl="$(printf '\n_')"; nl="${nl%_}" # 改行を含むパスは grep -F -e がパターンを分けてしまうので使わない
-case "$D" in *"$nl"*) nodir ;; /?*) [ -d "$D" ] || nodir ;; *) nodir ;; esac
+case "$W" in *"$nl"*) nodir ;; /?*) [ -d "$W" ] || nodir ;; *) nodir ;; esac
+D="$W/t"; mkdir "$D" || nodir
 # 出力はファイルに書く（子が残って出力のパイプを持ったままだと、$(…) で受ける形は戻らない）。$D の外に置き、残りに数えない
 for t in static install acceptance; do
-  TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" > "$D.out" 2>&1 || { grep -v '^ok ' "$D.out"; exit 1; }
+  TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" > "$W/out" 2>&1 || { grep -v '^ok ' "$W/out"; exit 1; }
 done
 i=0
 while :; do # 終わりかけの子を少し待つ。環境の 1 項目が TMPDIR=$D と完全に同じプロセスだけ（部分一致で別のものに当たらない）
