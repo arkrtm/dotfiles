@@ -16,8 +16,10 @@ skip() { [ -n "${V:-}" ] && echo "省いた $1"; return 0; }
 envpids() { [ -n "$1" ] || return 0; for e in /proc/[0-9]*/environ; do
     cat "$e" 2>/dev/null | tr '\0' '\n' | grep -qxF -e "TMPDIR=$1" -e "TMUX_TMPDIR=$1" && { p="${e#/proc/}"; echo "${p%/environ}"; }
   done; }
-# 後片づけ: 起こしたグループと、一時ディレクトリを環境に持つプロセス（止められなかったときだけ残る）を止めてから消す
+# 後片づけ: 見張り（後ろで走る。INT を無視する）と起こしたグループ、一時ディレクトリを環境に持つプロセス（止められなかったときだけ残る）を止めてから消す
+w=""
 cleanup() {
+  [ -n "$w" ] && { kill "$w" 2>/dev/null; wait "$w" 2>/dev/null; }
   [ -n "$T" ] || return 0
   P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) kill -KILL -"$P" 2>/dev/null ;; esac
   for p in $(envpids "$T/tmp"); do [ "$p" = "$$" ] || kill "$p" 2>/dev/null; done
@@ -34,16 +36,21 @@ elif [ $((0x$ign & 2)) != 0 ]; then
   skip "agent-status.sh を止めて片づけを見る（INT を無視して起動された）"
 else
   mkdir "$T/tmp"
-  # 見張り: pid とソケットが揃ったらグループに INT を送る（上限 10 秒。来なければ note を書いて送らない）
+  # 見張り: pid とソケットが揃ったらグループに INT を送る。どちらの待ちも上限 10 秒で、超えたら note を書いてグループを KILL する
+  # （親は setsid -w でグループの終わりを待つので、固まっても検査全体が止まらないように）
   ( i=0; until [ -s "$T/pid" ] && [ -n "$(find "$T/tmp" -type s 2>/dev/null)" ]; do
-      i=$((i + 1)); [ "$i" -lt 1000 ] || { echo "ソケットができない（10 秒待った）" > "$T/note"; exit 0; }; sleep 0.01; done
-    P="$(cat "$T/pid")"; kill -INT -"$P" 2>/dev/null && echo INT > "$T/sent" ) &
+      i=$((i + 1))
+      [ "$i" -lt 1000 ] || { echo "ソケットができない（10 秒待った）" > "$T/note"; P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) kill -KILL -"$P" 2>/dev/null ;; esac; exit 0; }
+      sleep 0.01; done
+    P="$(cat "$T/pid")"; kill -INT -"$P" 2>/dev/null && echo INT > "$T/sent"
+    i=0; while pgrep -g "$P" >/dev/null 2>&1; do
+      i=$((i + 1)); [ "$i" -lt 1000 ] || { echo "INT で止まらなかった（10 秒待った）" > "$T/note"; kill -KILL -"$P" 2>/dev/null; exit 0; }; sleep 0.01; done ) &
   w=$!
   TMPDIR="$T/tmp" TMUX_TMPDIR="$T/tmp" setsid -w sh -c 'echo $$ > "$1"; exec sh "$2"' _ "$T/pid" "$ROOT/tests/acceptance/agent-status.sh" >/dev/null 2>&1; rc=$?
-  wait "$w"; sleep 1 # tmux のサーバが終わるのを少し待つ
+  wait "$w"; w=""; sleep 1 # tmux のサーバが終わるのを少し待つ
   P="$(cat "$T/pid" 2>/dev/null)"; left="$(find "$T/tmp" -mindepth 1 2>/dev/null | tr '\n' ' ')"
   procs="$(envpids "$T/tmp"; case "$P" in ''|*[!0-9]*) ;; *) pgrep -g "$P" 2>/dev/null ;; esac)"; procs="$(echo $procs)" # pgrep -g 0 は自分のグループ
-  if [ -s "$T/note" ]; then ng "止める前の待ちが終わらない: $(cat "$T/note")"
+  if [ -s "$T/note" ]; then ng "$(cat "$T/note")"
   elif [ ! -s "$T/sent" ]; then ng "止める前に終わった（確かめになっていない）: rc=$rc"
   elif [ "$rc" != 1 ]; then ng "止めたが終了コードが 1 でない（後片づけの trap を通っていない）: rc=$rc"
   elif [ -n "$left" ] || [ -n "$procs" ]; then ng "止めた後に残っている: ファイル=[${left}] プロセス=[${procs}]"
