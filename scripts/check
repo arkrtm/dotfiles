@@ -1,5 +1,5 @@
 #!/bin/sh
-# dotfiles の検査（Stop フックの check.sh と integrate・bare の pre-receive が呼ぶ）: 静的な検査・install.sh・受け入れ検査。
+# dotfiles の検査: 静的な検査・install.sh・受け入れ検査。呼び出し元は integrate（setup の test）・GitHub Actions（.github/workflows/check.yml）・コミットの前の人とエージェント（CLAUDE.md）
 # 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1
 cd "$(dirname "$0")/.." || exit 1
 for t in static install acceptance; do
