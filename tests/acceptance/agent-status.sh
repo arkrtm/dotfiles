@@ -14,7 +14,7 @@ command -v tmux >/dev/null 2>&1 || { echo "FAIL tmux が無い（mise で入る�
 H=""
 trap 'trap "" HUP INT TERM; [ -z "$H" ] || { tmux -S "$H/sock" kill-server 2>/dev/null || true; rm -rf "$H"; }' EXIT
 trap 'exit 1' HUP INT TERM
-H="$(trap '' HUP INT TERM; mktemp -d)"; S="$H/sock"
+H="$(trap '' HUP INT TERM; mktemp -d /tmp/agent-$$.XXXXXX)"; S="$H/sock" # TMPDIR の下に重ねない（ソケットのパスが 104 バイトを超えないように短い /tmp に。pid で名前を絞る）
 tmux -S "$S" -f /dev/null new-session -d -x 80 -y 24 sleep 600
 tmux -S "$S" split-window -d sleep 600
 # agent-status の tmux は $TMUX のソケットを使う（本物の hook と同じ条件）

@@ -98,6 +98,15 @@ if [ -d /proc/self ]; then
   L="$T"; while [ "${#L}" -lt 100 ]; do L="$L/long-directory-name"; done; mkdir -p "$L"
   out="$(TMPDIR="$L" sh "$ROOT/tests/acceptance/stop-cleanup.sh" 2>&1)"; rc=$?
   if [ "$rc" = 0 ]; then ok "TMPDIR が ${#L} バイトでも stop-cleanup.sh は通る"; else ng "長い TMPDIR（${#L} バイト）で stop-cleanup.sh が失敗する: $out"; fi
+  # static.sh（tmux.conf の節）と agent-status.sh も、単独で長い TMPDIR で通り、/tmp に作る <名前>-<pid>.* を自分の trap で消す
+  # （scripts/check の確かめは /tmp の下を見ない。pid で絞るので、同時に走るほかの実行に影響されない）
+  for t in static:tests/static.sh agent:tests/acceptance/agent-status.sh; do
+    nm="${t%%:*}"; f="${t#*:}"
+    out="$(TMPDIR="$L" sh -c 'echo $$ > "$1"; exec sh "$2"' _ "$T/lp.$nm" "$ROOT/$f" 2>&1)"; rc=$?
+    q="$(cat "$T/lp.$nm" 2>/dev/null)"; rest=""; case "$q" in ''|*[!0-9]*) ;; *) rest="$(ls -d /tmp/"$nm"-"$q".* 2>/dev/null)" ;; esac
+    if [ "$rc" = 0 ] && [ -z "$rest" ]; then ok "TMPDIR が ${#L} バイトでも $f は通り、/tmp の一時ディレクトリを残さない"
+    else ng "長い TMPDIR（${#L} バイト）で $f: rc=$rc 残り=[$rest] 出力=$(printf '%s\n' "$out" | grep -v '^ok ' | head -3)"; [ -z "$rest" ] || rm -rf $rest; fi
+  done
 fi
 
 [ "$fail" = 0 ] && echo "acceptance check-leftovers: ok"

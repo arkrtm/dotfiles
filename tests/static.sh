@@ -39,7 +39,7 @@ if command -v tmux >/dev/null 2>&1; then
   T=""
   trap 'trap "" HUP INT TERM; [ -z "$T" ] || { tmux -S "$T/sock" kill-server 2>/dev/null || true; rm -rf "$T"; }' EXIT
   trap 'exit 1' HUP INT TERM
-  T="$(trap '' HUP INT TERM; mktemp -d)"; S="$T/sock"
+  T="$(trap '' HUP INT TERM; mktemp -d /tmp/static-$$.XXXXXX)"; S="$T/sock" # TMPDIR の下に重ねない（ソケットのパスが 104 バイトを超えないように短い /tmp に。pid で名前を絞る）
   if tmux -S "$S" -f "$ROOT/config/tmux/tmux.conf" new-session -d -x 80 -y 24 2>/dev/null; then
     n0="$(tmux -S "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')" # 起動直後の要素数（この後の source-file より前に取る）
     tmux -S "$S" source-file "$ROOT/config/tmux/tmux.conf" 2>/dev/null && ok "tmux.conf が読み込める" || ng "tmux.conf にエラーがある"

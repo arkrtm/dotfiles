@@ -1,7 +1,7 @@
 #!/bin/sh
 # 止めたときの片づけの受け入れ検査（代表 1 つ）: 本物の tests/acceptance/agent-status.sh を、隔離した TMPDIR・TMUX_TMPDIR と setsid の新しいプロセスグループで
-# 走らせ、tmux のソケットが一時ディレクトリにできた時点（秒数でなく、その出来事を待つ）でグループ全体に INT を送る（Ctrl-C と同じ形）。
-# 確かめること: INT を送れた・終了コード 1・隔離した TMPDIR の中が空・そこを環境に持つプロセス（tmux のサーバ）とグループのプロセスが残らない。
+# 走らせ、tmux のソケットができた時点（秒数でなく、その出来事を待つ）でグループ全体に INT を送る（Ctrl-C と同じ形）。
+# 確かめること: INT を送れた・終了コード 1・隔離した TMPDIR の中と、agent-status.sh が /tmp に作る一時ディレクトリ（名前が pid で決まる）が空・そこを環境に持つプロセス（tmux のサーバ）とグループのプロセスが残らない。
 # 止める前に終わった・ソケットを待つ上限（10 秒）を超えた場合は、確かめになっていないので失敗にする。
 # setsid か /proc が無い環境（mac）、または INT を無視して起動された（後ろで走らせた）場合は、省いたと出す。止めるのは自分が起こしたグループだけ
 #   sh tests/acceptance/stop-cleanup.sh      失敗した項目と要約だけ
@@ -16,6 +16,8 @@ skip() { [ -n "${V:-}" ] && echo "省いた $1"; return 0; }
 envpids() { [ -n "$1" ] || return 0; for e in /proc/[0-9]*/environ; do
     cat "$e" 2>/dev/null | tr '\0' '\n' | grep -qxF -e "TMPDIR=$1" -e "TMUX_TMPDIR=$1" && { p="${e#/proc/}"; echo "${p%/environ}"; }
   done; }
+# agent-status.sh が（TMPDIR の下でなく）/tmp に作る一時ディレクトリ。名前が pid で決まるので、起こしたグループの pid（$T/pid）で、この実行のものだけに絞る
+agentdir() { ap="$(cat "$T/pid" 2>/dev/null)"; case "$ap" in ''|*[!0-9]*) return 0 ;; esac; ls -d /tmp/agent-"$ap".* 2>/dev/null; }
 # 後片づけ: 見張り（後ろで走る。INT を無視する）と起こしたグループ、一時ディレクトリを環境に持つプロセス（止められなかったときだけ残る）を止めてから消す
 w=""
 cleanup() {
@@ -23,6 +25,7 @@ cleanup() {
   [ -n "$T" ] || return 0
   P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) kill -KILL -"$P" 2>/dev/null ;; esac
   for p in $(envpids "$T/tmp"); do [ "$p" = "$$" ] || kill "$p" 2>/dev/null; done
+  for d in $(agentdir); do rm -rf "$d"; done
   rm -rf "$T"
 }
 T=""; trap 'trap "" HUP INT TERM; cleanup' EXIT
@@ -38,7 +41,7 @@ else
   mkdir "$T/tmp"
   # 見張り: pid とソケットが揃ったらグループに INT を送る。どちらの待ちも上限 10 秒で、超えたら note を書いてグループを KILL する
   # （親は setsid -w でグループの終わりを待つので、固まっても検査全体が止まらないように）
-  ( i=0; until [ -s "$T/pid" ] && [ -n "$(find "$T/tmp" -type s 2>/dev/null)" ]; do
+  ( i=0; until d="$(agentdir)"; [ -n "$d" ] && [ -S "$d/sock" ]; do
       i=$((i + 1))
       [ "$i" -lt 1000 ] || { echo "ソケットができない（10 秒待った）" > "$T/note"; P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) kill -KILL -"$P" 2>/dev/null ;; esac; exit 0; }
       sleep 0.01; done
@@ -48,7 +51,7 @@ else
   w=$!
   TMPDIR="$T/tmp" TMUX_TMPDIR="$T/tmp" setsid -w sh -c 'echo $$ > "$1"; exec sh "$2"' _ "$T/pid" "$ROOT/tests/acceptance/agent-status.sh" >/dev/null 2>&1; rc=$?
   wait "$w"; w=""; sleep 1 # tmux のサーバが終わるのを少し待つ
-  P="$(cat "$T/pid" 2>/dev/null)"; left="$(find "$T/tmp" -mindepth 1 2>/dev/null | tr '\n' ' ')"
+  P="$(cat "$T/pid" 2>/dev/null)"; left="$(find "$T/tmp" -mindepth 1 2>/dev/null; agentdir)"; left="$(echo $left)"
   procs="$(envpids "$T/tmp"; case "$P" in ''|*[!0-9]*) ;; *) pgrep -g "$P" 2>/dev/null ;; esac)"; procs="$(echo $procs)" # pgrep -g 0 は自分のグループ
   if [ -s "$T/note" ]; then ng "$(cat "$T/note")"
   elif [ ! -s "$T/sent" ]; then ng "止める前に終わった（確かめになっていない）: rc=$rc"
