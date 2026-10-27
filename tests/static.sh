@@ -34,20 +34,24 @@ done
 # ---- tmux.conf: 私設のサーバで読み込める（new-session は壊れた conf でも 0 を返すので source-file で見る）。
 #      prefix r の再読込は、追記する terminal-features を既定に戻してから読み直す（戻さないと再読込のたびに増える）
 if command -v tmux >/dev/null 2>&1; then
-  S="dotfiles-static-$$"
-  if tmux -L "$S" -f "$ROOT/config/tmux/tmux.conf" new-session -d -x 80 -y 24 2>/dev/null; then
-    n0="$(tmux -L "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')" # 起動直後の要素数（この後の source-file より前に取る）
-    tmux -L "$S" source-file "$ROOT/config/tmux/tmux.conf" 2>/dev/null && ok "tmux.conf が読み込める" || ng "tmux.conf にエラーがある"
-    r="$(tmux -L "$S" list-keys -T prefix 2>/dev/null | grep -E '^bind-key +-T prefix +r ' || true)"
+  # ソケットは一時ディレクトリに置き、どの終わり方でもサーバを止めて消す（tmux は終了時にソケットを消さない。trap の中も set -e が効くので
+  # kill-server の失敗は握る）。S は後で settings.json に使い回すので、trap は $T から組む
+  T=""
+  trap 'trap "" HUP INT TERM; [ -z "$T" ] || { tmux -S "$T/sock" kill-server 2>/dev/null || true; rm -rf "$T"; }' EXIT
+  trap 'exit 1' HUP INT TERM
+  T="$(trap '' HUP INT TERM; mktemp -d)"; S="$T/sock"
+  if tmux -S "$S" -f "$ROOT/config/tmux/tmux.conf" new-session -d -x 80 -y 24 2>/dev/null; then
+    n0="$(tmux -S "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')" # 起動直後の要素数（この後の source-file より前に取る）
+    tmux -S "$S" source-file "$ROOT/config/tmux/tmux.conf" 2>/dev/null && ok "tmux.conf が読み込める" || ng "tmux.conf にエラーがある"
+    r="$(tmux -S "$S" list-keys -T prefix 2>/dev/null | grep -E '^bind-key +-T prefix +r ' || true)"
     case "$r" in *'set-option -su terminal-features'*) ok "prefix r は terminal-features を戻してから読み直す" ;; *) ng "prefix r が terminal-features を戻さない: $r" ;; esac
     # bind の中身を実際に実行して、terminal-features が起動直後の数に戻ることを見る（文字列でなく振る舞い）。list-keys の行からコマンド部分を取り、
     # \; は eval で tmux の区切りに、conf のパス（tmux が ~ を $HOME に展開済み）はリポジトリのファイルに置き換えて、リンクの有無に依らず同じものを読む。
     # 末尾の display-message はクライアントが無く失敗してよい
     cmd="$(printf '%s\n' "$r" | sed -e 's/^bind-key *-T prefix *r *//' -e "s|$HOME/.config/tmux/tmux.conf|$ROOT/config/tmux/tmux.conf|")"
-    eval "tmux -L \"\$S\" $cmd" >/dev/null 2>&1 || true
-    n1="$(tmux -L "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')"
+    eval "tmux -S \"\$S\" $cmd" >/dev/null 2>&1 || true
+    n1="$(tmux -S "$S" show -s -v terminal-features 2>/dev/null | wc -l | tr -d ' ')"
     [ -n "$cmd" ] && [ "$n1" = "$n0" ] && ok "prefix r を実行しても terminal-features が増えない（$n0 → $n1）" || ng "prefix r で terminal-features が $n0 → $n1 になる"
-    tmux -L "$S" kill-server 2>/dev/null || true
   else
     ng "tmux.conf でサーバを起こせない"
   fi

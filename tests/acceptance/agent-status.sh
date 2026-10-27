@@ -9,23 +9,27 @@ fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 command -v tmux >/dev/null 2>&1 || { echo "FAIL tmux が無い（mise で入る）"; exit 1; }
-S="dotfiles-agent-$$"; H="$(mktemp -d)"
-trap 'tmux -L "$S" kill-server 2>/dev/null; rm -rf "$H"' EXIT
-tmux -L "$S" -f /dev/null new-session -d -x 80 -y 24 sleep 600
-tmux -L "$S" split-window -d sleep 600
+# ソケットは一時ディレクトリ $H に置き、どの終わり方でもサーバを止めて $H ごと消す（tmux は終了時にソケットを消さない。trap の中も set -e が効くので
+# kill-server の失敗は握る）
+H=""
+trap 'trap "" HUP INT TERM; [ -z "$H" ] || { tmux -S "$H/sock" kill-server 2>/dev/null || true; rm -rf "$H"; }' EXIT
+trap 'exit 1' HUP INT TERM
+H="$(trap '' HUP INT TERM; mktemp -d)"; S="$H/sock"
+tmux -S "$S" -f /dev/null new-session -d -x 80 -y 24 sleep 600
+tmux -S "$S" split-window -d sleep 600
 # agent-status の tmux は $TMUX のソケットを使う（本物の hook と同じ条件）
-export TMUX="$(tmux -L "$S" display -p '#{socket_path}'),0,0"
-set -- $(tmux -L "$S" list-panes -F '#{pane_id}'); p1=$1; p2=$2
-agg() { tmux -L "$S" show -w -v @agent 2>/dev/null || true; }
+export TMUX="$(tmux -S "$S" display -p '#{socket_path}'),0,0"
+set -- $(tmux -S "$S" list-panes -F '#{pane_id}'); p1=$1; p2=$2
+agg() { tmux -S "$S" show -w -v @agent 2>/dev/null || true; }
 st() { TMUX_PANE="$1" sh "$ROOT/bin/agent-status" "$2" </dev/null; }
 
 # 起動経路（SessionStart の startup|clear）: どのペインにも @agent_pane が無い状態の idle は、何もせず 0 で返る
 # （smoke。agent-status は tmux の失敗を || exit 0 で握るので、偽装しても落ちない = RED は作れない）
 if st "$p1" idle 2>"$H/err" && [ ! -s "$H/err" ] && [ -z "$(agg)" ]; then ok "未設定のペインへの idle は何もせず 0 で返る"; else ng "未設定のペインへの idle が失敗する: $(cat "$H/err") agg=$(agg)"; fi
 # agent-status が prev に入れる前提: display -p \; set -p の 1 回呼び出しの stdout は display の分だけ（set -p は無言）
-[ "$(tmux -L "$S" display -p -t "$p1" x \; set -p -t "$p1" @agent_pane working)" = x ] && ok "display -p \\; set -p の出力は display の分だけ" \
-  || ng "set -p が出力を混ぜる: $(tmux -L "$S" display -p -t "$p1" x \; set -p -t "$p1" @agent_pane working | tr '\n' '|')"
-tmux -L "$S" set -p -t "$p1" -u @agent_pane
+[ "$(tmux -S "$S" display -p -t "$p1" x \; set -p -t "$p1" @agent_pane working)" = x ] && ok "display -p \\; set -p の出力は display の分だけ" \
+  || ng "set -p が出力を混ぜる: $(tmux -S "$S" display -p -t "$p1" x \; set -p -t "$p1" @agent_pane working | tr '\n' '|')"
+tmux -S "$S" set -p -t "$p1" -u @agent_pane
 
 st "$p1" working; [ "$(agg)" = working ] && ok "1 ペインが working → ウィンドウは working" || ng "working が集約されない: $(agg)"
 st "$p2" waiting; [ "$(agg)" = waiting ] && ok "waiting は working より優先" || ng "waiting が優先されない: $(agg)"
