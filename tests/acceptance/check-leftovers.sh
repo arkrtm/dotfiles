@@ -25,6 +25,9 @@ cleanup() {
       case "$(ps -o args= -p "$p" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac
     done
   done
+  for f in "$T"/pid.*.dir; do # 読めなくした一時ディレクトリ（検査が /tmp/check.* に作ったもの）は、権限を戻して消す
+    d="$(cat "$f" 2>/dev/null)"; case "$d" in /tmp/check.*) chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d" ;; esac
+  done
   rm -rf "$T"
 }
 T=""; trap 'trap "" HUP INT TERM; cleanup' EXIT
@@ -40,6 +43,8 @@ case "${MODE:-}" in
   file) echo x > "$TMPDIR/left" ;;
   proc) sleep 599.7 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF" ;;
   tmuxonly) env -u TMPDIR sleep 599.9 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF" ;;
+  pipe) sleep 599.6 </dev/null & echo $! >> "$PIDF" ;; # 出力をつないだまま子を残す
+  locked) echo "$TMPDIR" > "$PIDF.dir"; chmod 000 "$TMPDIR" ;; # 一時ディレクトリを読めなくする
   sub) mkdir "$TMPDIR/sub"; env -u TMUX_TMPDIR TMPDIR="$TMPDIR/sub" sleep 599.8 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF"
     rmdir "$TMPDIR/sub" ;;
 esac
@@ -94,6 +99,15 @@ if [ -d /proc/self ]; then
   if [ "$rc" = 0 ] && [ -z "$out" ] && [ -n "$p" ] && alive "$p"; then
     ok "環境が TMPDIR=<一時ディレクトリ>/sub のプロセスは、止めない（部分一致で当てない）"; else ng "別のプロセス: rc=$rc pid=$p 生きている=$(alive "${p:-0}" && echo はい || echo いいえ) 出力=$out"; fi
   [ -z "$p" ] || kill "$p" 2>/dev/null
+  # 子が検査の出力（パイプ）をつないだまま残っても、検査は戻って、残った子を出して止める（上限 30 秒）
+  n=$((n + 1)); PF="$T/pid.pipe.$n"; rm -f "$MARK" "$T/rc.pipe"
+  ( MODE=pipe MARK="$MARK" PIDF="$PF" sh "$R/scripts/check" > "$T/out.pipe" 2>&1; echo $? > "$T/rc.pipe" ) &
+  pw=$!; i=0; while [ ! -e "$T/rc.pipe" ] && [ "$i" -lt 300 ]; do i=$((i + 1)); sleep 0.1; done
+  p="$(cat "$PF" 2>/dev/null)"
+  if [ "$(cat "$T/rc.pipe" 2>/dev/null)" = 1 ] && [ -n "$p" ] && grep -q "^ *$p sleep 599.6" "$T/out.pipe" && gone "$p"; then
+    ok "子が出力をつないだまま残っても、検査は戻って失敗し、その子を出して止める"; else ng "出力をつないだ子: rc=$(cat "$T/rc.pipe" 2>/dev/null) pid=$p 出力=$(cat "$T/out.pipe")"; fi
+  case "$(ps -o args= -p "${p:-0}" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac # 戻らなかったときは、子を止めて検査を終わらせる
+  wait "$pw"
   # 長い TMPDIR（100 バイト程度）でも stop-cleanup.sh は ok になる（一時ディレクトリを TMPDIR の下に重ねると、ソケットのパスが長すぎて tmux が失敗する）
   L="$T"; while [ "${#L}" -lt 100 ]; do L="$L/long-directory-name"; done; mkdir -p "$L"
   out="$(TMPDIR="$L" sh "$ROOT/tests/acceptance/stop-cleanup.sh" 2>&1)"; rc=$?
@@ -107,6 +121,12 @@ if [ -d /proc/self ]; then
     if [ "$rc" = 0 ] && [ -z "$rest" ]; then ok "TMPDIR が ${#L} バイトでも $f は通り、/tmp の一時ディレクトリを残さない"
     else ng "長い TMPDIR（${#L} バイト）で $f: rc=$rc 残り=[$rest] 出力=$(printf '%s\n' "$out" | grep -v '^ok ' | head -3)"; [ -z "$rest" ] || rm -rf $rest; fi
   done
+fi
+
+# 検査が一時ディレクトリを読めなくしても（find が失敗する）、成功にしない。root は権限で止まらないので省く
+if [ "$(id -u)" != 0 ]; then
+  run locked; d="$(cat "$PF.dir" 2>/dev/null)"; chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d"
+  if [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q '^FAIL 一時ディレクトリを調べられない'; then ok "一時ディレクトリを読めなくされたら、調べられないので失敗する"; else ng "読めない一時ディレクトリ: rc=$rc 出力=$out"; fi
 fi
 
 [ "$fail" = 0 ] && echo "acceptance check-leftovers: ok"

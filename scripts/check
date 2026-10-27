@@ -6,15 +6,16 @@
 # ただし static.sh と agent-status.sh の tmux のソケットは、パスが 104 バイトを超えないよう、ここの外の /tmp/<名前>-<pid>.* に作るので見ない（残った tmux のサーバは環境で見つかる）。
 # 各検査が自分の trap で消し、残らないことは check-leftovers.sh（普通に終わったとき）と stop-cleanup.sh（止めたとき）が確かめる
 cd "$(dirname "$0")/.." || exit 1
-D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D"}' EXIT
+D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D" "$D.out"}' EXIT
 trap 'exit 1' HUP INT TERM
 D="$(trap '' HUP INT TERM; mktemp -d /tmp/check.XXXXXX)"
 # 作れなかった・絶対パスでない・ディレクトリでないときは、検査もプロセスの探索（止める処理）も走らせない（作れていれば trap が消す）
 nodir() { echo "FAIL 一時ディレクトリを作れない（mktemp の結果: ${D:-なし}）"; exit 1; }
 nl="$(printf '\n_')"; nl="${nl%_}" # 改行を含むパスは grep -F -e がパターンを分けてしまうので使わない
 case "$D" in *"$nl"*) nodir ;; /?*) [ -d "$D" ] || nodir ;; *) nodir ;; esac
+# 出力はファイルに書く（子が残って出力のパイプを持ったままだと、$(…) で受ける形は戻らない）。$D の外に置き、残りに数えない
 for t in static install acceptance; do
-  out="$(TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" 2>&1)" || { printf '%s\n' "$out" | grep -v '^ok '; exit 1; }
+  TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" > "$D.out" 2>&1 || { grep -v '^ok ' "$D.out"; exit 1; }
 done
 i=0
 while :; do # 終わりかけの子を少し待つ。環境の 1 項目が TMPDIR=$D と完全に同じプロセスだけ（部分一致で別のものに当たらない）
@@ -25,9 +26,9 @@ while :; do # 終わりかけの子を少し待つ。環境の 1 項目が TMPDI
   if [ -z "$procs" ] || [ "$i" -ge 30 ]; then break; fi
   i=$((i + 1)); sleep 0.1
 done
-files="$(find "$D" -mindepth 1)"
-[ -z "$files$procs" ] && exit 0
-echo "FAIL 検査が普通に終わった後に残っている:"
+ferr=""; files="$(find "$D" -mindepth 1 2>&1)" || ferr=1 # 読めなくされたら find が失敗し、空に見えて成功にしてしまうので、失敗にする
+[ -z "$files$procs$ferr" ] && exit 0
+if [ -n "$ferr" ]; then echo "FAIL 一時ディレクトリを調べられない（find が失敗）:"; else echo "FAIL 検査が普通に終わった後に残っている:"; fi
 [ -z "$files" ] || printf '%s\n' "$files"
 for p in $procs; do p="${p%/environ}"; [ "$p" != "$$" ] && [ -n "$D" ] && { ps -o pid=,args= -p "$p"; kill "$p" 2>/dev/null; }; done
 exit 1
