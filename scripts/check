@@ -1,7 +1,24 @@
 #!/bin/sh
 # dotfiles の検査: 静的な検査・install.sh・受け入れ検査。呼び出し元は integrate（setup の test）・GitHub Actions（.github/workflows/check.yml）・コミットの前の人とエージェント（CLAUDE.md）
 # 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1
+# 検査の一時ファイル（TMPDIR・TMUX_TMPDIR）はここの一時ディレクトリに集め、全部が普通に終わった後に何も残っていない
+# （ファイル・ソケット・そこを環境に持つプロセス。プロセスは /proc がある Linux だけ）ことも確かめる
 cd "$(dirname "$0")/.." || exit 1
+D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D"}' EXIT
+trap 'exit 1' HUP INT TERM
+D="$(trap '' HUP INT TERM; mktemp -d)"
 for t in static install acceptance; do
-  out="$(sh "tests/$t.sh" 2>&1)" || { printf '%s\n' "$out" | grep -v '^ok '; exit 1; }
+  out="$(TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" 2>&1)" || { printf '%s\n' "$out" | grep -v '^ok '; exit 1; }
 done
+i=0
+while :; do # 終わりかけの子を少し待つ
+  procs=""; for e in /proc/[0-9]*/environ; do grep -qaF "TMPDIR=$D" "$e" 2>/dev/null && procs="$procs ${e#/proc/}"; done
+  if [ -z "$procs" ] || [ "$i" -ge 30 ]; then break; fi
+  i=$((i + 1)); sleep 0.1
+done
+files="$(find "$D" -mindepth 1)"
+[ -z "$files$procs" ] && exit 0
+echo "FAIL 検査が普通に終わった後に残っている:"
+[ -z "$files" ] || printf '%s\n' "$files"
+for p in $procs; do p="${p%/environ}"; ps -o pid=,args= -p "$p"; kill "$p" 2>/dev/null; done
+exit 1
