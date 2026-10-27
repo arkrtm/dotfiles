@@ -1,14 +1,14 @@
 #!/bin/sh
 # dotfiles の検査: 静的な検査・install.sh・受け入れ検査。呼び出し元は integrate（setup の test）・GitHub Actions（.github/workflows/check.yml）・コミットの前の人とエージェント（CLAUDE.md）
 # 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1
-# 検査の一時ファイル（TMPDIR・TMUX_TMPDIR）はここの一時ディレクトリに集め、全部が普通に終わった後に何も残っていない
+# 検査の一時ファイル（TMPDIR・TMUX_TMPDIR）はここの一時ディレクトリに集め（TMPDIR の下に重ねない: tmux のソケットのパスが 104 バイトを超えないように、短い /tmp に作る）、全部が普通に終わった後に何も残っていない
 # （ファイル・ソケット・そこを環境に持つプロセス。プロセスは /proc がある Linux だけ）ことも確かめる
 cd "$(dirname "$0")/.." || exit 1
 D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D"}' EXIT
 trap 'exit 1' HUP INT TERM
-D="$(trap '' HUP INT TERM; mktemp -d)"
+D="$(trap '' HUP INT TERM; mktemp -d /tmp/check.XXXXXX)"
 # 作れなかった・絶対パスでない・ディレクトリでないときは、検査もプロセスの探索（止める処理）も走らせない（作れていれば trap が消す）
-nodir() { echo "FAIL 一時ディレクトリを作れない（TMPDIR=${TMPDIR:-未設定}）"; exit 1; }
+nodir() { echo "FAIL 一時ディレクトリを作れない（mktemp の結果: ${D:-なし}）"; exit 1; }
 nl="$(printf '\n_')"; nl="${nl%_}" # 改行を含むパスは grep -F -e がパターンを分けてしまうので使わない
 case "$D" in *"$nl"*) nodir ;; /?*) [ -d "$D" ] || nodir ;; *) nodir ;; esac
 for t in static install acceptance; do

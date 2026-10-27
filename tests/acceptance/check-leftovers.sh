@@ -1,10 +1,12 @@
 #!/bin/sh
 # scripts/check の「一時ディレクトリの確かめ」の受け入れ検査: scripts/check を一時的な木に写し、tests/{static,install,acceptance}.sh を小さな偽物に置き換えて走らせる
 # （本物の検査は走らせず、scripts/check の入れ子もない）。偽物は走ったら印を書き、MODE で何を残すかを変える。確かめること:
-#   一時ディレクトリを作れない TMPDIR では、検査もプロセスの探索・停止も走らず失敗する
+#   一時ディレクトリを作れない（mktemp の失敗・相対パス・ディレクトリでない・改行を含む）ときは、検査もプロセスの探索・停止も走らず失敗する
+#     （一時ディレクトリは TMPDIR でなく短い /tmp に作るので、偽の mktemp を PATH の先頭に置いて確かめる）
 #   何も残さなければ出力なしで通る / ファイルを残せば失敗して出す
 #   一時ディレクトリを環境に持つプロセスを残せば、失敗してそのプロセスを出して止める（Linux だけ）
 #   環境が TMPDIR=<一時ディレクトリ>/sub のような別のプロセスは、止めない（部分一致で当てない。Linux だけ）
+#   TMPDIR が長くても（100 バイト程度）、tests/acceptance/stop-cleanup.sh は ok になる（ソケットのパスが長すぎて tmux が失敗しない。Linux だけ）
 # 起こすプロセスはすべて自分の pid で管理し、名前では止めない
 #   sh tests/acceptance/check-leftovers.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/check-leftovers.sh  通った項目も
@@ -43,25 +45,36 @@ case "${MODE:-}" in
 esac
 SH
 done
-# run <MODE> [TMPDIR]: scripts/check の写しを走らせる。出力は $out、終了コードは $rc、偽の検査が走った印は $MARK
+# run <MODE> [<偽の mktemp が返す名前>|FAIL]: scripts/check の写しを走らせる。出力は $out、終了コードは $rc、偽の検査が走った印は $MARK。
+# 2 つ目があれば PATH の先頭に偽の mktemp を置き、その名前を返させる（FAIL なら何も返さず失敗）
+mkdir "$T/bin"
+FAKE="$T/bin/mk""temp" # 形の検査が拾う語を、この偽物の名前では書かない
+cat > "$FAKE" <<'SH'
+#!/bin/sh
+[ "$FAKE_OUT" != FAIL ] || exit 1
+printf '%s\n' "$FAKE_OUT"
+SH
+chmod +x "$FAKE"
 run() {
   n=$((n + 1)); PF="$T/pid.$1.$n"; rm -f "$MARK"; rc=0 # 実行ごとに別の pid の記録（失敗しても、起こした子を後片づけで止められる）
-  out="$(MODE="$1" MARK="$MARK" PIDF="$PF" TMPDIR="${2:-${TMPDIR:-/tmp}}" sh "$R/scripts/check" 2>&1)" || rc=$?
+  out="$(MODE="$1" MARK="$MARK" PIDF="$PF" FAKE_OUT="${2:-}" PATH="${2:+$T/bin:}$PATH" sh "$R/scripts/check" 2>&1)" || rc=$?
 }
 MARK="$T/mark"; n=0
 alive() { s="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')"; [ -n "$s" ] && [ "${s#Z}" = "$s" ]; }
 # 子を止めた後に消えるのを少し待つ
 gone() { i=0; while alive "$1" && [ "$i" -lt 30 ]; do i=$((i + 1)); sleep 0.1; done; ! alive "$1"; }
 
-run proc "$T/none" # 作れない TMPDIR（探索や停止が走るなら、proc の残りが出る）
+run proc FAIL # 作成の失敗（探索や停止が走るなら、proc の残りが出る）
 if [ "$rc" = 1 ] && [ ! -e "$MARK" ] && [ ! -e "$PF" ] && printf '%s\n' "$out" | grep -q '^FAIL 一時ディレクトリを作れない'; then
-  ok "一時ディレクトリを作れなければ、検査を走らせず失敗する"; else ng "作れない TMPDIR: rc=$rc 印=$([ -e "$MARK" ] && echo あり || echo なし) 出力=$out"; fi
-ok=1; export ok; run proc "$T/none"; unset ok # 環境に ok=1 があっても、作れない TMPDIR では走らない
+  ok "一時ディレクトリを作れなければ、検査を走らせず失敗する"; else ng "作成の失敗: rc=$rc 印=$([ -e "$MARK" ] && echo あり || echo なし) 出力=$out"; fi
+ok=1; export ok; run proc FAIL; unset ok # 環境に ok=1 があっても、作れなければ走らない
 if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "環境に ok=1 があっても、作れなければ検査を走らせず失敗する"; else ng "環境に ok=1 がある: rc=$rc 出力=$out"; fi
-nl="$T/a$(printf '\nb')"; mkdir "$nl"; run proc "$nl" # 改行を含む TMPDIR（grep -F -e は改行でパターンを分けるので、別のプロセスに当たる）
-if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "TMPDIR に改行があっても、検査を走らせず失敗する"; else ng "改行を含む TMPDIR: rc=$rc 出力=$out"; fi
-printf 'x' > "$T/notdir"; run proc "$T/notdir" # ディレクトリでない TMPDIR
-if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "TMPDIR がディレクトリでなくても、検査を走らせず失敗する"; else ng "ディレクトリでない TMPDIR: rc=$rc 出力=$out"; fi
+nl="$T/a$(printf '\nb')"; mkdir "$nl"; run proc "$nl" # 改行を含む一時ディレクトリ名（grep -F -e は改行でパターンを分けるので、別のプロセスに当たる）
+if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "名前に改行があっても、検査を走らせず失敗する"; else ng "改行を含む名前: rc=$rc 出力=$out"; fi
+printf 'x' > "$T/notdir"; run proc "$T/notdir" # ディレクトリでない
+if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "ディレクトリでなくても、検査を走らせず失敗する"; else ng "ディレクトリでない: rc=$rc 出力=$out"; fi
+run proc rel # 絶対パスでない
+if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "絶対パスでなくても、検査を走らせず失敗する"; else ng "相対パス: rc=$rc 出力=$out"; fi
 
 run none
 if [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(wc -l < "$MARK" | tr -d ' ')" = 3 ]; then ok "何も残さなければ、3 本とも走って出力なしで通る"; else ng "何も残さない: rc=$rc 印=$(cat "$MARK" 2>/dev/null | wc -l) 出力=$out"; fi
@@ -81,6 +94,10 @@ if [ -d /proc/self ]; then
   if [ "$rc" = 0 ] && [ -z "$out" ] && [ -n "$p" ] && alive "$p"; then
     ok "環境が TMPDIR=<一時ディレクトリ>/sub のプロセスは、止めない（部分一致で当てない）"; else ng "別のプロセス: rc=$rc pid=$p 生きている=$(alive "${p:-0}" && echo はい || echo いいえ) 出力=$out"; fi
   [ -z "$p" ] || kill "$p" 2>/dev/null
+  # 長い TMPDIR（100 バイト程度）でも stop-cleanup.sh は ok になる（一時ディレクトリを TMPDIR の下に重ねると、ソケットのパスが長すぎて tmux が失敗する）
+  L="$T"; while [ "${#L}" -lt 100 ]; do L="$L/long-directory-name"; done; mkdir -p "$L"
+  out="$(TMPDIR="$L" sh "$ROOT/tests/acceptance/stop-cleanup.sh" 2>&1)"; rc=$?
+  if [ "$rc" = 0 ]; then ok "TMPDIR が ${#L} バイトでも stop-cleanup.sh は通る"; else ng "長い TMPDIR（${#L} バイト）で stop-cleanup.sh が失敗する: $out"; fi
 fi
 
 [ "$fail" = 0 ] && echo "acceptance check-leftovers: ok"

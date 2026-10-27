@@ -27,7 +27,7 @@ cleanup() {
 }
 T=""; trap 'trap "" HUP INT TERM; cleanup' EXIT
 trap 'exit 1' HUP INT TERM
-T="$(trap '' HUP INT TERM; mktemp -d)"
+T="$(trap '' HUP INT TERM; mktemp -d /tmp/stop.XXXXXX)" # TMPDIR の下に重ねない（tmux のソケットのパスが 104 バイトを超えないように、短い /tmp に作る）
 
 ign="$(sed -n 's/^SigIgn:[[:space:]]*//p' /proc/$$/status 2>/dev/null)"
 if ! command -v setsid >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1 || [ -z "$ign" ]; then
