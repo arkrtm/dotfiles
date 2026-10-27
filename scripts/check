@@ -1,8 +1,10 @@
 #!/bin/sh
 # dotfiles の検査: 静的な検査・install.sh・受け入れ検査。呼び出し元は integrate（setup の test）・GitHub Actions（.github/workflows/check.yml）・コミットの前の人とエージェント（CLAUDE.md）
 # 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1
-# 検査の一時ファイル（TMPDIR・TMUX_TMPDIR）はここの一時ディレクトリに集め（TMPDIR の下に重ねない: tmux のソケットのパスが 104 バイトを超えないように、短い /tmp に作る）、全部が普通に終わった後に何も残っていない
-# （ファイル・ソケット・そこを環境に持つプロセス。プロセスは /proc がある Linux だけ）ことも確かめる
+# 検査の一時ファイル（TMPDIR・TMUX_TMPDIR）はここの一時ディレクトリ（TMPDIR の下に重ねず、短い /tmp に作る）に集め、全部が普通に終わった後に何も残っていない
+# （ファイル・ソケット・そこを環境に持つプロセス。プロセスは /proc がある Linux だけ）ことも確かめる。
+# ただし static.sh と agent-status.sh の tmux のソケットは、パスが 104 バイトを超えないよう、ここの外の /tmp/<名前>-<pid>.* に作るので見ない（残った tmux のサーバは環境で見つかる）。
+# 各検査が自分の trap で消し、残らないことは check-leftovers.sh（普通に終わったとき）と stop-cleanup.sh（止めたとき）が確かめる
 cd "$(dirname "$0")/.." || exit 1
 D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D"}' EXIT
 trap 'exit 1' HUP INT TERM

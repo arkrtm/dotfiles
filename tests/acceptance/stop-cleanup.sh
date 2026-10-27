@@ -23,7 +23,8 @@ w=""
 cleanup() {
   [ -n "$w" ] && { kill "$w" 2>/dev/null; wait "$w" 2>/dev/null; }
   [ -n "$T" ] || return 0
-  P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) kill -KILL -"$P" 2>/dev/null ;; esac
+  P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) # グループにプロセスが残っているときだけ KILL（終わった後に pid が使い回されても、別のグループに当てない）
+    ! pgrep -g "$P" >/dev/null 2>&1 || kill -KILL -"$P" 2>/dev/null ;; esac
   for p in $(envpids "$T/tmp"); do [ "$p" = "$$" ] || kill "$p" 2>/dev/null; done
   for d in $(agentdir); do rm -rf "$d"; done
   rm -rf "$T"
@@ -43,7 +44,7 @@ else
   # （親は setsid -w でグループの終わりを待つので、固まっても検査全体が止まらないように）
   ( i=0; until d="$(agentdir)"; [ -n "$d" ] && [ -S "$d/sock" ]; do
       i=$((i + 1))
-      [ "$i" -lt 1000 ] || { echo "ソケットができない（10 秒待った）" > "$T/note"; P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) kill -KILL -"$P" 2>/dev/null ;; esac; exit 0; }
+      [ "$i" -lt 1000 ] || { echo "ソケットができない（10 秒待った）" > "$T/note"; P="$(cat "$T/pid" 2>/dev/null)"; case "$P" in ''|*[!0-9]*) ;; *) ! pgrep -g "$P" >/dev/null 2>&1 || kill -KILL -"$P" 2>/dev/null ;; esac; exit 0; }
       sleep 0.01; done
     P="$(cat "$T/pid")"; kill -INT -"$P" 2>/dev/null && echo INT > "$T/sent"
     i=0; while pgrep -g "$P" >/dev/null 2>&1; do
