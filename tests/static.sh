@@ -107,7 +107,9 @@ fi
 for f in $(git -C "$ROOT" ls-files 'tests/*.sh'); do
   c="$(grep -nw 'mk[t]emp' "$ROOT/$f" | grep -v '^[0-9]*: *#' || true)"; [ -n "$c" ] || continue
   m="$(printf '%s\n' "$c" | head -n 1 | cut -d: -f1)"
-  bad="$(printf '%s\n' "$c" | grep -v "[$][(]trap '' HUP INT TERM; mk[t]emp" | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//' || true)"
+  # 1 行に mktemp が複数あるときも、すべてがこの形であること（mktemp の数と、この形の数が同じ行だけ通す）
+  bad="$(printf '%s\n' "$c" | awk -F: '{ n = $1; l = $0; sub(/^[0-9]+:/, "", l); g = l; a = gsub(/mk[t]emp/, "", l)
+    b = gsub("[$][(]trap \047\047 HUP INT TERM; mk[t]emp", "", g); if (a != b) printf "%s ", n }' | sed 's/ $//')"
   e="$(grep -nE "(^ *|; *)trap 'trap \"\" HUP INT TERM; [^']*' EXIT" "$ROOT/$f" | head -n 1 | cut -d: -f1)"
   s="$(grep -nE "(^ *|; *)trap 'exit 1' HUP INT TERM" "$ROOT/$f" | head -n 1 | cut -d: -f1)"
   if [ -z "$bad" ] && [ -n "$e" ] && [ -n "$s" ] && [ "$e" -lt "$m" ] && [ "$s" -lt "$m" ]; then ok "止めても後片づけする: $f"
