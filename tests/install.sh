@@ -5,8 +5,9 @@
 #   sh tests/install.sh
 set -eu
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
-export HOME="$(mktemp -d)"
-trap 'rm -rf "$HOME"' EXIT
+T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"; export HOME="$T/home"; mkdir "$HOME"
 # 安全装置: install.sh がリンクだけで止まる早期終了（DOTFILES_LINKS_ONLY）が無いと、一時 HOME に対してフル install が走る
 # （mac では defaults write と launchd の登録も）
 grep -qF 'DOTFILES_LINKS_ONLY' "$DOTFILES/install.sh" || { echo "FAIL install.sh に DOTFILES_LINKS_ONLY の早期終了が無い"; exit 1; }
@@ -69,11 +70,10 @@ case "$out" in *link:*|*backup:*) ng "再実行でリンクや退避が発生し
 [ "$(cat "$B")" = on ] && ok "既にある band のファイル（on）は再実行でも書き換えない" || ng "既にある band のファイルが書き換わった: $(cat "$B")"
 
 # worktree（.git がファイル）からは実行しない: リンクが worktree を指し、worktree を消すと設定が読めなくなる
-W="$(mktemp -d)"; cp "$DOTFILES/install.sh" "$W/"; echo 'gitdir: /nonexistent' > "$W/.git"
-H="$(mktemp -d)"
+W="$T/w"; mkdir "$W"; cp "$DOTFILES/install.sh" "$W/"; echo 'gitdir: /nonexistent' > "$W/.git"
+H="$T/h"; mkdir "$H"
 if HOME="$H" DOTFILES_LINKS_ONLY=1 sh "$W/install.sh" >/dev/null 2>&1; then ng "worktree からの実行が止まらなかった"
 elif [ -n "$(ls -A "$H")" ]; then ng "worktree からの実行で HOME に何か置かれた: $(ls -A "$H")"
 else ok "worktree からの実行は止まり、何も置かない"; fi
-rm -rf "$W" "$H"
 
 exit $fail

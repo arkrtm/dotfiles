@@ -7,8 +7,9 @@ DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 if [ "$(readlink "$HOME/.config/nvim")" != "$DOTFILES/config/nvim" ]; then
   echo "FAIL 前提: ~/.config/nvim がこのリポジトリの config/nvim へのリンクであること（install.sh）"; exit 1
 fi
-SCRIPT="$(mktemp)"
-trap 'rm -f "$SCRIPT"' EXIT
+SCRIPT=""; trap 'trap "" HUP INT TERM; rm -f ${SCRIPT:+"$SCRIPT"}' EXIT
+trap 'exit 1' HUP INT TERM
+SCRIPT="$(trap '' HUP INT TERM; mktemp)"
 cat > "$SCRIPT" <<'LUA'
 local fail = false
 local function check(desc, ok, detail)

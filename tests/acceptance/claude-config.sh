@@ -206,8 +206,9 @@ check "config/git/config に core.hooksPath が無い" sh -c "! git config -f '$
 
 # ---- LIVE: 新しいセッションの起動情報（init）のプラグインと skill。config/claude/README.md の新しい端末の手順
 if [ -n "${LIVE:-}" ]; then
-  D="$(mktemp -d)"; L="$D/live.jsonl"; live_fail=0
-  trap 'rm -rf "$D"' EXIT
+  D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D"}' EXIT
+  trap 'exit 1' HUP INT TERM
+  D="$(trap '' HUP INT TERM; mktemp -d)"; L="$D/live.jsonl"; live_fail=0
   (cd "$D" && claude -p '何もせず「ok」とだけ答えて。' --model haiku --permission-mode dontAsk --tools '' \
      --strict-mcp-config --no-session-persistence --output-format stream-json --verbose > "$L" 2> "$D/stderr.txt" </dev/null)
   init="$(jq -c 'select(.type == "system" and .subtype == "init")' "$L")"

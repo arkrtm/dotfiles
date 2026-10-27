@@ -13,8 +13,19 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）";
 # HOME を替えると mise の shim が設定を読めないので、替える前に本物の jq の場所を PATH の先頭に入れる
 PATH="$(dirname "$(mise which jq 2>/dev/null || command -v jq)"):$PATH"
 unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID # herdr の中で走らせても本物の pane を指さない
-T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+T=""
+# 後片づけ: 切り離した裏の処理（setsid。Ctrl-C やグループへの信号が届かない）とその子が後から $T に書き込まないように、止めて、
+# 消えたのを確かめてから消す。handoff・notify・偽の herdr は $T/bin から呼ぶので $T を引数に持つ。後ろの子（ロックを持つ子。
+# SIGINT を無視する）は $T が消えると自分で終わるので、消した後に待つ
+cleanup() {
+  [ -n "$T" ] || return 0 # $T が空のまま pkill -f すると、関係の無いプロセスに当たる
+  pat="$(printf '%s/\n' "$T" | sed 's/[][\.*^$+?(){}|]/\\&/g')" # pgrep・pkill -f は正規表現なので、$T のメタ文字をエスケープする
+  i=0; while pgrep -f "$pat" >/dev/null && [ "$i" -lt 50 ]; do pkill -f "$pat"; sleep 0.1; i=$((i + 1)); done
+  rm -rf "$T"; wait
+}
+trap 'trap "" HUP INT TERM; cleanup' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 export HOME="$T/home" XDG_STATE_HOME="$T/state" HANDOFF_TIMEOUT_MS=2000 HANDOFF_CLEAR_WAIT_S=2
 mkdir -p "$HOME" "$T/bin"
 LOG="$T/herdr.log"; NLOG="$XDG_STATE_HOME/agent-notify.log"
@@ -25,17 +36,19 @@ cat > "$T/bin/herdr" <<SH
 echo "\$*" >> "$LOG"
 case "\$1 \$2" in
   "agent wait") [ -e "$T/wait_sleep" ] && sleep 1
-    [ -e "$T/wait_long" ] && { sleep 30 & echo \$! > "$T/sleeppid"; wait; }
+    # $T/wait_long があれば、$T/release ができるまで待ち続ける（待っている間は $T/waiting がある。$T が消えたら自分で終わる）
+    [ -e "$T/wait_long" ] && { touch "$T/waiting"; while [ ! -e "$T/release" ] && [ -d "$T" ]; do sleep 0.1; done; }
     # $T/switch があれば、待っている間に人が同じ pane で /clear・/resume した（SessionStart が走った）ことにする
-    [ -e "$T/switch" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start
+    [ -e "$T/switch" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$T/bin/handoff" --session-start
     printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "\$(cat "$T/wait_status" 2>/dev/null || echo idle)" ;;
-  "agent prompt") [ "\$4" = /clear ] && [ -e "$T/resume_before_clear" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start
-    [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && echo "{\"source\":\"\$(cat "$T/after_clear" 2>/dev/null || echo clear)\"}" | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$ROOT/bin/handoff" --session-start ;;
+  "agent prompt") [ "\$4" = /clear ] && [ -e "$T/resume_before_clear" ] && echo '{"source":"resume"}' | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$T/bin/handoff" --session-start
+    [ "\$4" = /clear ] && [ ! -e "$T/no_clear" ] && echo "{\"source\":\"\$(cat "$T/after_clear" 2>/dev/null || echo clear)\"}" | HERDR_ENV=1 HERDR_PANE_ID="\$3" "$T/bin/handoff" --session-start ;;
 esac
 exit 0
 SH
 chmod +x "$T/bin/herdr"
-export PATH="$ROOT/bin:$T/bin:$PATH"
+ln -s "$ROOT/bin/handoff" "$ROOT/bin/notify" "$T/bin/"
+export PATH="$T/bin:$ROOT/bin:$PATH"
 nlines() { cat "$NLOG" 2>/dev/null | wc -l | tr -d ' '; }
 # settle: 裏の処理が結果（送った・止めた・何もしない）を handoff.log に書くまで最大 8 秒待つ
 done_lines() { grep -cE '続きを送った|止めた|何もしない' "$XDG_STATE_HOME/handoff.log" 2>/dev/null || true; }
@@ -66,10 +79,10 @@ rm -f "$T/no_clear"
 # ロックはカーネルのファイルロック（flock）: ほかの処理が持っている間は送らず、持ち主が消えたら自動で外れる
 if command -v flock >/dev/null 2>&1; then
   L="$XDG_STATE_HOME/handoff-w1_p2.lock"; mkdir -p "$XDG_STATE_HOME"
-  (exec 9>>"$L"; flock 9; sleep 30) & holder=$!; sleep 0.3
+  (exec 9>>"$L"; flock 9; while [ ! -e "$T/unhold" ] && [ -d "$T" ]; do sleep 0.1; done) & holder=$!; sleep 0.3
   rm -f "$LOG"; d0="$(done_lines)"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "前の作業の続き" >/dev/null 2>&1; settle "$d0"
   ! grep -q 'agent prompt' "$LOG" 2>/dev/null && ok "ほかの handoff がロックを持っている間は送らない" || ng "ロック中: $(cat "$LOG")"
-  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null; run
+  touch "$T/unhold"; wait "$holder" 2>/dev/null; run
   grep -q '前の作業の続き' "$LOG" && ok "持ち主が消えたらロックは外れ、次の handoff は進む" || ng "持ち主が消えた後: $(cat "$LOG" 2>/dev/null)"
 fi
 # 同時に 2 つ呼んでも /clear は 1 回だけ（1 本目が待っている間に 2 本目が来る）
@@ -96,12 +109,12 @@ touch "$T/resume_before_clear"; run
 ! grep -q '前の作業の続き' "$LOG" && ok "/clear の直前に /resume が挟まったら続きを送らない" || ng "直前の resume: $(cat "$LOG")"
 rm -f "$T/resume_before_clear"
 # 裏の処理が herdr を待っている間に死んでも、待っている子がロックを持ち続けない（止めるのは検査が起こしたプロセスだけ）
-touch "$T/wait_long"; rm -f "$LOG" "$T/sleeppid"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "前の作業の続き" >/dev/null 2>&1
-i=0; while [ ! -s "$T/sleeppid" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+touch "$T/wait_long"; rm -f "$LOG" "$T/waiting" "$T/release"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "前の作業の続き" >/dev/null 2>&1
+i=0; while [ ! -e "$T/waiting" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
 wpid="$(sed -n 's/.*開始 pid=\([0-9]*\).*/\1/p' "$XDG_STATE_HOME/handoff.log" | tail -n 1)"
 kill "$wpid" 2>/dev/null; sleep 0.3; rm -f "$T/wait_long"; run
 grep -q '前の作業の続き' "$LOG" && ok "裏の処理が死んだら、待っていた子が残っていてもロックは外れる" || ng "子がロックを持ったまま: $(cat "$LOG" 2>/dev/null)"
-kill "$(cat "$T/sleeppid" 2>/dev/null)" 2>/dev/null
+touch "$T/release"
 
 # 合言葉: 続きの指示に id を付け、自分たちが起こした clear の SessionStart だけがその id を会話に入れる
 id="$(sed -n 's/^agent prompt w1:p2 \[handoff \([^]]*\)\].*/\1/p' "$LOG")"

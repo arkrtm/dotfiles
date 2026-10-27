@@ -1,7 +1,7 @@
 #!/bin/sh
 # 静的な検査（ネットワーク無し・数秒）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
 # tmux.conf の読み込み、ssh/config の構文、SKILL.md の frontmatter、settings.json（JSON として読める、hooks の event 名が既知、
-# hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、herdr の config.toml にエラーが無い、追跡するファイルに Linear の issue 番号が無い
+# hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、herdr の config.toml にエラーが無い、一時ファイルを作る検査の trap の形、追跡するファイルに Linear の issue 番号が無い
 #   sh tests/static.sh
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -99,6 +99,20 @@ grep -q '^jq = ' "$ROOT/config/mise/config.toml" && ok "jq は mise で入る（
 if command -v herdr >/dev/null 2>&1; then
   r="$(HERDR_CONFIG_PATH="$ROOT/config/herdr/config.toml" herdr config check 2>&1)" && ok "herdr の config.toml にエラーが無い" || ng "herdr の config.toml にエラーがある: $r"
 fi
+
+# ---- 検査の後片づけ: 一時ファイルを作る検査は、作る前に 2 つの trap を置く。後片づけの trap は始めに信号を無視して最後まで走り、
+#      もう 1 つは信号を exit に変える（dash は信号で終わると EXIT の trap を実行しない。後片づけの最中の信号で打ち切られないように）。
+#      作るのは $(trap '' HUP INT TERM; mktemp …) の形だけで、信号で止めずに名前を返させる（作った後・名前を返す前に止まると、消す先が分からない）。
+#      mktemp を含む行（コメントを除く）は、書き方に依らずすべて拾い、この形でなければ落とす
+for f in $(git -C "$ROOT" ls-files 'tests/*.sh'); do
+  c="$(grep -nw 'mk[t]emp' "$ROOT/$f" | grep -v '^[0-9]*: *#' || true)"; [ -n "$c" ] || continue
+  m="$(printf '%s\n' "$c" | head -n 1 | cut -d: -f1)"
+  bad="$(printf '%s\n' "$c" | grep -v "[$][(]trap '' HUP INT TERM; mk[t]emp" | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//' || true)"
+  e="$(grep -nE "(^ *|; *)trap 'trap \"\" HUP INT TERM; [^']*' EXIT" "$ROOT/$f" | head -n 1 | cut -d: -f1)"
+  s="$(grep -nE "(^ *|; *)trap 'exit 1' HUP INT TERM" "$ROOT/$f" | head -n 1 | cut -d: -f1)"
+  if [ -z "$bad" ] && [ -n "$e" ] && [ -n "$s" ] && [ "$e" -lt "$m" ] && [ "$s" -lt "$m" ]; then ok "止めても後片づけする: $f"
+  else ng "trap 'trap \"\" HUP INT TERM; <後片づけ>' EXIT と trap 'exit 1' HUP INT TERM を置いてから、\$(trap '' HUP INT TERM; mktemp …) で作る: $f${bad:+（形の違う行: $bad）}"; fi
+done
 
 # ---- Linear の issue 番号: 追跡するファイルに書かない（パターンの [ ] は、この行自身に当たらないため。-I は付けない: binary 扱いのファイルも見る）
 rc=0; hits="$(git -C "$ROOT" grep -nE 'AR[K]-[0-9]')" || rc=$? # 1 = 一致なし、0 = 番号がある、ほかは実行の失敗

@@ -9,7 +9,9 @@ fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 export HOME="$T/home" XDG_STATE_HOME="$T/state"
 mkdir -p "$HOME/.local/bin"
 ln -s "$ROOT/bin/notify" "$HOME/.local/bin/notify"

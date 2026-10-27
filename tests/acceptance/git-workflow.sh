@@ -10,8 +10,9 @@ C="$ROOT/config/git/config"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
-T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 # 端末の ~/.gitconfig に左右されず、dotfiles の設定だけで動かす
 export GIT_CONFIG_GLOBAL="$C" GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com

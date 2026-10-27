@@ -13,8 +13,9 @@ ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID # herdr の中で走らせても本物の pane を触らない
-T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; wait; rm -rf ${T:+"$T"}' EXIT # 後ろで走らせた子（SIGINT を無視する）が終わってから消す（子が後から $T を作り直さないように）
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 export XDG_STATE_HOME="$T/state"
 mkdir -p "$T/bin" "$T/live" "$T/proj/s1/subagents"
 LOG="$T/herdr.log"

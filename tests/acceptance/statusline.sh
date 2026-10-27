@@ -18,7 +18,9 @@ ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID # herdr の中で走らせても本物の pane の名前を変えない
 
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 export XDG_STATE_HOME="$T/state" # 文脈の使用率の書き出し先
 git init -q -b feature/x "$T/repo"
 reset=1792738800

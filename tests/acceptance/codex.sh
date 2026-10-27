@@ -11,7 +11,9 @@ fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 mkdir -p "$T/bin"
 # 偽の codex: 引数を 1 行ずつ args に、標準入力を stdin に書く（codex exec は標準入力が端末でないと入力の終わりを待つ）。
 # -o <file> を受けたら、そのファイルに最後のメッセージとして VERDICT: PASS を書く

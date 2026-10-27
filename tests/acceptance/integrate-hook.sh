@@ -12,8 +12,9 @@ ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 # HOME を替えると mise の shim が設定を読めず失敗するので、替える前に本物の jq の場所を PATH の先頭に入れる
 PATH="$(dirname "$(mise which jq 2>/dev/null || command -v jq)"):$PATH"
-T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 export HOME="$T/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 mkdir -p "$HOME" "$T/out-of-git"
 H="$ROOT/bin/integrate-hook"

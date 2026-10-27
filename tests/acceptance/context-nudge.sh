@@ -9,8 +9,9 @@ fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
-T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+T=""; trap 'trap "" HUP INT TERM; wait; rm -rf ${T:+"$T"}' EXIT # 後ろで走らせた子（SIGINT を無視する）が終わってから消す（子が後から $T を作り直さないように）
+trap 'exit 1' HUP INT TERM
+T="$(trap '' HUP INT TERM; mktemp -d)"
 export XDG_STATE_HOME="$T/state"
 C="$XDG_STATE_HOME/claude-context"; mkdir -p "$C"
 nudge() { printf '%s' "$1" | sh "$ROOT/bin/context-nudge"; }
