@@ -8,8 +8,9 @@ D=""; trap 'trap "" HUP INT TERM; rm -rf ${D:+"$D"}' EXIT
 trap 'exit 1' HUP INT TERM
 D="$(trap '' HUP INT TERM; mktemp -d)"
 # 作れなかった・絶対パスでない・ディレクトリでないときは、検査もプロセスの探索（止める処理）も走らせない（作れていれば trap が消す）
-case "$D" in /?*) [ -d "$D" ] && ok=1 ;; esac
-[ -n "${ok:-}" ] || { echo "FAIL 一時ディレクトリを作れない（TMPDIR=${TMPDIR:-未設定}）"; exit 1; }
+nodir() { echo "FAIL 一時ディレクトリを作れない（TMPDIR=${TMPDIR:-未設定}）"; exit 1; }
+nl="$(printf '\n_')"; nl="${nl%_}" # 改行を含むパスは grep -F -e がパターンを分けてしまうので使わない
+case "$D" in *"$nl"*) nodir ;; /?*) [ -d "$D" ] || nodir ;; *) nodir ;; esac
 for t in static install acceptance; do
   out="$(TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" 2>&1)" || { printf '%s\n' "$out" | grep -v '^ok '; exit 1; }
 done
