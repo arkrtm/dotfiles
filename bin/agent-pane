@@ -116,6 +116,8 @@ case "${1:-}" in
     lock; close "$D/$aid" ;;
   cleanup)
     lock
-    for f in "$D"/*; do [ -f "$f" ] && close "$f"; done ;;
+    for f in "$D"/*; do [ -f "$f" ] && close "$f"; done
+    # メインの名前（ステータスラインが付けた）も消す。clear の後はステータスラインが付け直す
+    herdr pane rename "$HERDR_PANE_ID" --clear >/dev/null 2>&1 ;;
 esac
 exit 0

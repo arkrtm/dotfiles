@@ -1,7 +1,7 @@
 # config/claude
 
 - `config/claude/settings.json`: プラグイン（tinymemory・ponytail は GitHub の marketplace、superpowers は公式の marketplace）、remote-control を常に（`remoteControlAtStartup`）、hooks（状態表示 + compact・resume 後の記憶の注入 + integrate-hook・handoff・context-nudge・agent-pane）、permissions（`git push`・`gh pr merge`・`integrate --human-approved`・`integrate setup --force` と `.env`・`~/.ssh`・`~/.codex/auth.json` の読み取り、`~/.config/integrate/` の編集を禁止。push の禁止は統合を `integrate` に通すための抑止で、Bash の規則は前方一致なので `git -C . push` や `bin/integrate setup --force` などは捕らえない。機械的な関門は integrate 自身。設定の上書きは integrate が端末からだけ受け付ける）、ステータスライン、ログ 365 日
-- `config/claude/statusline.sh`: ステータスライン（2 行。Claude のモデルと effort → Codex のモデルと effort（`~/.codex/config.toml` から）→ ブランチと、コンテキスト・5 時間・週の上限のメーター → Codex の 5 時間・週の上限のメーター（`~/.codex/sessions` の更新の新しいセッションの最後の記録から）。Nerd Font のアイコン（Claude は橙、Codex は白）。Claude・OpenAI のアイコン（`nf-cod-claude`・`nf-cod-openai`）は Nerd Fonts 3.5.0 以降のフォントが要る）。herdr の中では、その pane の名前を `main · <モデル> <effort>` にする（サブエージェントの pane と見分ける。`config/herdr/README.md`）
+- `config/claude/statusline.sh`: ステータスライン（2 行。Claude のモデルと effort → Codex のモデルと effort（`~/.codex/config.toml` から）→ ブランチと、コンテキスト・5 時間・週の上限のメーター → Codex の 5 時間・週の上限のメーター（`~/.codex/sessions` の更新の新しいセッションの最後の記録から）。Nerd Font のアイコン（Claude は橙、Codex は白）。Claude・OpenAI のアイコン（`nf-cod-claude`・`nf-cod-openai`）は Nerd Fonts 3.5.0 以降のフォントが要る）。herdr の中では、その pane の名前を `main · <モデル> <effort>` にする（サブエージェントの pane と見分ける。閉じたときに消す。`config/herdr/README.md`）
 
 ## Claude Code の手順
 

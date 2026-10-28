@@ -2,7 +2,7 @@
 # agent-pane の受け入れ検査: 偽の herdr で、herdr の中ではサブエージェントの開始で pane を分けて view を動かし
 # （1 つ目はメインを右に半分ずつ、2・3 つ目は右の列のいちばん下を下に分ける。同時に 3 つまで。workflow のエージェントでは開かない。
 # 同じエージェントの再通知・並行の開始でも上限を守る）、終了で閉じること。開いたとき・閉じたときに右の列の高さをそろえること。
-# 消えた pane・中断で finished のものは数えず閉じ、cleanup はすべて閉じること。herdr の外では何もしないこと。
+# 消えた pane・中断で finished のものは数えず閉じ、cleanup はすべて閉じてメインの pane の名前を消すこと。herdr の外では何もしないこと。
 # view は記録（jsonl）の文とツールの呼び出しを 1 行ずつ出し、herdr の中では pane に「役割 · モデル effort」の名前を付けること
 #   sh tests/acceptance/agent-pane.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/agent-pane.sh  通った項目も
@@ -157,6 +157,7 @@ reset; start i1; start i2; start i3; printf '{"session_id":"s2","transcript_path
 
 # ---- cleanup はすべて閉じる
 printf '{"session_id":"s1"}' | in_herdr agent-pane cleanup; [ -z "$(ls "$T/live")" ] && ok "cleanup はそのセッションの pane をすべて閉じる" || ng "cleanup: $(ls "$T/live")"
+grep -q '^pane rename w1:p1 --clear$' "$LOG" && ok "cleanup はメインの pane の名前を消す" || ng "メインの名前: $(grep '^pane rename' "$LOG" 2>/dev/null)"
 
 # ---- view
 J="$T/v.jsonl"
