@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # windows/herdr/config.toml は config/herdr/config.toml と最後のブロック（kitty の画像）より前が同じで、[terminal] の kitty_graphics = false で終わる
 
 BeforeAll {

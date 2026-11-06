@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # Claude Code のステータスライン（Windows。config/claude/statusline.sh の移植。出力は同じ Nerd Font アイコン付き 2 行。jq・awk を使わない）
 # 1 行目: Claude のモデルと effort → Codex（レビュー役）のモデルと effort → ブランチ、2 行目: コンテキスト・5 時間・週の上限のメーター（緑 → 黄 → 赤。それぞれの前に Claude のアイコン）→ Codex のアイコンと 5 時間・週の上限のメーター。アイコンは Claude を橙、Codex を白
 # herdr の中では、この pane の名前を main · モデル effort にする（agent-pane のサブエージェントの pane と見分ける）

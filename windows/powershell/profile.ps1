@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # pwsh のプロファイル（CurrentUserAllHosts。install.ps1 が Documents\PowerShell\profile.ps1 へリンク）。
 # shell/zshenv + zprofile + zshrc の移植。前半は非対話（pwsh -Command / -File）でも毎回読まれるので、プロセスを起動しない。
 # 永続する値（EDITOR、FNM_DIR、ユーザー PATH）は install.ps1 が HKCU\Environment にも書く。ここは今のセッション用

@@ -1,5 +1,5 @@
-﻿#Requires -Version 7
-# windows/ のファイルの構文・文字コード・改行: .ps1 は構文エラーが無く BOM 付き UTF-8 で #Requires -Version 7 から始まる。.json は厳密な JSON。
+﻿#Requires -Version 7.4
+# windows/ のファイルの構文・文字コード・改行: .ps1 は構文エラーが無く BOM 付き UTF-8 で #Requires -Version 7.4 から始まる。.json は厳密な JSON。
 # シェルスクリプトは Git Bash の sh -n（dash があれば dash -n）・bash -n を通る（Git Bash が無ければ飛ばす）。.cmd は CRLF、ほかは LF だけ
 
 BeforeDiscovery {
@@ -16,12 +16,13 @@ BeforeDiscovery {
   $Shell = @($all | Where-Object {
       $_.Rel -like 'windows/posix/*' -or $_.Rel -like 'windows/git/*' -or ([IO.File]::ReadAllText($_.Path).StartsWith('#!'))
     })
-  $Bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
-  $NoBash = -not (Test-Path -LiteralPath $Bash)
+  . (Join-Path $Win 'gitbash-lib.ps1')
+  $NoBash = -not (Get-GitBash)
 }
 
 BeforeAll {
-  $Bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
+  . (Join-Path ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'windows\gitbash-lib.ps1')
+  $Bash = Get-GitBash
   $Utf8Strict = [Text.UTF8Encoding]::new($false, $true)
   function Get-Bytes([string]$Path) { [IO.File]::ReadAllBytes($Path) }
   function Test-Bom([byte[]]$b) { $b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF }
@@ -33,11 +34,11 @@ Describe 'PowerShell のスクリプト' {
     $null = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
     @($errors | ForEach-Object { "$($_.Extent.StartLineNumber): $($_.Message)" }) | Should -BeNullOrEmpty
   }
-  It '<Rel> は BOM 付き UTF-8 で #Requires -Version 7 から始まる' -ForEach $Ps1 {
+  It '<Rel> は BOM 付き UTF-8 で #Requires -Version 7.4 から始まる' -ForEach $Ps1 {
     $b = Get-Bytes $Path
     Test-Bom $b | Should -BeTrue
     $text = $Utf8Strict.GetString($b, 3, $b.Length - 3)
-    ($text -split "`n", 2)[0] | Should -BeExactly '#Requires -Version 7'
+    ($text -split "`n", 2)[0] | Should -BeExactly '#Requires -Version 7.4'
   }
 }
 

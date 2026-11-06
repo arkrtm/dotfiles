@@ -1,7 +1,6 @@
 {
   "cleanupPeriodDays": 365,
   "env": {
-    "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {
@@ -40,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook env",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" env",
             "timeout": 5
           }
         ]
@@ -60,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook integrate-hook session-start",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" integrate-hook session-start",
             "timeout": 15
           }
         ]
@@ -70,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook agent-pane cleanup",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" agent-pane cleanup",
             "timeout": 15
           }
         ]
@@ -80,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook handoff --session-start",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" handoff --session-start",
             "timeout": 5
           }
         ]
@@ -92,7 +91,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook integrate-hook pre-edit",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" integrate-hook pre-edit",
             "timeout": 15
           }
         ]
@@ -103,7 +102,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook context-nudge",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" context-nudge",
             "timeout": 5
           }
         ]
@@ -114,7 +113,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook agent-pane cleanup",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" agent-pane cleanup",
             "timeout": 15
           }
         ]
@@ -125,7 +124,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook agent-pane start",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" agent-pane start",
             "timeout": 15
           }
         ]
@@ -136,7 +135,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/dotfiles/windows/posix/hook agent-pane stop",
+            "command": "\"$HOME/dotfiles/windows/posix/hook\" agent-pane stop",
             "timeout": 15
           }
         ]
@@ -145,7 +144,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "pwsh -NoProfile -NonInteractive -File ~/dotfiles/windows/claude/statusline.ps1"
+    "command": "pwsh -NoProfile -NonInteractive -File \"$HOME/dotfiles/windows/claude/statusline.ps1\""
   },
   "enabledPlugins": {
     "tinymemory@tinymemory": true,

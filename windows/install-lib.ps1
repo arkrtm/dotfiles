@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # install.ps1 とテストが dot-source する関数（読み込むだけでは何も変えない）
 
 # 退避の名前に付ける時刻（install.sh の date +%Y%m%d%H%M%S と同じ形）

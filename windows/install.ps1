@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # dotfiles セットアップ（ネイティブ Windows。管理者は不要、シンボリックリンクに開発者モードが要る。何度実行しても安全）
 #   pwsh -File windows/install.ps1 [-LinksOnly] [-HomeDir <path>]
 # -LinksOnly: リンクと ponytail の band だけ作って終わる（windows/tests が一時ホームで使う）
@@ -20,6 +20,7 @@ $MiseDisable = 'aqua:tmux/tmux-builds,github:arkrtm/tinymemory'
 
 $DOTFILES = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 . (Join-Path $PSScriptRoot 'install-lib.ps1')
+. (Join-Path $PSScriptRoot 'gitbash-lib.ps1')
 
 # worktree（.git がファイル）から実行すると、リンクが worktree を指し、worktree を消すと設定が読めなくなる
 if ((Test-Path -LiteralPath (Join-Path $DOTFILES '.git') -PathType Leaf) -and -not $env:DOTFILES_ALLOW_WORKTREE) {
@@ -150,9 +151,10 @@ Invoke-Step 'ユーザー環境変数' {
   $null = Set-UserEnv VISUAL nvim
   $null = Set-UserEnv FNM_DIR '%USERPROFILE%\.local\share\fnm'
   $null = Set-UserEnv MISE_DISABLE_TOOLS $MiseDisable
-  # yazi のファイル種別の判定に Git の file.exe を使う
-  $file = Join-Path $env:ProgramFiles 'Git\usr\bin\file.exe'
-  if (Test-Path -LiteralPath $file) { $null = Set-UserEnv YAZI_FILE_ONE $file }
+  # yazi のファイル種別の判定に Git の file.exe を使う（Git の場所は git.exe から探す。Program Files とは限らない）
+  $gitRoot = Get-GitRoot
+  $file = if ($gitRoot) { Join-Path $gitRoot 'usr\bin\file.exe' }
+  if ($file -and (Test-Path -LiteralPath $file)) { $null = Set-UserEnv YAZI_FILE_ONE $file }
   $null = Add-UserPath @UserPathDirs
 }
 

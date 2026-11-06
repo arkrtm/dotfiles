@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # windows/ の検査（Pester 5 以上）。ネットワークを使わず、本物のホームに触らない（一時ホームと TestDrive だけ）
 #   pwsh -NoProfile -File windows/tests/run.ps1
 $ErrorActionPreference = 'Stop'

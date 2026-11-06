@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # windows/claude/settings.json が config/claude/settings.json から決めた所だけ違うこと（フックは agent-status を落として windows/posix/hook 経由にする）と、
 # windows/claude/statusline.ps1 の出力（2 行、モデル・ブランチ・使用率・Codex のモデルと使用量）とコンテキストの使用率のキャッシュ
 
@@ -35,11 +35,11 @@ Describe 'windows/claude/settings.json' {
       Should -Be @('PowerShell(git push *)', 'PowerShell(gh pr merge *)', 'PowerShell(integrate --human-approved *)', 'PowerShell(integrate setup --force *)')
     @($Win.permissions.PSObject.Properties.Name) | Should -Be @('allow', 'deny')
   }
-  It 'env は Git Bash の場所と PowerShell ツール' {
-    J $Win.env | Should -BeExactly (J ([ordered]@{ CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'; CLAUDE_CODE_USE_POWERSHELL_TOOL = '1' }))
+  It 'env は PowerShell ツールだけ（Git Bash の場所は書かず、PATH の git から Claude Code に見つけさせる）' {
+    J $Win.env | Should -BeExactly (J ([ordered]@{ CLAUDE_CODE_USE_POWERSHELL_TOOL = '1' }))
   }
-  It 'statusLine は pwsh で statusline.ps1、通知は端末のベル' {
-    J $Win.statusLine | Should -BeExactly (J ([ordered]@{ type = 'command'; command = 'pwsh -NoProfile -NonInteractive -File ~/dotfiles/windows/claude/statusline.ps1' }))
+  It 'statusLine は pwsh で statusline.ps1（パスは引用符で囲む）、通知は端末のベル' {
+    J $Win.statusLine | Should -BeExactly (J ([ordered]@{ type = 'command'; command = 'pwsh -NoProfile -NonInteractive -File "$HOME/dotfiles/windows/claude/statusline.ps1"' }))
     $Win.preferredNotifChannel | Should -BeExactly 'terminal_bell'
   }
   It 'agent-status のフックが無い' {
@@ -54,9 +54,15 @@ Describe 'windows/claude/settings.json' {
     $w.Count | Should -Be 1
     $w[0] | Should -BeExactly $s[0]
   }
-  It '$HOME/dotfiles/ と ~/dotfiles/ が指すファイルはリポジトリにあり、hook の名前は bin/ にある' {
+  It 'dotfiles のパスは引用符で囲む（ホームに空白があっても分割されない）' {
+    $cmds = @($WinCommands | Where-Object { $_ -match 'dotfiles/' }) + @($Win.statusLine.command)
+    $cmds.Count | Should -BeGreaterThan 1
+    foreach ($c in $cmds) { $c | Should -Match '"\$HOME/dotfiles/[^"\s]+"' -Because $c }
+    @($cmds | Where-Object { $_ -match '(?<!")(?:\$HOME|~)/dotfiles' }) | Should -BeNullOrEmpty
+  }
+  It '$HOME/dotfiles/ が指すファイルはリポジトリにあり、hook の名前は bin/ にある' {
     $refs = @($WinCommands + @($Win.statusLine.command)) | ForEach-Object {
-      foreach ($m in [regex]::Matches($_, '(?:\$HOME|~)/dotfiles/(\S+)(?:\s+(\S+))?')) { $m }
+      foreach ($m in [regex]::Matches($_, '\$HOME/dotfiles/([^"\s]+)"?(?:\s+(\S+))?')) { $m }
     }
     @($refs).Count | Should -BeGreaterThan 0
     foreach ($m in $refs) {
@@ -67,13 +73,13 @@ Describe 'windows/claude/settings.json' {
       }
     }
   }
-  It 'フックは共通の設定から agent-status を落とし、$HOME/.local/bin/X を windows/posix/hook X にし、SessionStart の先頭に hook env を足したもの（タイムアウトも同じ）' {
+  It 'フックは共通の設定から agent-status を落とし、$HOME/.local/bin/X を "$HOME/dotfiles/windows/posix/hook" X にし、SessionStart の先頭に hook env を足したもの（タイムアウトも同じ）' {
     $exp = [ordered]@{}
     foreach ($ev in $Shared.hooks.PSObject.Properties) {
       $groups = @(foreach ($g in $ev.Value) {
           $hs = @($g.hooks | Where-Object { $_.command -notmatch 'agent-status' } | ForEach-Object {
               $h = $_ | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-              $h.command = $h.command -replace '^\$HOME/\.local/bin/', '$HOME/dotfiles/windows/posix/hook '
+              $h.command = $h.command -replace '^\$HOME/\.local/bin/', '"$$HOME/dotfiles/windows/posix/hook" '
               $h
             })
           if ($hs.Count) {
@@ -84,7 +90,7 @@ Describe 'windows/claude/settings.json' {
         })
       if ($groups.Count) { $exp[$ev.Name] = $groups }
     }
-    $envHook = [ordered]@{ matcher = 'startup|resume|clear|compact|fork'; hooks = @([ordered]@{ type = 'command'; command = '$HOME/dotfiles/windows/posix/hook env'; timeout = 5 }) }
+    $envHook = [ordered]@{ matcher = 'startup|resume|clear|compact|fork'; hooks = @([ordered]@{ type = 'command'; command = '"$HOME/dotfiles/windows/posix/hook" env'; timeout = 5 }) }
     $exp['SessionStart'] = @($envHook) + @($exp['SessionStart'])
     J $Win.hooks | Should -BeExactly (J $exp)
   }

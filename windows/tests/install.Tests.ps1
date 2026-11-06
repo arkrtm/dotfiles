@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # windows/install.ps1 を一時ホームに -LinksOnly で実行する（本物のホーム・レジストリには触らない）: リンク表のどの行もリポジトリのファイルへのシンボリックリンクになる、
 # 前からあるものは *.bak.（14 桁の時刻） に退避する、2 回目は何も出さない、worktree からは DOTFILES_ALLOW_WORKTREE なしでは拒む、ponytail の band を書く。
 # install-lib.ps1 の New-CodexConfig・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、Add-UserPath をレジストリの代わりのもので確かめる
@@ -56,7 +56,7 @@ BeforeAll {
     [pscustomobject]@{ ExitCode = $p.ExitCode; Out = $o.Result; Err = $e.Result }
   }
   function Invoke-Install {
-    param([string]$Script = $Install, [string]$HomeDir, [hashtable]$Environment = @{ DOTFILES_ALLOW_WORKTREE = $null })
+    param([string]$Script = $Install, [string]$HomeDir, [hashtable]$Environment = @{ DOTFILES_ALLOW_WORKTREE = '1' })
     Invoke-Proc $Pwsh @('-NoProfile', '-NonInteractive', '-File', $Script, '-LinksOnly', '-HomeDir', $HomeDir) -Environment $Environment
   }
   # シンボリックリンクを辿らずに消す（リンク先のリポジトリを消さないよう、リンクはリンクだけ消してから木を消す）
@@ -158,19 +158,33 @@ Describe 'install.ps1 -LinksOnly（2 回目）' {
 
 Describe 'worktree からの実行' {
   BeforeAll {
-    # .git がファイルの偽のチェックアウトに install.ps1 と install-lib.ps1 だけを写す
+    # .git がファイルの偽のチェックアウトに install.ps1 と、それが読み込む install-lib.ps1・gitbash-lib.ps1 だけを写す
     $Wt = Join-Path $Tmp 'wt'
     $null = New-Item -ItemType Directory -Path (Join-Path $Wt 'windows') -Force
-    Copy-Item -LiteralPath $Install, (Join-Path $Root 'windows\install-lib.ps1') -Destination (Join-Path $Wt 'windows')
+    Copy-Item -LiteralPath $Install, (Join-Path $Root 'windows\install-lib.ps1'), (Join-Path $Root 'windows\gitbash-lib.ps1') -Destination (Join-Path $Wt 'windows')
     [IO.File]::WriteAllText((Join-Path $Wt '.git'), "gitdir: $Tmp\main\.git\worktrees\wt`n")
     $WtScript = Join-Path $Wt 'windows\install.ps1'
   }
   It 'DOTFILES_ALLOW_WORKTREE が無ければ終了コード 1 で拒み、何も作らない' {
     $wh = Join-Path $Tmp 'wthome1'
-    $r = Invoke-Install -Script $WtScript -HomeDir $wh
+    $r = Invoke-Install -Script $WtScript -HomeDir $wh -Environment @{ DOTFILES_ALLOW_WORKTREE = $null }
     $r.ExitCode | Should -Be 1
     $r.Err | Should -Match 'worktree'
     Test-Path -LiteralPath $wh | Should -BeFalse
+  }
+  It 'ヘルパーは既定で DOTFILES_ALLOW_WORKTREE を渡す（worktree の中で検査しても通る）' {
+    $wh = Join-Path $Tmp 'wthome3'
+    $r = Invoke-Install -Script $WtScript -HomeDir $wh
+    $r.ExitCode | Should -Be 0 -Because $r.Err
+  }
+  It '呼び出し側の DOTFILES_ALLOW_WORKTREE は（ヘルパーが消さずに）子プロセスに引き継がれる' {
+    $wh = Join-Path $Tmp 'wthome4'
+    $old = $env:DOTFILES_ALLOW_WORKTREE
+    try {
+      $env:DOTFILES_ALLOW_WORKTREE = '1'
+      $r = Invoke-Install -Script $WtScript -HomeDir $wh -Environment @{}
+    } finally { $env:DOTFILES_ALLOW_WORKTREE = $old }
+    $r.ExitCode | Should -Be 0 -Because $r.Err
   }
   It 'DOTFILES_ALLOW_WORKTREE=1 なら続ける' {
     $wh = Join-Path $Tmp 'wthome2'

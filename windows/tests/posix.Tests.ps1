@@ -1,11 +1,12 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # Git Bash で動くもの（Git Bash が無ければ飛ばす）: posix/hook env が CLAUDE_ENV_FILE に PATH の行を足す、jq の shim は CR を出さない（jq.exe が無ければ飛ばす）、
 # git/hooks-nosign/commit-msg はリンク経由の core.hooksPath で AI 由来の行を消す、posix/hook integrate-hook pre-edit は git の外の Windows のパスで 0、
 # 編集するファイルのリポジトリで判定する（jq.exe が要る）、posix/run・hook と env の行は /clear を Windows のパスに直させない、
 # posix/run と windows/bin/*.cmd・*.ps1 は終了コードを返し、*.ps1 は引数をそのまま渡す
 
 BeforeDiscovery {
-  $NoBash = -not (Test-Path -LiteralPath (Join-Path $env:ProgramFiles 'Git\bin\bash.exe'))
+  . (Join-Path ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'windows\gitbash-lib.ps1')
+  $NoBash = -not (Get-GitBash)
   $NoJq = -not (Get-Command jq.exe -CommandType Application -ErrorAction Ignore)
 }
 
@@ -14,7 +15,8 @@ Describe 'Git Bash で動くもの' -Skip:$NoBash {
     $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
     # Claude Code と同じく / 区切りのパスで呼ぶ
     $RootFwd = $Root -replace '\\', '/'
-    $Bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
+    . (Join-Path $Root 'windows\gitbash-lib.ps1')
+    $Bash = Get-GitBash
     $Git = (Get-Command git -CommandType Application | Select-Object -First 1).Source
     $Pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Ignore | Select-Object -First 1).Source
     if (-not $Pwsh) { $Pwsh = [Environment]::ProcessPath }

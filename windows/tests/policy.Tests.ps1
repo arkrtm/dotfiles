@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 7.4
 # リポジトリ全体の決まり（ubuntu の CI の tests/static.sh・tests/acceptance/claude-config.sh と bin/integrate が見るもの）を、新しいファイルに先に当てる。
 # 既存の追跡しているファイルを変えていないこと、windows/ と .github/workflows/windows.yml の外にファイルを足していないこと
 # （このファイル自身も検査の対象なので、禁止の文字列は [ ] で崩して書く）
