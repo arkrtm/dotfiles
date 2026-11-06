@@ -4,7 +4,7 @@ rem Same lookup as gitbash-lib.ps1: one and two levels above each git.exe on PAT
 rem (cmd\git.exe, bin\git.exe, mingw64\bin\git.exe, ucrt64\bin\git.exe), then the standard install locations.
 rem ASCII only: cmd.exe reads this file in the console code page.
 set "GITBASH="
-for /f "delims=" %%G in ('where git.exe 2^>nul') do call :try "%%~dpG.." & call :try "%%~dpG..\.."
+for /f "delims=" %%G in ('where git.exe 2^>nul') do (call :try "%%~dpG.." & call :try "%%~dpG..\..")
 call :try "%ProgramFiles%\Git"
 call :try "%ProgramFiles(x86)%\Git"
 call :try "%LocalAppData%\Programs\Git"

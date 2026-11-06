@@ -82,6 +82,19 @@ AfterAll {
   if ($Tmp) { Remove-TreeSafe $Tmp }
 }
 
+Describe 'gitbash-lib.cmd' {
+  It 'git.exe が <Dir>\git.exe にある Git のルートの bin\bash.exe を GITBASH にする' -ForEach $Layouts {
+    $gitRoot = Join-Path $Tmp ("cmdlib-$($Dir -replace '\\', '_')\Programs\Git")
+    New-EmptyFile (Join-Path $gitRoot "$Dir\git.exe")
+    New-EmptyFile (Join-Path $gitRoot 'bin\bash.exe')
+    $probe = Join-Path $Tmp "probe-$($Dir -replace '\\', '_').cmd"
+    [IO.File]::WriteAllText($probe, "@echo off`r`ncall `"$(Join-Path $Root 'windows\gitbash-lib.cmd')`"`r`necho GITBASH=%GITBASH%`r`nexit /b %ERRORLEVEL%`r`n")
+    $r = Invoke-Proc (Join-Path $System32 'cmd.exe') @('/d', '/c', $probe) -Environment ($Isolated + @{ Path = "$(Join-Path $gitRoot $Dir);$System32" }) -WorkingDirectory $Tmp
+    $r.ExitCode | Should -Be 0 -Because $r.Err
+    $r.Out.Trim() | Should -Be "GITBASH=$(Join-Path $gitRoot 'bin\bash.exe')"
+  }
+}
+
 Describe 'gitbash-lib.ps1' {
   It 'git.exe が <Dir>\git.exe にある Git のルートの bin\bash.exe を返す' -ForEach $Layouts {
     $gitRoot = Join-Path $Tmp ("peruser-$($Dir -replace '\\', '_')\Programs\Git")

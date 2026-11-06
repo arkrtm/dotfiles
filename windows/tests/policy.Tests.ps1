@@ -9,6 +9,12 @@ BeforeDiscovery {
   $wf = Join-Path $Root '.github\workflows\windows.yml'
   if (Test-Path -LiteralPath $wf) { $files += Get-Item -LiteralPath $wf }
   $New = @($files | ForEach-Object { @{ Rel = [IO.Path]::GetRelativePath($Root, $_.FullName) -replace '\\', '/'; Path = $_.FullName } })
+}
+
+BeforeAll {
+  $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+  function Invoke-Git { & git -C $Root -c core.quotePath=false @args }
+  # Pester 5 は BeforeDiscovery の変数を It の中（実行時）に渡さないので、実行時に使うものはここで定義する
   # 大文字小文字を区別する正規表現
   $Patterns = @(
     @{ Name = 'issue の番号'; Re = 'AR[K]-[0-9]' }
@@ -24,21 +30,49 @@ BeforeDiscovery {
     @{ Name = 'integrate の検査の抑止 3'; Re = 'pytest\.mark\.(ski[p]|xfai[l])' }
     @{ Name = 'integrate の検査の抑止 4'; Re = 'unittest\.ski[p]' }
   )
-}
-
-BeforeAll {
-  $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-  function Invoke-Git { & git -C $Root -c core.quotePath=false @args }
+  function Find-Forbidden([string]$Text) {
+    foreach ($p in $Patterns) {
+      foreach ($m in [regex]::Matches($Text, $p.Re)) { "$($p.Name): $($m.Value)" }
+    }
+  }
 }
 
 Describe '禁止の文字列' {
   It '<Rel> に禁止の文字列が無い' -ForEach $New {
     # git grep は -I なしでバイナリも見るので、バイト列をそのまま文字列にして見る
     $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Path))
-    $hits = foreach ($p in $Patterns) {
-      foreach ($m in [regex]::Matches($text, $p.Re)) { "$($p.Name): $($m.Value)" }
+    @(Find-Forbidden $text) | Should -BeNullOrEmpty
+  }
+}
+
+Describe '禁止の文字列の検査そのもの' {
+  It 'パターンが実行時に読み込まれている' {
+    $Patterns.Count | Should -Be 12
+  }
+  It '禁止の文字列を含む文字列はパターンごとに検出される（ファイルに書かないよう実行時に組み立てる）' {
+    $samples = @(
+      ('AR' + 'K-1')
+      ('a P' + 'i b')
+      ('.p' + 'i/')
+      ('bigpower' + 's')
+      ('/skil' + 'l:')
+      ('pi-tinymemor' + 'y')
+      ('yamlfi' + 'x')
+      ('ask_user_questio' + 'n')
+      ('noq' + 'a')
+      ('type: ig' + 'nore')
+      ('pytest.mark.ski' + 'p')
+      ('unittest.ski' + 'p')
+    )
+    $samples.Count | Should -Be $Patterns.Count
+    for ($i = 0; $i -lt $samples.Count; $i++) {
+      $hits = @(Find-Forbidden $samples[$i])
+      $hits | Should -Not -BeNullOrEmpty -Because $Patterns[$i].Name
+      $hits[0] | Should -BeLike "$($Patterns[$i].Name): *"
     }
-    @($hits) | Should -BeNullOrEmpty
+  }
+  It '普通の文字列は検出されない' {
+    @(Find-Forbidden 'windows/bin/notify.cmd を呼ぶ') | Should -BeNullOrEmpty
   }
 }
 
