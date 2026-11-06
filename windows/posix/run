@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Windows（Git Bash）で dotfiles の bin/ のコマンドを動かす。windows/bin/<名前>.cmd が呼ぶ（pwsh・cmd から使えるように）。
+# PATH の先頭に jq の shim（LF で出す）と dotfiles の bin を置く（bin/ のコマンドは互いを名前で呼ぶ）
+#   usage: run <名前> [引数...]
+D="$(cd -P "$(dirname "$0")/../.." && pwd)" || exit 2
+export PATH="$D/windows/posix/shims:$D/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+# Git Bash は / で始まる引数を Windows の exe に渡すとき C:/Program Files/Git/... に直す。handoff が herdr に送る /clear は直させない
+export MSYS2_ARG_CONV_EXCL="/clear${MSYS2_ARG_CONV_EXCL:+;$MSYS2_ARG_CONV_EXCL}"
+case "${1:-}" in
+  '' | *[!a-z-]*) echo "usage: run <名前> [引数...]（名前は bin/ のコマンド）" >&2; exit 2 ;;
+esac
+[ -f "$D/bin/$1" ] || { echo "run: bin/$1 が無い" >&2; exit 2; }
+exec "$D/bin/$1" "${@:2}"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Windows の jq.exe は -b（--binary）が無いと改行を CRLF で出す。Git Bash の PATH の先頭にだけ置く（Windows の PATH には置かない）
+exec jq.exe -b "$@"

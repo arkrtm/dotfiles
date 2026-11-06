@@ -1,0 +1,254 @@
+﻿#Requires -Version 7
+# install.ps1 とテストが dot-source する関数（読み込むだけでは何も変えない）
+
+# 退避の名前に付ける時刻（install.sh の date +%Y%m%d%H%M%S と同じ形）
+function Get-BackupStamp { Get-Date -Format 'yyyyMMddHHmmss' }
+
+# リンク先の比較用: 区切りを \ に揃え、\\?\ と末尾の \ を外して絶対パスにする
+function ConvertTo-ComparablePath {
+  param([Parameter(Mandatory)][string]$Path, [string]$BaseDir)
+  $p = $Path -replace '/', '\'
+  if ($p.StartsWith('\\?\UNC\')) { $p = '\\' + $p.Substring(8) }
+  elseif ($p.StartsWith('\\?\')) { $p = $p.Substring(4) }
+  if (-not [IO.Path]::IsPathRooted($p) -and $BaseDir) { $p = Join-Path $BaseDir $p }
+  [IO.Path]::GetFullPath($p).TrimEnd('\')
+}
+
+# パスそのもの（リンクなら辿らない）の情報。無ければ $null（壊れたリンクも「ある」）
+function Get-PathEntry {
+  param([Parameter(Mandatory)][string]$Path)
+  try { $attr = [IO.File]::GetAttributes($Path) } catch { return $null }
+  $isDir = $attr.HasFlag([IO.FileAttributes]::Directory)
+  $info = if ($isDir) { [IO.DirectoryInfo]::new($Path) } else { [IO.FileInfo]::new($Path) }
+  $target = if ($attr.HasFlag([IO.FileAttributes]::ReparsePoint)) { $info.LinkTarget } else { $null }
+  [pscustomobject]@{ IsDir = $isDir; Target = $target; Info = $info }
+}
+
+# シンボリックリンクを作れるか（開発者モードか管理者）。一時ディレクトリで試して片づける
+function Test-SymlinkSupport {
+  $dir = Join-Path ([IO.Path]::GetTempPath()) ('dotfiles-symlink-' + [guid]::NewGuid().ToString('N'))
+  try {
+    $null = New-Item -ItemType Directory -Path $dir
+    $src = Join-Path $dir 'src'
+    [IO.File]::WriteAllText($src, '')
+    $null = [IO.File]::CreateSymbolicLink((Join-Path $dir 'link'), $src)
+    $true
+  } catch {
+    $false
+  } finally {
+    Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# install.sh の link() と同じ: 同じ先を指すリンクなら何もしない。ほかに何かあれば .bak.<時刻> に退避してからリンクする。
+# リンク元がまだ無いときは -Directory でディレクトリのリンクにする（Windows はファイルとディレクトリでリンクの種類が違う）
+function Link-Item {
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination,
+    [switch]$Directory
+  )
+  $srcExists = Test-Path -LiteralPath $Source
+  $isDir = if ($srcExists) { Test-Path -LiteralPath $Source -PathType Container } else { [bool]$Directory }
+  if (-not $srcExists) { Write-Host "warning: リンク元が無い（リンクだけ作る）: $Source" }
+  $parent = Split-Path -Parent $Destination
+  if (-not (Test-Path -LiteralPath $parent)) { $null = New-Item -ItemType Directory -Path $parent -Force }
+
+  $entry = Get-PathEntry $Destination
+  if ($entry -and $entry.Target) {
+    $current = ConvertTo-ComparablePath $entry.Target -BaseDir $parent
+    $wanted = ConvertTo-ComparablePath $Source
+    if ($current -ieq $wanted -and $entry.IsDir -eq $isDir) { return }
+  }
+  if ($entry) {
+    $bak = "$Destination.bak.$(Get-BackupStamp)"
+    $entry.Info.MoveTo($bak)
+    Write-Host "backup: $Destination -> $bak"
+  }
+  if ($isDir) { $null = [IO.Directory]::CreateSymbolicLink($Destination, $Source) }
+  else { $null = [IO.File]::CreateSymbolicLink($Destination, $Source) }
+  Write-Host "link:   $Destination -> $Source"
+}
+
+# 環境変数の変更を開いているプログラム（エクスプローラー経由で起動するもの）に知らせる。
+# .NET の SetEnvironmentVariable は User を書くと WM_SETTINGCHANGE を送るので、無い変数を消して送らせる
+function Send-EnvironmentChange {
+  [Environment]::SetEnvironmentVariable('DOTFILES_ENV_REFRESH', $null, 'User')
+}
+
+function Open-UserEnvironmentKey {
+  [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+}
+
+# パスの頭をなるべく %LOCALAPPDATA% / %USERPROFILE% に戻す（ユーザー名が変わっても使えるように）
+function ConvertTo-EnvRelativePath {
+  param([Parameter(Mandatory)][string]$Path)
+  foreach ($name in 'LOCALAPPDATA', 'USERPROFILE') {
+    $base = [Environment]::GetEnvironmentVariable($name)
+    if ($base -and ($Path -ieq $base -or $Path.StartsWith("$base\", [StringComparison]::OrdinalIgnoreCase))) {
+      return "%$name%" + $Path.Substring($base.Length)
+    }
+  }
+  $Path
+}
+
+# HKCU\Environment に書く（% を含めば REG_EXPAND_SZ）。今のプロセスにも展開して入れる。変わったら $true
+function Set-UserEnv {
+  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Value)
+  $kind = if ($Value.Contains('%')) { [Microsoft.Win32.RegistryValueKind]::ExpandString } else { [Microsoft.Win32.RegistryValueKind]::String }
+  $key = Open-UserEnvironmentKey
+  $changed = $false
+  try {
+    $old = $key.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $oldKind = if ($null -ne $old) { $key.GetValueKind($Name) } else { $null }
+    if ($old -cne $Value -or $oldKind -ne $kind) {
+      $key.SetValue($Name, $Value, $kind)
+      $changed = $true
+    }
+  } finally { $key.Dispose() }
+  Set-Item -LiteralPath "env:$Name" -Value ([Environment]::ExpandEnvironmentVariables($Value))
+  if ($changed) { Send-EnvironmentChange }
+  $changed
+}
+
+# ユーザーの Path の先頭に順に入れる（大文字小文字を区別せず、展開後の形で重複を除く）。生の値を読み、REG_EXPAND_SZ で書く
+function Add-UserPath {
+  param([Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Dir)
+  $keyOf = { param($p) [Environment]::ExpandEnvironmentVariables($p).TrimEnd('\').ToLowerInvariant() }
+  $key = Open-UserEnvironmentKey
+  $changed = $false
+  try {
+    $raw = $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $oldKind = if ($null -ne $raw) { $key.GetValueKind('Path') } else { $null }
+    $seen = [Collections.Generic.HashSet[string]]::new()
+    $list = foreach ($p in @($Dir) + @(([string]$raw) -split ';')) {
+      if ([string]::IsNullOrWhiteSpace($p)) { continue }
+      if ($seen.Add((& $keyOf $p))) { $p }
+    }
+    $new = @($list) -join ';'
+    if ($new -cne $raw -or $oldKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) {
+      $key.SetValue('Path', $new, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+      $changed = $true
+    }
+  } finally { $key.Dispose() }
+  $expanded = @($Dir | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_) })
+  $env:Path = (@($expanded) + @($env:Path -split ';') | Where-Object { $_ } | Select-Object -Unique -CaseInsensitive) -join ';'
+  if ($changed) { Send-EnvironmentChange }
+  $changed
+}
+
+# 古いプロセスから起動されると Path が古い（git や gh が見えない）ので、レジストリの Machine と User の Path から足りない分を後ろに足す
+function Update-ProcessPath {
+  $reg = foreach ($scope in 'Machine', 'User') { [Environment]::GetEnvironmentVariable('Path', $scope) -split ';' }
+  $env:Path = (@($env:Path -split ';') + @($reg) | Where-Object { $_ } | Select-Object -Unique -CaseInsensitive) -join ';'
+}
+
+# CRLF で取り出された追跡ファイル（取り出し直せば LF になるもの: index は LF、作業ツリーは CRLF）。
+# 属性で CRLF を求めるもの（windows/.gitattributes の *.cmd text eol=crlf）は CRLF が正しいので除く
+function Get-CrlfCheckout {
+  param([Parameter(Mandatory)][string]$Repo)
+  $out = git -C $Repo ls-files --eol -z
+  if ($LASTEXITCODE) { throw 'git ls-files に失敗' }
+  @((@($out) -join "`n") -split "`0" | ForEach-Object {
+      $info, $path = $_ -split "`t", 2
+      if ($path -and $info -match '\bi/lf\b' -and $info -match '\bw/crlf\b' -and $info -notmatch '\beol=crlf\b') { $path }
+    })
+}
+
+# 自分・SYSTEM・Administrators 以外で書き込める主体の SID（OpenSSH は他人が書ける設定ファイルを拒否する）
+function Get-UnsafeWriter {
+  param([Parameter(Mandatory)][string]$Path)
+  $allowed = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
+  # WriteData・AppendData・ChangePermissions・TakeOwnership・GENERIC_ALL・GENERIC_WRITE
+  $writeMask = 0x2 -bor 0x4 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
+  $rules = (Get-Acl -LiteralPath $Path).GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+  @($rules | Where-Object {
+      $_.AccessControlType -eq 'Allow' -and ([long]$_.FileSystemRights -band $writeMask) -and $_.IdentityReference.Value -notin $allowed
+    } | ForEach-Object { $_.IdentityReference.Value } | Select-Object -Unique)
+}
+
+# Codex の config.toml をテンプレートから作る（install.sh の生成と同じ）。@HOME@ は / 区切りのホーム（\ は TOML の文字列でエスケープになる）。
+# 既存の表のうち hooks.state・projects.・tui・windows（サンドボックスの選択）は引き継ぐ。中身が違うときだけ退避して置き換える。変わったら $true
+function New-CodexConfig {
+  param(
+    [Parameter(Mandatory)][string]$Template,
+    [Parameter(Mandatory)][string]$ConfigPath,
+    [Parameter(Mandatory)][string]$HomeDir
+  )
+  $utf8 = [Text.UTF8Encoding]::new($false)
+  $homeSlash = $HomeDir.TrimEnd('\', '/') -replace '\\', '/'
+  $sb = [Text.StringBuilder]::new()
+  $null = $sb.Append([IO.File]::ReadAllText($Template, $utf8).Replace('@HOME@', $homeSlash))
+  if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
+    # awk '/^\[/ { keep = /^\[(...)/; if (keep) print "" } keep && NF' と同じ
+    $keep = $false
+    foreach ($line in [IO.File]::ReadAllText($ConfigPath, $utf8).TrimStart([char]0xFEFF) -split "`n") {
+      $line = $line.TrimEnd("`r")
+      if ($line.StartsWith('[')) {
+        # awk と同じく大文字小文字を区別する（[TUI] は引き継がない）
+        $keep = $line -cmatch '^\[(hooks\.state|projects\.|tui|windows)'
+        if ($keep) { $null = $sb.Append("`n") }
+      }
+      if ($keep -and $line.Trim()) { $null = $sb.Append($line).Append("`n") }
+    }
+  }
+  $newBytes = $utf8.GetBytes($sb.ToString())
+  if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
+    $oldBytes = [IO.File]::ReadAllBytes($ConfigPath)
+    if ([Linq.Enumerable]::SequenceEqual([byte[]]$oldBytes, [byte[]]$newBytes)) { return $false }
+  }
+  $dir = Split-Path -Parent $ConfigPath
+  if (-not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+  if (Get-PathEntry $ConfigPath) {
+    $bak = "$ConfigPath.bak.$(Get-BackupStamp)"
+    Move-Item -LiteralPath $ConfigPath -Destination $bak
+    Write-Host "backup: $ConfigPath -> $bak"
+  }
+  [IO.File]::WriteAllBytes($ConfigPath, $newBytes)
+  $true
+}
+
+# PSCustomObject にキーを足すか上書きする
+function Set-JsonMember {
+  param([Parameter(Mandatory)]$Object, [Parameter(Mandatory)][string]$Name, $Value)
+  if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+  else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+}
+
+# PowerShell 7 の既定のプロファイル（Windows Terminal が自動で作るもの）
+$TerminalPwshGuid = '{574e775e-4f2a-5b96-ac1e-a2962a402336}'
+
+# Windows Terminal の settings.json の profiles.defaults に配色・フォント・余白・履歴を入れる（fragment は defaults に勝てないため）。
+# ほかのキーとプロファイルはそのまま。結果が変わるときだけ .bak.<時刻> に写してから UTF-8（BOM なし）で書く。変わったら $true
+function Update-TerminalSettings {
+  param([Parameter(Mandatory)][string]$Path)
+  $raw = [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false))
+  $opts = @{ Depth = 50 }
+  # 日付らしい文字列を DateTime に変えない（書き戻すと形が変わる）
+  if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $opts.DateKind = 'String' }
+  $before = ConvertTo-Json -InputObject ($raw | ConvertFrom-Json @opts) -Depth 50
+  $json = $raw | ConvertFrom-Json @opts
+
+  if ($null -eq $json.profiles) { Set-JsonMember $json 'profiles' ([pscustomobject]@{}) }
+  elseif ($json.profiles -is [array]) { $json.profiles = [pscustomobject]@{ list = $json.profiles } }
+  $profiles = $json.profiles
+  if ($null -eq $profiles.defaults) { Set-JsonMember $profiles 'defaults' ([pscustomobject]@{}) }
+  $d = $profiles.defaults
+  Set-JsonMember $d 'colorScheme' 'Atom One Dark'
+  if ($null -eq $d.font -or $d.font -isnot [pscustomobject]) { Set-JsonMember $d 'font' ([pscustomobject]@{}) }
+  Set-JsonMember $d.font 'face' 'Hack Nerd Font Mono'
+  Set-JsonMember $d.font 'size' 12
+  Set-JsonMember $d 'padding' '6, 4'
+  Set-JsonMember $d 'historySize' 50000
+  if (@($profiles.list | Where-Object { $_.guid -ieq $TerminalPwshGuid }).Count -gt 0) {
+    Set-JsonMember $json 'defaultProfile' $TerminalPwshGuid
+  }
+
+  $after = ConvertTo-Json -InputObject $json -Depth 50
+  if ($after -ceq $before) { return $false }
+  $bak = "$Path.bak.$(Get-BackupStamp)"
+  Copy-Item -LiteralPath $Path -Destination $bak
+  Write-Host "backup: $Path -> $bak"
+  [IO.File]::WriteAllText($Path, ($after -replace "`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+  $true
+}

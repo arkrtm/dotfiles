@@ -1,0 +1,30 @@
+onboarding = false
+
+# Keybindings ported from ~/.config/tmux/tmux.conf (same keys as tmux, except prefix r/R: see below).
+[keys]
+prefix = "ctrl+g"
+
+# Splits (match tmux: "\" = side-by-side, "-" = stacked)
+split_vertical = "prefix+backslash"   # tmux: bind \ split-window -h  (left/right)
+split_horizontal = "prefix+minus"     # tmux: bind - split-window -v  (top/bottom)
+
+# Focus panes: h/j/k/l (tmux: select-pane -L/-D/-U/-R)
+focus_pane_left = "prefix+h"
+focus_pane_down = "prefix+j"
+focus_pane_up = "prefix+k"
+focus_pane_right = "prefix+l"
+
+# Resize panes: H/J/K/L direct one-keystroke (tmux: resize-pane -L/-D/-U/-R)
+resize_pane_left = "prefix+shift+h"
+resize_pane_down = "prefix+shift+j"
+resize_pane_up = "prefix+shift+k"
+resize_pane_right = "prefix+shift+l"
+# Resize mode: r, then h/j/k/l or arrows repeat without prefix; Esc/Enter/r exits (tmux: bind -r)
+resize_mode = "prefix+r"              # herdr default
+
+# Reload config: R (herdr default; tmux uses r, taken by resize mode here)
+reload_config = "prefix+shift+r"
+
+# yazi などの画像は通さない（Windows Terminal は kitty 方式の画像を表示できない。画像は WT のタブで yazi を直接開く）
+[terminal]
+kitty_graphics = false

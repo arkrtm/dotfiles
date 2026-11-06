@@ -1,0 +1,6 @@
+#!/bin/sh
+# Windows の commit-msg: 共通のフック（config/git/hooks-nosign/commit-msg）を C ロケールで動かす。
+# Git for Windows の grep は既定の C.UTF-8 で絵文字に一致しない（🤖 の行が残る）。
+# ~/.config/git/hooks-nosign はこのディレクトリへのリンクなので、リンクを解決した実体の場所からリポジトリをたどる
+d="$(cd -P "$(dirname "$0")" && pwd)" || exit 1
+LC_ALL=C exec sh "$d/../../../config/git/hooks-nosign/commit-msg" "$@"

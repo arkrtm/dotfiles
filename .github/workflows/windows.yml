@@ -1,0 +1,14 @@
+# windows/ の検査（Pester。windows/README.md）。windows-latest は Pester 5 があり管理者で動くので、シンボリックリンクを作れる
+name: windows
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      # ランナーの git は core.autocrlf=true。共通のシェルスクリプトを Git Bash で動かす検査があるので LF で取り出す
+      - run: git config --global core.autocrlf input
+      - uses: actions/checkout@v4
+      - run: pwsh -NoProfile -File windows/tests/run.ps1

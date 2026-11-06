@@ -1,0 +1,3 @@
+# windows/ は Windows でも LF で取り出す（シェルスクリプトは Git Bash で動かす）。.cmd だけは cmd.exe 用に CRLF
+* text eol=lf
+*.cmd text eol=crlf

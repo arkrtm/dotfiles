@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Claude Code のフック（Windows。Claude Code が Git Bash で動かす）: jq の shim と dotfiles の bin を PATH の先頭に置いて bin/ のフックを動かす
+#   usage: hook env                    SessionStart。Bash ツールの PATH に dotfiles の bin と jq の shim を足す（CLAUDE_ENV_FILE に書く）
+#          hook integrate-hook <引数>  入力の cwd・file_path・notebook_path（Windows のパス）を POSIX のパスに直してから渡す
+#          hook <名前> <引数>          bin/<名前> をそのまま
+D="$(cd -P "$(dirname "$0")/../.." && pwd)" || exit 1
+export PATH="$D/windows/posix/shims:$D/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+# Git Bash は / で始まる引数を Windows の exe に渡すとき C:/Program Files/Git/... に直す。handoff が herdr に送る /clear は直させない
+conv='export MSYS2_ARG_CONV_EXCL="/clear${MSYS2_ARG_CONV_EXCL:+;$MSYS2_ARG_CONV_EXCL}"'
+eval "$conv"
+case "${1:-}" in '' | *[!a-z-]*) echo "usage: hook env | hook <名前> [引数...]" >&2; exit 1 ;; esac
+name="$1"; shift
+
+case "$name" in
+  env)
+    cat >/dev/null
+    # $PATH はそのまま書く（Bash ツールが毎回の実行の前に読んで展開する）。/clear の除外も書く（Bash ツールから動かす handoff のため）。
+    # resume・clear・compact で同じ行を重ねない
+    [ -n "${CLAUDE_ENV_FILE:-}" ] || exit 0
+    for line in "export PATH=\"$D/windows/posix/shims:$D/bin:\$PATH\"" "$conv"; do
+      grep -qxF "$line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$line" >> "$CLAUDE_ENV_FILE"
+    done
+    exit 0 ;;
+  integrate-hook)
+    in="$(cat)"
+    # integrate-hook は / で始まらないパスを cwd からの相対として扱うので、C:\... を /c/... にする（空なら触らない）
+    if command -v jq >/dev/null 2>&1; then
+      c="$(printf '%s' "$in" | jq -r '.cwd // empty' 2>/dev/null)"
+      f="$(printf '%s' "$in" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)"
+      [ -n "$c" ] && c="$(cygpath -u "$c")"
+      [ -n "$f" ] && f="$(cygpath -u "$f")"
+      # jq.exe に渡す /c/... を Git Bash が C:/... に戻さないように（戻すと integrate-hook が相対パスとして扱う）
+      out="$(printf '%s' "$in" | MSYS_NO_PATHCONV=1 jq -c --arg c "$c" --arg f "$f" \
+        '(if $c != "" then .cwd = $c else . end) | (if $f != "" then .tool_input.file_path = $f | del(.tool_input.notebook_path) else . end)' 2>/dev/null)" &&
+        [ -n "$out" ] && in="$out"
+    fi
+    # 終了コード（2 は編集を止める）と標準エラー（理由）はそのまま Claude Code に返る
+    exec "$D/bin/integrate-hook" "$@" <<<"$in" ;;
+esac
+[ -f "$D/bin/$name" ] || { echo "hook: bin/$name が無い" >&2; exit 1; }
+exec "$D/bin/$name" "$@"
