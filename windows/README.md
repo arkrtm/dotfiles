@@ -155,8 +155,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 - tmux は無い（Windows 版が無い）。herdr を使う。`agent-status`（tmux の状態表示）は tmux だけなので使わない
 - Windows Terminal は OSC 777 のデスクトップ通知を出さない。Claude Code の通知は端末のベル
 - herdr の中の yazi は画像を表示しない（kitty の画像を切っている）
-- tinymemory は Windows 版のリリースが出るまで入れない（`MISE_DISABLE_TOOLS` で mise から外す。settings.json の tinymemory のフックは無ければ何もしない）
-- `MISE_DISABLE_TOOLS` は `install.ps1` の `$MiseDisable`（tmux・tinymemory）。Windows 版の無い道具で `mise install` が失敗したらここに足す
+- `MISE_DISABLE_TOOLS` は `install.ps1` の `$MiseDisable`（tmux）。Windows 版の無い道具で `mise install` が失敗したらここに足す
 - Codex のサンドボックスは MSIX 版（Microsoft Store 版）の pwsh を動かせず、サンドボックスの中のコマンドは Windows PowerShell 5.1 になる（手順 2 は MSI 版を入れる）
 - nvim-treesitter は `cc` という名前の実行ファイルが PATH に無いと読み込まない。Windows には無い（Build Tools のコンパイラは `cl.exe`）ので使わない
 - `windows/bin/*.cmd` を cmd.exe から呼ぶと `"`・`^`・`&`・`|` を含む引数が壊れる（pwsh からは `.ps1` が選ばれるので壊れない）

@@ -15,8 +15,8 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 # mise 本体の版（install.sh の MISE_VERSION と一緒に上げる）
 $MiseVersion = 'v2026.10.1'
-# Windows で mise に入れない道具: tmux は Windows 版が無い。tinymemory は Windows 版のリリースが出るまで
-$MiseDisable = 'aqua:tmux/tmux-builds,github:arkrtm/tinymemory'
+# Windows で mise に入れない道具: tmux は Windows 版が無い
+$MiseDisable = 'aqua:tmux/tmux-builds'
 
 $DOTFILES = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 . (Join-Path $PSScriptRoot 'install-lib.ps1')
@@ -221,7 +221,7 @@ Invoke-Step $StepLog 'Codex' {
   } else {
     Add-StepFailure $StepLog 'Codex' 'codex が見つからない（install.ps1 の再実行で入れ直す）'
   }
-  # tinymemory の Codex の hook と skill（Windows 版が出るまでは入っていないので飛ばす）。tinymemory は HOME を見る
+  # tinymemory の Codex の hook と skill（mise install が失敗して無ければ飛ばす）。tinymemory は HOME を見る
   if (Test-Command tinymemory) {
     $oldHome = $env:HOME
     $env:HOME = $H

@@ -15,7 +15,7 @@ uv = "latest"
 
 # AI エージェントの長期記憶（Claude Code / Codex 共通）
 # 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
-"github:arkrtm/tinymemory" = "0.1.1"
+"github:arkrtm/tinymemory" = "0.2.0"
 
 # tmux: 公式の静的ビルド（sudo・Homebrew 不要、mac / linux 共通）
 "aqua:tmux/tmux-builds" = "latest"
