@@ -50,18 +50,18 @@ if [ -n "$ZSH" ]; then
   # compaudit が挙げる危ない場所のうち、この HOME の下（install.sh が作る置き場とその親）だけを見る（システムの fpath は端末による）
   chk "umask 002 で作った補完の置き場とその親を compaudit が危ないとみなさず、対話 zsh が補完を読む（打ち切りや問いの文も出ない）" \
     test "$(zi 'autoload -Uz compaudit; print -r -- "A=$(compaudit 2>/dev/null | grep -c "^$HOME/") R=${_comps[dotfilesprobe]-なし}"')" = 'A=0 R=_dotfilesprobe'
-  # 誰でも書ける fpath（GitHub の実行環境の /usr/local/share/zsh/site-functions など）があっても、compinit は問わずに読み飛ばす
-  I="$T/insecure"; mkdir "$I"; chmod 777 "$I"
-  printf '#compdef dotfilesbad\n_dotfilesbad() { _files }\n' > "$I/_dotfilesbad"
-  fp="$(env -i "$ZSH" -fc 'print -r -- "$FPATH"')"
-  e="$(env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin FPATH="$I:$fp" "$ZSH" -i -c 'print -r -- "R=${_comps[dotfilesbad]-なし}"' </dev/null 2>&1)"
-  chk "誰でも書ける fpath があっても対話 zsh は問いの文を出さず、そこの補完を読まない" test "$e" = 'R=なし'
-  # 同じ名前の補完が安全な場所にもあるとき、危ない場所（fpath で先に来る）の方を読み込まない（zsh 5.8 の compinit -i は fpath から外さない）
-  S="$T/secure"; mkdir "$S"
-  printf '#compdef dotfilesdup\n_dotfilesdup() { _files }\n' > "$S/_dotfilesdup"
-  printf '#compdef dotfilesdup\n_dotfilesdup() { _files }\n' > "$I/_dotfilesdup"
-  e="$(env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin FPATH="$I:$S:$fp" "$ZSH" -i -c 'autoload +X _dotfilesdup 2>/dev/null; zmodload zsh/parameter; print -r -- "F=${functions_source[_dotfilesdup]-なし}"' </dev/null 2>&1)"
-  chk "同じ名前の補完は安全な場所から読み、誰でも書ける fpath の方は読まない" test "$e" = "F=$S/_dotfilesdup"
+  # 誰でも書ける fpath（GitHub の実行環境の /usr/local/share/zsh/site-functions など）を、端末ごとの上書き（~/.zshenv.local）で前に足す
+  # （環境変数 FPATH は Ubuntu の zsh では使われないので、どの zsh でも効く zshenv で足す）。同じ名前の補完が安全な場所にもあるとき、
+  # 危ない場所の方を読まない（zsh 5.8 の compinit -i は fpath から外さないので、外さないと危ない場所のものが読まれる）
+  I="$T/insecure"; S="$T/secure"; mkdir "$I" "$S"; chmod 777 "$I"; chmod 755 "$S" # umask 002 の端末でも安全な場所にする
+  printf '#compdef dotfilesbad\n_files\n' > "$I/_dotfilesbad"
+  printf '#compdef dotfilesdup\n_files\n' > "$S/_dotfilesdup" # 本体だけ（中で関数を定義すると zsh 5.9 は読み込み元を残さない）
+  printf '#compdef dotfilesdup\n_files\n' > "$I/_dotfilesdup"
+  printf 'fpath=(%s %s $fpath)\n' "$I" "$S" > "$H2/.zshenv.local"
+  e="$(zi 'zmodload zsh/parameter; print -r -- "P=${fpath[(I)$1]}" 2>/dev/null; autoload +X _dotfilesdup 2>/dev/null; print -r -- "R=${_comps[dotfilesbad]-なし} F=${functions_source[_dotfilesdup]-なし}"')"
+  chk "誰でも書ける fpath があっても対話 zsh は問いの文を出さず、そこの補完を読まない。同じ名前の補完は安全な場所から読む" \
+    test "$(printf '%s\n' "$e" | grep -v '^P=')" = "R=なし F=$S/_dotfilesdup"
+  rm -f "$H2/.zshenv.local"
   if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
     chk "対話 zsh はシステムの vendor-completions（docker）を読む" test "$(zi 'print -r -- "${_comps[docker]-なし}"')" = _docker
   fi
