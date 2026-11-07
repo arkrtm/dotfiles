@@ -1,6 +1,6 @@
 #!/bin/sh
 # シェルの起動ファイルの受け入れ検査。端末ごとの上書き（リポジトリの外）: ~/.zshenv.local は全ての zsh と bash、~/.zshrc.local は対話の zsh、~/.bashrc.local は対話の bash が読み、
-# 無くてもエラーを出さない。zsh の補完は、install.sh が作る置き場（umask 002 でも compinit が拒まない）と、システムの vendor-completions を読む
+# 無くてもエラーを出さない。入れ子の zsh・bash で PATH が変わらない。zsh の補完は、install.sh が作る置き場（umask 002 でも compinit が拒まない）と、システムの vendor-completions を読む
 #   sh tests/acceptance/shell.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/shell.sh  通った項目も
 set -u
@@ -95,6 +95,17 @@ if [ -n "$ZSH" ]; then
   fi
 else skip "zsh の補完の検査（zsh が無い）"
 fi
+
+# 入れ子: そのシェルの PATH と、その中で同じシェルを起こしたときの PATH が同じ（tmux → nvim → :terminal、スクリプトの中の bash -lc など）
+nest() { o="$(env -i HOME="$H" PATH=/usr/bin:/bin "$@" 'echo "$PATH"' 2>/dev/null </dev/null)"; [ -n "$o" ] &&
+  [ "$(env -i HOME="$H" PATH=/usr/bin:/bin "$@" "$* 'echo \"\$PATH\"'" 2>/dev/null </dev/null)" = "$o" ]; }
+if [ -n "$ZSH" ]; then
+  chk "入れ子の zsh -c で PATH が変わらない" nest "$ZSH" -c
+  chk "入れ子の zsh -i -c で PATH が変わらない" nest "$ZSH" -i -c
+  chk "入れ子の zsh -l -c で PATH が変わらない" nest "$ZSH" -l -c
+else skip "入れ子の zsh の PATH の検査（zsh が無い）"
+fi
+chk "入れ子の bash -lc で PATH が変わらない" nest bash -lc
 
 [ "$fail" = 0 ] && echo "acceptance shell: ok"
 [ "$fail" = 0 ]

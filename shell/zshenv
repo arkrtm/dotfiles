@@ -26,8 +26,18 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 # FNM_DIR は install.sh と同じ値にする
 export FNM_DIR="$HOME/.local/share/fnm"
 export PATH="$FNM_DIR/aliases/default/bin:$PATH"
-# 入れ子の zsh（tmux → nvim → :terminal など）や mac のログイン（zprofile が前置をやり直す）で同じディレクトリが積まれないように
-[ -n "${ZSH_VERSION:-}" ] && typeset -U path
+# 入れ子のシェル（tmux → nvim → :terminal、スクリプトの中の bash -lc など）や mac のログイン（zprofile が前置をやり直す）で同じディレクトリが積まれないように、
+# 2 つ目からを落とす（zsh は typeset -U、bash は同じことを POSIX sh で）
+if [ -n "${ZSH_VERSION:-}" ]; then
+  typeset -U path
+else
+  _p=""; _rest="$PATH:"
+  while [ -n "$_rest" ]; do
+    _e="${_rest%%:*}"; _rest="${_rest#*:}"
+    case ":$_p:" in *":$_e:"*) ;; *) _p="${_p:+$_p:}$_e" ;; esac
+  done
+  PATH="$_p"; unset _p _rest _e
+fi
 # Ubuntu などの /etc/zsh/zshrc は自分で compinit を -i なしで呼び、誰でも書ける fpath があると起動のたびに問う。zshrc の compinit -i だけにする
 [ -n "${ZSH_VERSION:-}" ] && skip_global_compinit=1
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
