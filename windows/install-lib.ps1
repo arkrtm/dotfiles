@@ -231,7 +231,8 @@ function ConvertTo-TomlKeyPath {
   @($parts) -join [char]0
 }
 
-# 1 行ぶんの値の走査。括弧の深さ（Depth）と開いたままの複数行の文字列（Quote）を State に持ち、行をまたいで引き継ぐ
+# 1 行ぶんの値の走査。括弧の深さ（Depth）と開いたままの複数行の文字列（Quote）を State に持ち、行をまたいで引き継ぐ。
+# State に Head（値の最初の文字）・Firsts（最も外の [ ] の要素ごとの最初の文字）・Expect があれば、値が表かどうか（Test-TomlTableValue）を調べるために記録する
 function Step-TomlValue {
   param([Parameter(Mandatory)][AllowEmptyString()][string]$Text, [Parameter(Mandatory)][hashtable]$State)
   $i = 0
@@ -249,8 +250,12 @@ function Step-TomlValue {
       else { $i++ }
       continue
     }
-    if ($three -eq '"""' -or $three -eq "'''") { $State.Quote = $three; $i += 3; continue }
     $c = $Text[$i]
+    if ($State.ContainsKey('Head') -and -not [char]::IsWhiteSpace($c) -and $c -ne '#') {
+      if ($State.Head -eq '') { $State.Head = [string]$c; $State.Expect = ($c -eq '[') }
+      elseif ($State.Expect -and $c -ne ']') { $State.Firsts.Add([string]$c); $State.Expect = $false }
+    }
+    if ($three -eq '"""' -or $three -eq "'''") { $State.Quote = $three; $i += 3; continue }
     if ($c -eq '"') {
       $j = $i + 1
       while ($j -lt $n -and $Text[$j] -ne '"') { if ($Text[$j] -eq '\') { $j += 2 } else { $j++ } }
@@ -263,13 +268,20 @@ function Step-TomlValue {
       continue
     }
     if ($c -eq '#') { break }
+    if ($c -eq ',' -and $State.Depth -eq 1 -and $State.ContainsKey('Head') -and $State.Head -eq '[') { $State.Expect = $true }
     if ($c -eq '[' -or $c -eq '{') { $State.Depth++ } elseif ($c -eq ']' -or $c -eq '}') { $State.Depth-- }
     $i++
   }
 }
 
+# 値がインライン表、または表だけの配列（[[x]] と同じ意味になるもの）か。Split-TomlTable の State で走査した後に呼ぶ
+function Test-TomlTableValue {
+  param([Parameter(Mandatory)][hashtable]$State)
+  $State.Head -eq '{' -or ($State.Head -eq '[' -and $State.Firsts.Count -gt 0 -and @($State.Firsts | Where-Object { $_ -ne '{' }).Count -eq 0)
+}
+
 # TOML を行単位で表と項目に分ける（値の中は解釈しない。複数行の値は 1 項目）。先頭は必ずトップレベル（Name が空）。
-# 空行とコメントの行は捨てる。見出しは Name（正規化したキー）・IsArray・Header（行そのまま）・HeaderIndex、項目は Key（正規化。キーでない行は $null）・Parts（キーの各部分の書いたまま）・Value（最初の行の = の後ろ）・Lines・Last（最後の行の番号）を持つ
+# 空行とコメントの行は捨てる。見出しは Name（正規化したキー）・IsArray・Header（行そのまま）・HeaderIndex、項目は Key（正規化。キーでない行は $null）・Parts（キーの各部分の書いたまま）・Value（最初の行の = の後ろ）・IsTable（値がインライン表か表だけの配列）・Lines・Last（最後の行の番号）を持つ
 function Split-TomlTable {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $part = '(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*'')'
@@ -297,20 +309,22 @@ function Split-TomlTable {
     $key = $null
     $parts = $null
     $value = $null
+    $isTable = $false
     $lines = @($l)
     if ($l -match $keyRe) {
       $key = ConvertTo-TomlKeyPath $Matches.k
       $parts = [string[]]@([regex]::Matches($Matches.k, $part) | ForEach-Object { $_.Value })
       $value = $Matches.v
-      $state = @{ Depth = 0; Quote = '' }
+      $state = @{ Depth = 0; Quote = ''; Head = ''; Expect = $false; Firsts = [Collections.Generic.List[string]]::new() }
       Step-TomlValue $value $state
       while (($state.Depth -gt 0 -or $state.Quote -ne '') -and $i + 1 -lt $Line.Count) {
         $i++
         $lines += $Line[$i]
         Step-TomlValue $Line[$i] $state
       }
+      $isTable = Test-TomlTableValue $state
     }
-    $cur.Entries.Add([pscustomobject]@{ Key = $key; Parts = $parts; Value = $value; Lines = [string[]]$lines; Last = $i })
+    $cur.Entries.Add([pscustomobject]@{ Key = $key; Parts = $parts; Value = $value; IsTable = $isTable; Lines = [string[]]$lines; Last = $i })
   }
   $tables.ToArray()
 }
@@ -398,7 +412,7 @@ function Assert-TomlUnique {
 
 # Codex の config.toml をテンプレートから作る（@HOME@ は / 区切りのホーム。\ は TOML の文字列でエスケープになる）。
 # テンプレートにあるキー（トップレベルと各表）はテンプレートの値にし、ほかのキーと表（Codex デスクトップが書く notify・[desktop]・プラグインなど）は値ごと引き継ぐ。
-# ドット付きのキーで書いたテンプレートの表の項目（mcp_servers.linear.x = 1 など）はその表に結合する。install.sh は引き継ぐ表を限る。値の外のコメントと空行は引き継がない。キーと表の名前は引用符と空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。
+# ドット付きのキーで書いたテンプレートの表の項目（mcp_servers.linear.x = 1 など）はその表に結合する。install.sh は引き継ぐ表を限る。値の外のコメントと空行は引き継がない。キーと表の名前は引用符と空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。テンプレートのキー（値）を既存がインライン表や表の配列で定義しているときも、表と値がぶつかって表せないので書かずに失敗する。
 # 中身が違うときだけ退避して置き換える。変わったら $true
 function New-CodexConfig {
   param(
@@ -455,12 +469,14 @@ function New-CodexConfig {
         # ドット付きのキーで書いたテンプレートの表の項目は、その表に結合する（キーが同じならテンプレートの値）
         $r = if (-not $ot.IsArray -and $null -ne $e.Key) { & $route $tp $e.Key.Split([char]0) }
         if ($r) {
+          if ($tmplKeys[$r.Index].Contains($r.Rest) -and $e.IsTable) { throw "config.toml がテンプレートのキーを表で定義している（書かない）: $(@($tp) + $e.Key.Split([char]0) -join '.')" }
           if (-not $tmplKeys[$r.Index].Contains($r.Rest)) {
             $moved = @(($e.Parts[$r.Skip..($e.Parts.Count - 1)] -join '.') + ' =' + $e.Value) + @($e.Lines | Select-Object -Skip 1)
             $after[$tmplIdx[$r.Index]].AddRange([string[]]$moved)
           }
         }
         elseif ($ti -lt 0) { $stay.Add($e) }
+        elseif ($null -ne $e.Key -and $e.IsTable -and $tmplKeys[$ti].Contains($e.Key)) { throw "config.toml がテンプレートのキーを表で定義している（書かない）: $(@($tp) + $e.Key.Split([char]0) -join '.')" }
         elseif ($null -eq $e.Key -or -not $tmplKeys[$ti].Contains($e.Key)) { $after[$tmplIdx[$ti]].AddRange([string[]]$e.Lines) }
       }
       if ($ti -lt 0) { $kept.Add([pscustomobject]@{ Header = $ot.Header; Entries = $stay }) }

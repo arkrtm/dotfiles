@@ -730,6 +730,25 @@ lit = '''
   ) {
     Assert-Refused $Old '*config.toml*'
   }
+  It 'テンプレートのキー（葉）を表（インライン表・その配列）で定義する設定（<Old>）は、ドットや見出しで書いた同じ意味の設定と同じく、表せないので書かず退避もせず失敗する' -ForEach @(
+    @{ Old = "model = { x = 1 }`n" }
+    @{ Old = "model = [{ q = 1 }]`n" }
+    @{ Old = "model = [`n  # c`n  { q = 1 },`n  { q = 2 },`n]`n" }
+    @{ Old = "[mcp_servers.linear]`nurl = { a = 1 }`n" }
+    @{ Old = "[sandbox_workspace_write]`nwritable_roots = [{ p = `"x`" }]`n" }
+    @{ Old = "mcp_servers.linear.url = { a = 1 }`n" }
+    @{ Old = "sandbox_workspace_write.writable_roots = [{ p = `"x`" }]`n" }
+  ) {
+    Assert-Refused $Old '*config.toml*'
+  }
+  It 'テンプレートのキーを配列・文字列などの葉で定義する設定（<Case>）は、表ではないのでテンプレートの値にする' -ForEach @(
+    @{ Case = '表を含まない配列'; Old = "model = [1, 2]`n" }
+    @{ Case = '表と他の値の混ざった配列'; Old = "model = [{ q = 1 }, 2]`n" }
+    @{ Case = '空の配列'; Old = "model = []`n" }
+    @{ Case = '文字列の中の波括弧'; Old = "model = `"{ x = 1 }`"`n" }
+  ) {
+    Merge-Config $Old | Should -BeExactly $Base
+  }
 }
 
 Describe 'Get-CrlfCheckout' {
