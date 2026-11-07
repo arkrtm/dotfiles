@@ -99,6 +99,9 @@ words "グローバル指示の「Git」" "$C" '## Git' integrate 'integrate set
   'codex-review branch origin/<最上位>' '--no-track' '.worktrees/' 'origin/<最上位>'
 words "issue の SKILL.md" "$IS" '' '.worktrees/' 'git worktree list'
 words "wrap-up の SKILL.md" "$WU" '' 'git merge-base --is-ancestor' headRefOid baseRefName '--ff-only' 'git worktree remove' 'integrate setup --show' 'git branch -D'
+# 統合の後の片づけ（Done・relay の記憶の archive）
+words "wrap-up の SKILL.md の「統合の後」" "$WU" '## 5\. 統合の後' Done 'index("relay")' 'tinymemory archive'
+words "グローバル指示の「規約」" "$C" '## 規約' '--tags relay'
 check "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" sh -c "! grep -qF 'git branch -d' '$WU'"
 
 # ---- config/claude/README.md の新しい端末の手順（LIVE が実行する）

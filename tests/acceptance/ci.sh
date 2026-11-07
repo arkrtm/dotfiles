@@ -32,4 +32,12 @@ for W in "$ROOT"/.github/workflows/*.yml; do
   check "$w: 失敗を握りつぶさない（continue-on-error・|| true が無い）" no_swallow "$W"
 done
 
+# main の保護とマージ方法の値（新しいリポジトリで tests/README.md の gh api を実行する。値を誤ると強制 push や削除を許す）
+R="$ROOT/tests/README.md"
+check "tests/README.md に main の保護を入れる gh api がある" grep -qF 'gh api -X PUT repos/arkrtm/dotfiles/branches/main/protection' "$R"
+check "tests/README.md の保護は強制 push と削除の禁止だけ（PR 必須・必須チェック・管理者への適用は無し）" \
+  sh -c "grep -qF '\"required_status_checks\":null' '$R' && grep -qF '\"enforce_admins\":false' '$R' && grep -qF '\"required_pull_request_reviews\":null' '$R' && grep -qF '\"allow_force_pushes\":false' '$R' && grep -qF '\"allow_deletions\":false' '$R'"
+check "tests/README.md にマージ方法（rebase だけ・ブランチ自動削除）を入れる gh api がある" \
+  sh -c "grep -qF 'allow_squash_merge=false' '$R' && grep -qF 'allow_merge_commit=false' '$R' && grep -qF 'delete_branch_on_merge=true' '$R'"
+
 exit $fail
