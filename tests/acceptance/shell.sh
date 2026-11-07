@@ -52,8 +52,10 @@ if [ -n "$ZSH" ]; then
   chk "install.sh（リンクだけ）が補完の置き場を作る" test -d "$H2/.local/share/zsh/site-functions"
   printf '#compdef dotfilesprobe\n_dotfilesprobe() { _files }\n' 2>/dev/null > "$H2/.local/share/zsh/site-functions/_dotfilesprobe"
   zi() { env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin "$ZSH" -i -c "$1" </dev/null 2>&1; }
-  # zsh 自身の関数の場所まで危ない端末（GitHub の実行環境）では、zshrc は compinit をしない。そこでは補完の検査を省く
-  if [ "$(zi 'print -r -- "C=${+functions[compinit]}"' | tail -n 1)" = C=1 ]; then
+  # zsh 自身の関数の場所（compinit がある所）かその親を compaudit が危ないとみなす端末（GitHub の実行環境は /usr/share が 777）では、
+  # zshrc は compinit をしない。その判定は zshrc の結果に頼らず、設定を読まない zsh の compaudit で決める
+  unsafe_root="$(env -i LOGNAME=dotfiles-nogroup "$ZSH" -fc 'autoload -Uz +X compinit compaudit; zmodload zsh/parameter; r=${functions_source[compinit]:h}; for x in ${(f)"$(compaudit 2>/dev/null)"}; do [[ -f $x ]] && x=${x:h}; [[ $r == $x || $r == $x/* ]] && { print 1; exit }; done; print 0')"
+  if [ "$unsafe_root" = 0 ]; then
     # compaudit が挙げる危ない場所のうち、この HOME の下（install.sh が作る置き場とその親）だけを見る（システムの fpath は端末による）
     same "umask 002 で作った補完の置き場とその親を compaudit が危ないとみなさず、対話 zsh が補完を読む（打ち切りや問いの文も出ない）" \
       "$(zi 'autoload -Uz compaudit; print -r -- "A=$(compaudit 2>/dev/null | grep -c "^$HOME/") R=${_comps[dotfilesprobe]-なし}"')" 'A=0 R=_dotfilesprobe'
@@ -75,7 +77,8 @@ if [ -n "$ZSH" ]; then
     if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
       same "対話 zsh はシステムの vendor-completions（docker）を読む" "$(zi 'print -r -- "${_comps[docker]-なし}"')" _docker
     fi
-  else skip "補完の検査（この端末は zsh 自身の関数の場所が誰でも書ける場所にあり、zshrc は compinit をしない）"
+  else
+    same "zsh 自身の関数の場所が危ない端末では、問いの文もエラーも出さず補完の初期化をしない" "$(zi 'print -r -- "C=${+functions[compinit]}"')" C=0
   fi
   # zsh 自身の関数の場所が誰でも書ける親の下にあるときは、問いの文もエラーも出さず、補完の初期化をしない（危ない場所のコードは動かさない）。
   # 写して確かめるのは関数の場所が 1 つの端末（zsh-bin・mac）だけ。分かれている端末（Ubuntu）は、CI の実行環境そのもの（上の「エラーを出さない」）で確かめる
