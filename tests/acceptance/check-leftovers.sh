@@ -29,9 +29,10 @@ cleanup() {
   for f in "$T"/pid.*.dir; do # 読めなくした一時ディレクトリ（検査が /tmp/check.* に作ったもの）は、権限を戻して消す
     d="$(cat "$f" 2>/dev/null)"; case "$d" in /tmp/check.*) chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d" ;; esac
   done
+  [ -z "$bgp" ] || wait $bgp # 止められたときに後ろで走る写しが、消した $T に書き込まないよう、記録した sleep を止めた後に終わりを待つ
   rm -rf "$T"
 }
-T=""; trap 'trap "" HUP INT TERM; cleanup' EXIT
+T=""; bgp=""; trap 'trap "" HUP INT TERM; cleanup' EXIT
 trap 'exit 1' HUP INT TERM
 T="$(trap '' HUP INT TERM; mktemp -d)"
 R="$T/r"; mkdir -p "$R/scripts" "$R/tests"
@@ -100,25 +101,16 @@ if [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q '^FAIL 検査が普通に終�
   ok "ファイルが残れば、失敗して残ったものを出す"; else ng "ファイルを残す: rc=$rc 出力=$out"; fi
 
 if [ -d /proc/self ]; then
-  run proc; p="$(cat "$PF" 2>/dev/null)"
-  if [ "$rc" = 1 ] && [ -n "$p" ] && printf '%s\n' "$out" | grep -q "^ *$p sleep 599.7" && gone "$p"; then
-    ok "環境に一時ディレクトリを持つプロセスが残れば、失敗してそのプロセスを出し、止める"; else ng "プロセスを残す: rc=$rc pid=$p 生きている=$(alive "${p:-0}" && echo はい || echo いいえ) 出力=$out"; fi
-  run tmuxonly; p="$(cat "$PF" 2>/dev/null)" # 環境が TMUX_TMPDIR=<一時ディレクトリ> だけのプロセス
-  if [ "$rc" = 1 ] && [ -n "$p" ] && printf '%s\n' "$out" | grep -q "^ *$p sleep 599.9" && gone "$p"; then
-    ok "環境が TMUX_TMPDIR だけのプロセスが残っても、失敗してそのプロセスを出し、止める"; else ng "TMUX_TMPDIR だけのプロセス: rc=$rc pid=$p 出力=$out"; fi
+  # 残りを待つ 3 つ（proc・tmuxonly・pipe）は、それぞれ scripts/check の残りの待ち（最大 3 秒）がかかるので、後ろで同時に走らせる。
+  # 出力と終了コードはファイルに書く（子が出力をつないだまま残っても、検査は戻る）。戻るのを待つ上限は 30 秒
+  bg() { ( MODE="$1" MARK="$T/mark.$1" PIDF="$T/pid.$1" sh "$R/scripts/check" > "$T/out.$1" 2>&1; echo $? > "$T/rc.$1" ) & bgp="$bgp $!"; }
+  fin() { i=0; while [ ! -e "$T/rc.$1" ] && [ "$i" -lt 300 ]; do i=$((i + 1)); sleep 0.1; done
+    rc="$(cat "$T/rc.$1" 2>/dev/null)"; out="$(cat "$T/out.$1")"; p="$(cat "$T/pid.$1" 2>/dev/null)"; }
+  bg proc; bg tmuxonly; bg pipe
   run sub; p="$(cat "$PF" 2>/dev/null)"
   if [ "$rc" = 0 ] && [ -z "$out" ] && [ -n "$p" ] && alive "$p"; then
     ok "環境が TMPDIR=<一時ディレクトリ>/sub のプロセスは、止めない（部分一致で当てない）"; else ng "別のプロセス: rc=$rc pid=$p 生きている=$(alive "${p:-0}" && echo はい || echo いいえ) 出力=$out"; fi
   [ -z "$p" ] || kill "$p" 2>/dev/null
-  # 子が検査の出力（パイプ）をつないだまま残っても、検査は戻って、残った子を出して止める（上限 30 秒）
-  n=$((n + 1)); PF="$T/pid.pipe.$n"; rm -f "$MARK" "$T/rc.pipe"
-  ( MODE=pipe MARK="$MARK" PIDF="$PF" sh "$R/scripts/check" > "$T/out.pipe" 2>&1; echo $? > "$T/rc.pipe" ) &
-  pw=$!; i=0; while [ ! -e "$T/rc.pipe" ] && [ "$i" -lt 300 ]; do i=$((i + 1)); sleep 0.1; done
-  p="$(cat "$PF" 2>/dev/null)"
-  if [ "$(cat "$T/rc.pipe" 2>/dev/null)" = 1 ] && [ -n "$p" ] && grep -q "^ *$p sleep 599.6" "$T/out.pipe" && gone "$p"; then
-    ok "子が出力をつないだまま残っても、検査は戻って失敗し、その子を出して止める"; else ng "出力をつないだ子: rc=$(cat "$T/rc.pipe" 2>/dev/null) pid=$p 出力=$(cat "$T/out.pipe")"; fi
-  case "$(ps -o args= -p "${p:-0}" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac # 戻らなかったときは、子を止めて検査を終わらせる
-  wait "$pw"
   # 長い TMPDIR（100 バイト程度）でも stop-cleanup.sh は ok になる（一時ディレクトリを TMPDIR の下に重ねると、ソケットのパスが長すぎて tmux が失敗する）
   L="$T"; while [ "${#L}" -lt 100 ]; do L="$L/long-directory-name"; done; mkdir -p "$L"
   out="$(TMPDIR="$L" sh "$ROOT/tests/acceptance/stop-cleanup.sh" 2>&1)"; rc=$?
@@ -133,6 +125,19 @@ if [ -d /proc/self ]; then
     if [ "$rc" = 0 ] && [ -z "$rest" ]; then ok "TMPDIR が ${#L} バイトでも $f は通り、/tmp の一時ディレクトリを残さない"
     else ng "長い TMPDIR（${#L} バイト）で $f: rc=$rc 残り=[$rest] 出力=$(printf '%s\n' "$out" | grep -v '^ok ' | head -3)"; [ -z "$rest" ] || rm -rf $rest; fi
   done
+  fin proc
+  if [ "$rc" = 1 ] && [ -n "$p" ] && printf '%s\n' "$out" | grep -q "^ *$p sleep 599.7" && gone "$p"; then
+    ok "環境に一時ディレクトリを持つプロセスが残れば、失敗してそのプロセスを出し、止める"; else ng "プロセスを残す: rc=$rc pid=$p 生きている=$(alive "${p:-0}" && echo はい || echo いいえ) 出力=$out"; fi
+  fin tmuxonly # 環境が TMUX_TMPDIR=<一時ディレクトリ> だけのプロセス
+  if [ "$rc" = 1 ] && [ -n "$p" ] && printf '%s\n' "$out" | grep -q "^ *$p sleep 599.9" && gone "$p"; then
+    ok "環境が TMUX_TMPDIR だけのプロセスが残っても、失敗してそのプロセスを出し、止める"; else ng "TMUX_TMPDIR だけのプロセス: rc=$rc pid=$p 出力=$out"; fi
+  fin pipe # 子が検査の出力（パイプ）をつないだまま残っても、検査は戻って、残った子を出して止める
+  if [ "$rc" = 1 ] && [ -n "$p" ] && printf '%s\n' "$out" | grep -q "^ *$p sleep 599.6" && gone "$p"; then
+    ok "子が出力をつないだまま残っても、検査は戻って失敗し、その子を出して止める"; else ng "出力をつないだ子: rc=$rc pid=$p 出力=$out"; fi
+  for f in "$T"/pid.proc "$T"/pid.tmuxonly "$T"/pid.pipe; do # 戻らなかったときは、子を止めて写しを終わらせる
+    for p in $(cat "$f" 2>/dev/null); do case "$(ps -o args= -p "$p" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac; done
+  done
+  wait $bgp; bgp=""
   # INT を使う検査（stop-cleanup.sh）は、INT を無視しない状態で走る（後ろで走らせると、非対話の sh は INT を無視して始める）。自分が無視して起動されたときは確かめられない
   ign="$(sed -n 's/^SigIgn:[[:space:]]*//p' /proc/$$/status 2>/dev/null)"
   if [ -z "$ign" ] || [ $((0x$ign & 2)) != 0 ]; then skip "INT を使う検査を前で走らせる確かめ（INT を無視して起動された）"
