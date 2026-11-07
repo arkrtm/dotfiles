@@ -540,6 +540,28 @@ lit = '''
     [IO.File]::ReadAllBytes($conf) | Should -Be $before
     (Get-Baks $conf).Count | Should -Be 0
   }
+  It '意味が同じでも、既存が BOM なしの正しい UTF-8 でなければ（<Case>）BOM なしの UTF-8 に書き直して退避する' -ForEach @(
+    @{ Case = 'UTF-16LE（BOM 付き）'; Enc = [Text.UnicodeEncoding]::new($false, $true) }
+    @{ Case = 'UTF-8（BOM 付き）'; Enc = [Text.UTF8Encoding]::new($true) }
+  ) {
+    $conf = Join-Path $TestDrive ('enc\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Base, $Enc)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllBytes($conf) | Should -Be ($Utf8.GetBytes($Base))
+    (Get-Baks $conf).Count | Should -Be 1
+  }
+  It '大文字小文字だけ違う配列の表と表があっても、並びだけ違う設定は書かず、退避もしない' {
+    $ponytail = "[marketplaces.ponytail]`nsource_type = `"git`"`nsource = `"https://github.com/DietrichGebert/ponytail.git`"`n"
+    $conf = Join-Path $TestDrive 'case\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $text = $Base.Replace($ponytail + "`n", '') + "`n[[marketplaces.PONYTAIL]]`nx = 1`n`n" + $ponytail
+    [IO.File]::WriteAllText($conf, $text, $Utf8)
+    $before = [IO.File]::ReadAllBytes($conf)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+    [IO.File]::ReadAllBytes($conf) | Should -Be $before
+    (Get-Baks $conf).Count | Should -Be 0
+  }
   It '並びが違うだけでなくテンプレートの値と違う値が 1 つあれば、直して退避する' {
     $ponytail = "[marketplaces.ponytail]`nsource_type = `"git`"`nsource = `"https://github.com/DietrichGebert/ponytail.git`"`n"
     $conf = Join-Path $TestDrive 'reordered-diff\config.toml'

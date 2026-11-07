@@ -437,7 +437,7 @@ function Assert-TomlUnique {
 function Get-TomlMeaning {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $nul = [string][char]0
-  $count = @{}
+  $count = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
   $set = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   foreach ($t in (Split-TomlTable $Line)) {
     if ($t.IsArray) { $count[$t.Name] = 1 + $(if ($count.ContainsKey($t.Name)) { $count[$t.Name] } else { 0 }) }
@@ -543,10 +543,11 @@ function New-CodexConfig {
   if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     $oldBytes = [IO.File]::ReadAllBytes($ConfigPath)
     if ([Linq.Enumerable]::SequenceEqual([byte[]]$oldBytes, [byte[]]$newBytes)) { return $false }
-    # Codex の CLI は表を自分の順で書き直す。意味が同じで並びだけ違うなら書かない（退避が増えるため）
+    # Codex の CLI は表を自分の順で書き直す。意味が同じで並びだけ違うなら書かない（退避が増えるため）。既存が BOM なしの正しい UTF-8 のときだけ（UTF-16 や BOM 付きは UTF-8 に直す）
     # 既存が不正（同じキーや表が 2 回）なら比べずに直す。集合にすると重複が消えて同じに見えるため
     $oldValid = try { Assert-TomlUnique $oldLines; $true } catch { $false }
-    if ($oldValid -and (Get-TomlMeaning $oldLines).SetEquals((Get-TomlMeaning $out.ToArray()))) { return $false }
+    $plainUtf8 = try { $null = [Text.UTF8Encoding]::new($false, $true).GetString($oldBytes); -not ($oldBytes.Length -ge 3 -and $oldBytes[0] -eq 0xEF -and $oldBytes[1] -eq 0xBB -and $oldBytes[2] -eq 0xBF) } catch { $false }
+    if ($oldValid -and $plainUtf8 -and (Get-TomlMeaning $oldLines).SetEquals((Get-TomlMeaning $out.ToArray()))) { return $false }
   }
   $dir = Split-Path -Parent $ConfigPath
   if (-not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
