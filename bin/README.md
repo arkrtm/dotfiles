@@ -4,7 +4,7 @@
 
 - `agent-status` — Claude Code hooks から呼ばれ、tmux のウィンドウ名に `● 作業中 / ? 入力待ち / ✓ 完了` を出し、入力待ち・完了でデスクトップ通知（OSC 777）
 - `geoview FILE [-o out.png]` — GeoTIFF の情報表示 / プレビュー PNG（uv + rasterio。GDAL 同梱 wheel なので sudo・conda 不要）
-- `integrate [--human-approved]` — 統合はこれだけで行う。関門（`integrate setup` の設定がある・最上位のブランチ（base）の最新を含む・未コミットの変更が無い・設定の test が通る・今のコミットの origin/<base> との差分への `codex-review branch` が `VERDICT: PASS`・テストの削除や移動と skip・xfail・`type: ignore`・`noqa` の追加が無い。Markdown の文書は数えない）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（設定の remote が origin と違う・origin の push 先が取得先と違う設定でも止まる）。kind が `bare`・`github` なら base へ push（早送りだけ）、`pr` ならブランチを push して base に向けた PR を作るだけ（マージはチーム）。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
+- `integrate [--human-approved]` — 統合はこれだけで行う。関門（一覧と順番は `bin/integrate` の先頭のコメント。安いものから確かめ、テストは最後）を 1 つでも満たさなければ統合せず `notify` して終了コード 1（設定の remote が origin と違う・origin の push 先が取得先と違う設定でも止まる）。kind が `bare`・`github` なら base へ push（早送りだけ）、`pr` ならブランチを push して base に向けた PR を作るだけ（マージはチーム）。`--human-approved` はテストや検査を弱める変更を人が確認して通す（人用）
 - `integrate setup` — リポジトリごとの設定（下の「integrate setup」）
 - `integrate-hook <session-start|pre-edit>` — Claude Code のフック。origin があって `integrate setup` の設定が無いリポジトリでは、会話の始まりに setup を案内し、編集（Edit・Write・NotebookEdit）を拒む（終了コード 2）。読む・調べる・Bash は止めない（Bash での書き換えは捕らえない抑止）。設定がある・origin が無い・git の外では何もしない
 - `handoff <続きの指示>` — herdr の中で、このターンの後に自分の pane へ `/clear` と続きの指示を送る（`config/herdr/README.md` の「常時起動サーバー」）。Claude が handoff skill の手順で呼ぶ。herdr の外では 1

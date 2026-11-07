@@ -49,7 +49,7 @@ setup() {
   git clone -q "$BARE" "$T/w" 2>/dev/null
   cd "$T/w" || exit 1
   mkdir -p scripts tests
-  printf '#!/bin/sh\nexit 0\n' > scripts/check; chmod +x scripts/check
+  printf '#!/bin/sh\necho ran >> "%s"\n' "$T/ran" > scripts/check; chmod +x scripts/check
   echo t > tests/t.sh; echo j > tests/日本語.sh
   git add -A && git commit -qm base && git push -q origin "HEAD:$B"
   git checkout -q -b feature/x
@@ -75,6 +75,12 @@ refused() {
   [ "$rc" = 1 ] && [ "$(logn)" -gt "$n0" ] && [ "$(git -C "$BARE" rev-parse "$B")" = "$m0" ] \
     && ok "統合しない: $name" || ng "統合しない: $name（rc=$rc $(cat "$T/err")）"
 }
+# early <名前> [integrate の引数]: refused に加えて、テスト（scripts/check）を実行する前に止まる
+early() {
+  rm -f "$T/ran"
+  refused "$@" </dev/null
+  [ ! -e "$T/ran" ] && ok "テストより先に止める: $1" || ng "テストを実行してから止めた: $1"
+}
 # accepted <名前> [integrate の引数]: 終了コード 0、bare の <base> が HEAD になる
 accepted() {
   name="$1"; shift
@@ -85,8 +91,8 @@ accepted() {
 
 # ---- 今のコミットへの、origin/main との差分のレビューが PASS でなければ通さない
 setup "$T/r.git"
-refused "レビューが無い"
-review FAIL; refused "レビューが VERDICT: FAIL"
+early "レビューが無い"
+review FAIL; early "レビューが VERDICT: FAIL"
 review PASS; add a 2; refused "レビューの後にコミットを足した"
 setup "$T/r.git"; review PASS HEAD; refused "比較元が HEAD（空の差分）のレビューだけ"
 
@@ -98,7 +104,7 @@ refused "差分を出さない属性（-diff）でも noqa を見つける"
 setup "$T/r.git"; add tests/test_x.py '@pytest.mark.skip'; review PASS; refused "pytest.mark.skip を足した"
 accepted "--human-approved なら無効化の追加も通す" --human-approved
 setup "$T/r.git"; add README.md 'skip や noqa の説明'; review PASS; accepted "Markdown の文書の説明は無効化の追加と数えない"
-setup "$T/r.git"; git rm -q tests/t.sh; git commit -qm rm; review PASS; refused "tests/ のファイルを削除した"
+setup "$T/r.git"; git rm -q tests/t.sh; git commit -qm rm; review PASS; early "tests/ のファイルを削除した"
 accepted "--human-approved ならテストの削除も通す" --human-approved
 setup "$T/r.git"; mkdir archive; git mv tests/t.sh archive/t.sh; git commit -qm mv; review PASS; refused "tests/ のファイルを外へ移した"
 setup "$T/r.git"; git rm -q tests/日本語.sh; git commit -qm rm; review PASS; refused "日本語名のテストを削除した"
