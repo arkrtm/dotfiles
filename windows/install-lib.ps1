@@ -143,10 +143,38 @@ function Update-ProcessPath {
   $env:Path = (@($env:Path -split ';') + @($reg) | Where-Object { $_ } | Select-Object -Unique -CaseInsensitive) -join ';'
 }
 
-# ここから先は失敗しても warning を出して続ける（install.sh で致命でない所に合わせる）
+# 失敗した手順を名前と理由で記録し、warning を出す（手順は続ける）
+function Add-StepFailure {
+  param(
+    [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$Log,
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)][string]$Reason
+  )
+  $Log.Add([pscustomobject]@{ Name = $Name; Reason = $Reason })
+  Write-Host "warning: ${Name}: ${Reason}（続行）"
+}
+
+# 手順を動かす。例外は記録して外に出さず、次の手順へ進む。本体は呼び出し側の変数を読む（引数と同じ名前の Log・Name・Body は引数が見える）
 function Invoke-Step {
-  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Body)
-  try { & $Body } catch { Write-Host "warning: ${Name}: $($_.Exception.Message)（続行）" }
+  param(
+    [Parameter(Mandatory, Position = 0)][AllowEmptyCollection()][Collections.Generic.List[object]]$Log,
+    [Parameter(Mandatory, Position = 1)][string]$Name,
+    [Parameter(Mandatory, Position = 2)][scriptblock]$Body
+  )
+  try { & $Body } catch { Add-StepFailure $Log $Name $_.Exception.Message }
+}
+
+# 最後の表示と終了コード。失敗の一覧があれば done. を出さず 1、無ければ done. と案内を出して 0
+function Complete-Install {
+  param([Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$Log)
+  if ($Log.Count -gt 0) {
+    Write-Host '失敗した手順（理由を直して install.ps1 を再実行する）:'
+    foreach ($f in $Log) { Write-Host "- $($f.Name): $($f.Reason)" }
+    return [int]1
+  }
+  Write-Host 'done.'
+  Write-Host '残りの手順: windows/README.md の「新しい PC での導入」の install.ps1 より後'
+  [int]0
 }
 
 # CRLF で取り出された追跡ファイル（取り出し直せば LF になるもの: index は LF、作業ツリーは CRLF）。
@@ -246,15 +274,18 @@ function Update-TerminalSettings {
   Set-JsonMember $d.font 'size' 12
   Set-JsonMember $d 'padding' '6, 4'
   Set-JsonMember $d 'historySize' 50000
-  if (@($profiles.list | Where-Object { $_.guid -ieq $TerminalPwshGuid }).Count -gt 0) {
-    Set-JsonMember $json 'defaultProfile' $TerminalPwshGuid
-  }
+  $hasPwsh = @($profiles.list | Where-Object { $_.guid -ieq $TerminalPwshGuid }).Count -gt 0
+  if ($hasPwsh) { Set-JsonMember $json 'defaultProfile' $TerminalPwshGuid }
 
   $after = ConvertTo-Json -InputObject $json -Depth 50
-  if ($after -ceq $before) { return $false }
-  $bak = "$Path.bak.$(Get-BackupStamp)"
-  Copy-Item -LiteralPath $Path -Destination $bak
-  Write-Host "backup: $Path -> $bak"
-  [IO.File]::WriteAllText($Path, ($after -replace "`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
-  $true
+  $changed = $after -cne $before
+  if ($changed) {
+    $bak = "$Path.bak.$(Get-BackupStamp)"
+    Copy-Item -LiteralPath $Path -Destination $bak
+    Write-Host "backup: $Path -> $bak"
+    [IO.File]::WriteAllText($Path, ($after -replace "`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+  }
+  # ほかの設定は書いたうえで失敗にする（Windows Terminal が PowerShell 7 のプロファイルを作るのは起動したとき）
+  if (-not $hasPwsh) { throw 'PowerShell 7 のプロファイルが Windows Terminal に無い（Windows Terminal を開き直してから再実行する）' }
+  $changed
 }

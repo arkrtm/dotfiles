@@ -50,6 +50,9 @@ if (-not (Test-SymlinkSupport)) {
   exit 1
 }
 
+# リンクから先は失敗しても続け、最後に失敗した手順の一覧を出して終了コード 1 にする（その場で止まるのは前提の検査だけ）
+$StepLog = [Collections.Generic.List[object]]::new()
+
 # リンク定義: リポジトリ内パス → 配置先。Dir はリンク元がまだ無くてもディレクトリのリンクにする印
 $H = $HomeDir
 $Links = @(
@@ -77,15 +80,17 @@ $Links = @(
 )
 foreach ($l in $Links) {
   $src = Join-Path $DOTFILES ($l.Src -replace '/', '\')
-  Link-Item -Source $src -Destination $l.Dst -Directory:([bool]$l.Dir)
+  Invoke-Step $StepLog "リンク $($l.Dst)" { Link-Item -Source $src -Destination $l.Dst -Directory:([bool]$l.Dir) }
 }
 
 # ponytail の band（プロンプトの上の行）を既定で隠す（install.sh と同じ）。ファイルがあれば触らない
-$band = Join-Path $H '.claude\.ponytail-band'
-if (-not (Get-PathEntry $band)) { [IO.File]::WriteAllText($band, "off`n", [Text.UTF8Encoding]::new($false)) }
+Invoke-Step $StepLog 'ponytail の band' {
+  $band = Join-Path $H '.claude\.ponytail-band'
+  if (-not (Get-PathEntry $band)) { [IO.File]::WriteAllText($band, "off`n", [Text.UTF8Encoding]::new($false)) }
+}
 
-# リンク配置だけを検査したい時（windows/tests）はここで終わる
-if ($LinksOnly) { exit 0 }
+# リンク配置だけを検査したい時（windows/tests）はここで終わる（失敗があれば一覧と終了コード 1）
+if ($LinksOnly) { exit (Complete-Install $StepLog) }
 
 # 取得してから実行する（パイプで渡さない。取得に失敗したら実行しない）
 function Get-RemoteScript {
@@ -99,14 +104,13 @@ function Test-Command { param([string]$Name) [bool](Get-Command $Name -CommandTy
 Update-ProcessPath
 
 # 1. 改行: このクローンは LF で取り出す（シェルスクリプトを Git Bash で動かすため）。CRLF で取り出し済みなら、変更が無いときだけ取り出し直す
-Invoke-Step 'git の改行' {
+Invoke-Step $StepLog 'git の改行' {
   git -C $DOTFILES config --local core.autocrlf input
   if ($LASTEXITCODE) { throw 'git config に失敗' }
   $crlf = Get-CrlfCheckout $DOTFILES
   if ($crlf.Count -eq 0) { return }
   if (git -C $DOTFILES status --porcelain --untracked-files=all) {
-    Write-Host "warning: CRLF で取り出されたファイルがあるが、作業ツリーに変更があるので取り出し直さない（片づけてから再実行する）"
-    return
+    throw 'CRLF で取り出されたファイルがあるが、作業ツリーに変更があるので取り出し直さない（片づけてから再実行する）'
   }
   foreach ($f in $crlf) { Remove-Item -LiteralPath (Join-Path $DOTFILES $f) -Force }
   git -C $DOTFILES checkout -- .
@@ -115,13 +119,13 @@ Invoke-Step 'git の改行' {
 }
 
 # 2. git config --global の書き込み先を端末ローカルの ~/.gitconfig にする（無いと ~/.config/git/config = リポジトリ側が書き換わる）。中身は消さない
-Invoke-Step '~/.gitconfig' {
+Invoke-Step $StepLog '~/.gitconfig' {
   $gc = Join-Path $H '.gitconfig'
   if (-not (Get-PathEntry $gc)) { [IO.File]::WriteAllBytes($gc, [byte[]]@()) }
 }
 
 # 3. ssh は設定ファイルが他人に書き込めると拒否するので、リンク先の実ファイルの権限を自分・SYSTEM・Administrators に絞る
-Invoke-Step 'ssh' {
+Invoke-Step $StepLog 'ssh' {
   $sshDir = Join-Path $H '.ssh'
   if (-not (Test-Path -LiteralPath $sshDir)) { $null = New-Item -ItemType Directory -Path $sshDir }
   $conf = Join-Path $DOTFILES 'ssh\config'
@@ -135,13 +139,13 @@ Invoke-Step 'ssh' {
   $ssh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
   if (-not (Test-Path -LiteralPath $ssh)) { $ssh = 'ssh' }
   & $ssh -G example.invalid *> $null
-  if ($LASTEXITCODE) { Write-Host 'warning: ssh -G が失敗する（~/.ssh/config を確かめる）' }
+  if ($LASTEXITCODE) { throw 'ssh -G が失敗する（~/.ssh/config を確かめる）' }
 }
 
 # 4. ユーザー環境変数（HKCU\Environment）。HOME と XDG_CONFIG_HOME は入れない（Windows の道具が既定の場所を外れるため）
 # ユーザーの Path の先頭に置くもの（この順）
 $UserPathDirs = @('%USERPROFILE%\.local\share\fnm\aliases\default', '%USERPROFILE%\.local\bin', '%LOCALAPPDATA%\mise\shims', (ConvertTo-EnvRelativePath (Join-Path $DOTFILES 'windows\bin')))
-Invoke-Step 'ユーザー環境変数' {
+Invoke-Step $StepLog 'ユーザー環境変数' {
   $null = Set-UserEnv EDITOR nvim
   $null = Set-UserEnv VISUAL nvim
   $null = Set-UserEnv FNM_DIR '%USERPROFILE%\.local\share\fnm'
@@ -157,7 +161,7 @@ Invoke-Step 'ユーザー環境変数' {
 $mise = Join-Path $H '.local\bin\mise.exe'
 
 # 5. mise 本体（~/.local/bin/mise.exe）と道具。インストーラは版を固定すると配布物をその release の SHASUMS256.txt で検証する
-Invoke-Step 'mise' {
+Invoke-Step $StepLog 'mise' {
   if (-not (Test-Path -LiteralPath $mise)) {
     $s = Get-RemoteScript 'https://mise.run/powershell'
     $env:MISE_VERSION = $MiseVersion
@@ -173,7 +177,7 @@ if (Test-Path -LiteralPath $mise) {
     $tok = gh auth token 2>$null
     if (-not $LASTEXITCODE -and $tok) { $env:GITHUB_TOKEN = "$tok".Trim() }
   }
-  Invoke-Step 'mise install' {
+  Invoke-Step $StepLog 'mise install' {
     Push-Location $H
     try {
       & $mise install --yes
@@ -182,7 +186,7 @@ if (Test-Path -LiteralPath $mise) {
   }
 
   # 6. Node は fnm で最新の LTS を入れて既定にする（再実行のたびに最新の LTS に追随する）
-  Invoke-Step 'fnm' {
+  Invoke-Step $StepLog 'fnm' {
     Push-Location $H
     try {
       & $mise exec -- fnm install --lts
@@ -194,10 +198,10 @@ if (Test-Path -LiteralPath $mise) {
 }
 
 # 7. Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）
-Invoke-Step 'Codex の設定' {
+Invoke-Step $StepLog 'Codex の設定' {
   $null = New-CodexConfig -Template (Join-Path $DOTFILES 'config\codex\config.toml.tmpl') -ConfigPath (Join-Path $H '.codex\config.toml') -HomeDir $H
 }
-Invoke-Step 'Codex' {
+Invoke-Step $StepLog 'Codex' {
   # 公式のインストーラー。入っていれば何もしない。失敗しても止めず、Codex の後続だけ飛ばす
   if (-not (Test-Command codex)) {
     try {
@@ -205,19 +209,19 @@ Invoke-Step 'Codex' {
       $env:CODEX_NON_INTERACTIVE = '1'
       try { & ([scriptblock]::Create($s)) } finally { Remove-Item env:CODEX_NON_INTERACTIVE -ErrorAction SilentlyContinue }
     } catch {
-      Write-Host "warning: Codex を入れられなかった（続行。install.ps1 の再実行で入れ直す）: $($_.Exception.Message)"
+      Add-StepFailure $StepLog 'Codex' "入れられなかった（install.ps1 の再実行で入れ直す）: $($_.Exception.Message)"
     }
     # Codex のインストーラーはユーザーの Path を展開した形の REG_SZ で書き戻すので、手順 4 の項目を %...% の形と REG_EXPAND_SZ に戻す
-    try { $null = Add-UserPath @UserPathDirs } catch { Write-Host "warning: ユーザーの Path を戻せなかった（続行）: $($_.Exception.Message)" }
+    try { $null = Add-UserPath @UserPathDirs } catch { Add-StepFailure $StepLog 'Codex' "ユーザーの Path を戻せなかった: $($_.Exception.Message)" }
     Update-ProcessPath
   }
   if (Test-Command codex) {
     # ponytail は宣言だけでは入らない（ログインは要らない）
     codex plugin marketplace add DietrichGebert/ponytail *> $null
     if (-not $LASTEXITCODE) { codex plugin add ponytail@ponytail *> $null }
-    if ($LASTEXITCODE) { Write-Host 'warning: Codex に ponytail を入れられなかった（続行）' }
+    if ($LASTEXITCODE) { Add-StepFailure $StepLog 'Codex' 'ponytail を入れられなかった' }
   } else {
-    Write-Host 'warning: codex が見つからない（続行。install.ps1 の再実行で入れ直す）'
+    Add-StepFailure $StepLog 'Codex' 'codex が見つからない（install.ps1 の再実行で入れ直す）'
   }
   # tinymemory の Codex の hook と skill（Windows 版が出るまでは入っていないので飛ばす）。tinymemory は HOME を見る
   if (Test-Command tinymemory) {
@@ -225,30 +229,30 @@ Invoke-Step 'Codex' {
     $env:HOME = $H
     try {
       tinymemory init codex *> $null
-      if ($LASTEXITCODE) { Write-Host 'warning: tinymemory init codex が失敗した（続行）' }
+      if ($LASTEXITCODE) { Add-StepFailure $StepLog 'Codex' 'tinymemory init codex が失敗した' }
     } finally { $env:HOME = $oldHome }
   }
 }
 
 # 8. Neovim プラグインを lazy-lock.json の版に揃える（mise exec で tree-sitter も PATH に載せる）
-Invoke-Step 'nvim' {
-  if (-not (Test-Path -LiteralPath $mise)) { return }
+Invoke-Step $StepLog 'nvim' {
+  if (-not (Test-Path -LiteralPath $mise)) { throw 'mise が無い（mise の手順を直して再実行する）' }
   & $mise which nvim *> $null
-  if ($LASTEXITCODE) { return }
+  if ($LASTEXITCODE) { throw 'mise の nvim が無い（mise install を直して再実行する）' }
   & $mise exec -- nvim --headless '+Lazy! restore' +qa *> $null
-  if ($LASTEXITCODE) { Write-Host 'warning: nvim プラグインの restore に失敗' }
+  if ($LASTEXITCODE) { throw 'プラグインの restore に失敗した' }
 }
 
 # 9. PSFzf（fzf の Ctrl+t・Ctrl+r・Alt+c を PSReadLine に付ける）
-Invoke-Step 'PSFzf' {
+Invoke-Step $StepLog 'PSFzf' {
   if (Get-Module -ListAvailable PSFzf) { return }
   try { Install-PSResource -Name PSFzf -Scope CurrentUser -TrustRepository -ErrorAction Stop }
   catch { Install-Module PSFzf -Scope CurrentUser -Force -ErrorAction Stop }
 }
 
 # 10. geoview（bin/geoview を Windows で動かす uv の tool。~/.local/bin/geoview.exe）
-Invoke-Step 'geoview' {
-  if (-not (Test-Command uv)) { return }
+Invoke-Step $StepLog 'geoview' {
+  if (-not (Test-Command uv)) { throw 'uv が無い（mise install を直して再実行する）' }
   Push-Location $H
   try {
     uv tool install --force (Join-Path $DOTFILES 'windows\geoview')
@@ -257,23 +261,10 @@ Invoke-Step 'geoview' {
 }
 
 # 11. Windows Terminal: 配色・フォント・余白・履歴を profiles.defaults に、既定のプロファイルを PowerShell 7 にする
-Invoke-Step 'Windows Terminal' {
+Invoke-Step $StepLog 'Windows Terminal' {
   $wt = Join-Path $LocalAppData 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
-  if (Test-Path -LiteralPath $wt) { $null = Update-TerminalSettings $wt }
-  else { Write-Host "warning: Windows Terminal の settings.json が無い（一度起動してから再実行する）: $wt" }
+  if (-not (Test-Path -LiteralPath $wt)) { throw "settings.json が無い（Windows Terminal を一度起動してから再実行する）: $wt" }
+  $null = Update-TerminalSettings $wt
 }
 
-Write-Host 'done.'
-Write-Host @'
-残りの手順:
-- 環境変数の変更は新しいターミナルから効く（Claude desktop は再起動する）
-- codex login
-- Claude Code のプラグイン（config/claude/README.md）:
-    claude plugin marketplace add anthropics/claude-plugins-official
-    claude plugin install superpowers@claude-plugins-official
-    claude plugin marketplace add arkrtm/tinymemory
-    claude plugin install tinymemory@tinymemory
-    claude plugin marketplace add DietrichGebert/ponytail
-    claude plugin install ponytail@ponytail
-'@
-if (-not (Test-Command herdr)) { Write-Host '- herdr: winget install Herdr.Herdr' }
+exit (Complete-Install $StepLog)

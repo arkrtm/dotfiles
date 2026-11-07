@@ -52,9 +52,9 @@ pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。
 
 ## install.ps1 がやること（順に）
 
-1. シンボリックリンクを作れるか試す（作れなければ開発者モードを案内して終了コード 1）
-2. 上のリンクを作る（同じ先を指すリンクなら何もしない。ほかに何かあれば `*.bak.<日時>` に退避）。`~/.claude/.ponytail-band` が無ければ `off` を書く。`-LinksOnly` はここで終わる
-3. 以降は失敗しても `warning:` を出して続ける
+1. シンボリックリンクを作れるか試す（作れなければ開発者モードを案内して終了コード 1。その場で止まるのはこれだけ）
+2. 上のリンクを作る（同じ先を指すリンクなら何もしない。ほかに何かあれば `*.bak.<日時>` に退避）。`~/.claude/.ponytail-band` が無ければ `off` を書く。`-LinksOnly` はここで終わる（失敗があれば 3 と同じく一覧と終了コード 1）
+3. 2 からは失敗しても `warning:` を出して続け、最後に失敗した手順の名前と理由の一覧を出して終了コード 1 で終わる（`done.` は出さない）
 4. git: このクローンの `core.autocrlf=input`。CRLF で取り出された LF のファイル（`.cmd` は除く）があり、作業ツリーに変更が無ければ LF で取り出し直す
 5. `~/.gitconfig` が無ければ空で作る（`git config --global` の書き込み先。中身は消さない）
 6. ssh: `ssh/config` に自分・SYSTEM・Administrators 以外が書き込めれば icacls で絞る。`ssh -G` を確かめる
@@ -62,11 +62,11 @@ pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。
 8. mise（`~/.local/bin/mise.exe`、install.sh と同じ版）と `mise install`（ホームで。`gh auth token` をこのプロセスだけの `GITHUB_TOKEN` にする）
 9. fnm で最新の LTS の Node を入れて既定にする
 10. Codex: テンプレートから `~/.codex/config.toml` を作る（`@HOME@` は `/` 区切りのホーム。既存の `[hooks.state…]`・`[projects.…]`・`[tui…]`・`[windows…]` を引き継ぐ。違うときだけ退避して書く）。codex が無ければ公式のインストーラーで入れ、ユーザーの Path を手順 7 の形に戻す。ponytail の marketplace と plugin を入れる。tinymemory があれば `tinymemory init codex`
-11. Neovim のプラグインを `lazy-lock.json` に揃える（`Lazy! restore`）
+11. Neovim のプラグインを `lazy-lock.json` に揃える（`Lazy! restore`。mise の nvim が無ければ失敗）
 12. PSFzf（PSGallery）
-13. geoview（uv があれば `uv tool install`）
-14. Windows Terminal の settings.json: profiles.defaults に配色・Hack Nerd Font Mono 12・余白・履歴 50000、PowerShell 7 のプロファイルがあれば既定にする（変わるときだけ退避して書く。ほかのキーとプロファイルはそのまま）
-15. `done.` と残りの手順を出す
+13. geoview（`uv tool install`。uv が無ければ失敗）
+14. Windows Terminal の settings.json: profiles.defaults に配色・Hack Nerd Font Mono 12・余白・履歴 50000、PowerShell 7 のプロファイルを既定にする（変わるときだけ退避して書く。ほかのキーとプロファイルはそのまま）。settings.json が無い、または PowerShell 7 のプロファイルが無ければ失敗（ほかは書く。Windows Terminal を開き直してから再実行）
+15. 全部成功なら `done.` と README の残りの手順の案内を出して終了コード 0
 
 ## 手で入れるもの
 
@@ -104,7 +104,7 @@ Pester 5 が要る（無ければ `Install-PSResource Pester -Scope CurrentUser`
 
 - `syntax.Tests.ps1`: .ps1 の構文・BOM・`#Requires -Version 7.4`（`Select-Object -CaseInsensitive` が 7.4 から）、JSON、文字コードと改行、シェルスクリプトの構文
 - `policy.Tests.ps1`: リポジトリの禁止の文字列・ファイル名、既存の追跡しているファイルを変えていない
-- `install.Tests.ps1`: リンク・退避・2 回目は何もしない・worktree の拒否・band、install-lib.ps1 の関数
+- `install.Tests.ps1`: リンク・退避・2 回目は何もしない・worktree の拒否・band、install-lib.ps1 の関数（手順の失敗の一覧と終了コードを含む）、install.ps1 の手順の書き方（構文木）
 - `claude.Tests.ps1`: settings.json と共通の設定の違い、statusline.ps1 の出力とキャッシュ
 - `posix.Tests.ps1`: `hook env`、jq の shim、commit-msg、integrate-hook、`/clear`、`windows/bin` の shim
 - `gitbash.Tests.ps1`: gitbash-lib.ps1（偽の Git のルートを PATH に置いて、`git.exe` の 4 つの置き場所と標準の場所の順を確かめる）、`windows/bin` のラッパー（偽の `bash.exe` を PATH の `git.exe` の隣に置く。空白を含むパスの dotfiles と、Program Files の外の Git への junction）、settings.json のフックとステータスラインを HOME に空白を含めて `bash -c` で動かす

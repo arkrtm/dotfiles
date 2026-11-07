@@ -1,7 +1,8 @@
 ﻿#Requires -Version 7.4
 # windows/install.ps1 を一時ホームに -LinksOnly で実行する（本物のホーム・レジストリには触らない）: リンク表のどの行もリポジトリのファイルへのシンボリックリンクになる、
 # 前からあるものは *.bak.（14 桁の時刻） に退避する、2 回目は何も出さない、worktree からは DOTFILES_ALLOW_WORKTREE なしでは拒む、ponytail の band を書く。
-# install-lib.ps1 の Invoke-Step・New-CodexConfig・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、Add-UserPath をレジストリの代わりのもので確かめる
+# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、
+# Add-UserPath をレジストリの代わりのもので確かめる。install.ps1 の手順の書き方は構文木で見る
 
 BeforeDiscovery {
   # リンク表（spec の表。-HomeDir が本物のホームと違うとき AppData・Documents はホームの下）
@@ -156,6 +157,29 @@ Describe 'install.ps1 -LinksOnly（2 回目）' {
   }
 }
 
+Describe 'install.ps1 -LinksOnly（リンクを置けないとき）' {
+  BeforeAll {
+    $Bad = Join-Path $Tmp 'badhome'
+    $null = New-Item -ItemType Directory -Path (Join-Path $Bad '.config') -Force
+    [IO.File]::WriteAllText((Join-Path $Bad '.config\git'), "not a directory`n")
+    $R = Invoke-Install -HomeDir $Bad
+  }
+  It '失敗したリンクを名前と理由の一覧に出し、done. を出さず終了コード 1' {
+    $R.ExitCode | Should -Be 1
+    $lines = @($R.Out -split "`r?`n")
+    $lines | Should -Contain '失敗した手順（理由を直して install.ps1 を再実行する）:'
+    foreach ($d in 'config', 'ignore', 'hooks-nosign') {
+      @($lines | Where-Object { $_.StartsWith("- リンク $(Join-Path $Bad ".config\git\$d"): ") }).Count | Should -Be 1
+    }
+    $lines | Should -Not -Contain 'done.'
+  }
+  It '失敗の後も続け、ほかのリンクと band を作る' {
+    (Get-Item -LiteralPath (Join-Path $Bad '.config\starship.toml') -Force).LinkType | Should -Be 'SymbolicLink'
+    (Get-Item -LiteralPath (Join-Path $Bad 'Documents\PowerShell\profile.ps1') -Force).LinkType | Should -Be 'SymbolicLink'
+    Test-Path -LiteralPath (Join-Path $Bad '.claude\.ponytail-band') | Should -BeTrue
+  }
+}
+
 Describe 'worktree からの実行' {
   BeforeAll {
     # .git がファイルの偽のチェックアウトに install.ps1 と、それが読み込む install-lib.ps1・gitbash-lib.ps1 だけを写す
@@ -194,14 +218,65 @@ Describe 'worktree からの実行' {
   }
 }
 
-Describe 'Invoke-Step' {
+Describe 'Invoke-Step・Add-StepFailure・Complete-Install' {
   BeforeAll { . (Join-Path $Root 'windows\install-lib.ps1') }
-  It '本体の例外を warning: の 1 行にして、外に出さない' {
-    $out = @(Invoke-Step 'a' { throw 'x' } 6>&1)
+  BeforeEach {
+    $log = [Collections.Generic.List[object]]::new()
+    $ran = [Collections.Generic.List[string]]::new()
+  }
+  It '失敗した手順を名前と理由で記録し、warning: を出し、次の手順へ進む' {
+    $out = @(Invoke-Step $log 'a' { throw 'x' } 6>&1)
+    Invoke-Step $log 'b' { $ran.Add('b') }
     "$out" | Should -BeExactly 'warning: a: x（続行）'
+    $log.Count | Should -Be 1
+    $log[0].Name | Should -BeExactly 'a'
+    $log[0].Reason | Should -BeExactly 'x'
+    $ran | Should -Be @('b')
+  }
+  It '手順の中の Add-StepFailure は記録して、その手順を続ける' {
+    Invoke-Step $log 'c' { Add-StepFailure $log 'c' 'y'; $ran.Add('c の続き') } 6>$null
+    $log.Count | Should -Be 1
+    $log[0].Reason | Should -BeExactly 'y'
+    $ran | Should -Be @('c の続き')
   }
   It '本体の出力はそのまま流す' {
-    Invoke-Step 'b' { 'y' } | Should -BeExactly 'y'
+    Invoke-Step $log 'd' { 'z' } | Should -BeExactly 'z'
+    $log.Count | Should -Be 0
+  }
+  It '失敗があれば一覧を出し、done. を出さず 1 を返す' {
+    Add-StepFailure $log 'a' 'x' 6>$null
+    Add-StepFailure $log 'c' 'y' 6>$null
+    Complete-Install $log 6>$null | Should -Be 1
+    $text = @(Complete-Install $log 6>&1 | Where-Object { $_ -is [Management.Automation.InformationRecord] }) -join "`n"
+    $text | Should -BeExactly "失敗した手順（理由を直して install.ps1 を再実行する）:`n- a: x`n- c: y"
+  }
+  It '失敗が無ければ done. と残りの手順の案内を出して 0 を返す' {
+    Complete-Install $log 6>$null | Should -Be 0
+    $text = @(Complete-Install $log 6>&1 | Where-Object { $_ -is [Management.Automation.InformationRecord] }) -join "`n"
+    $text | Should -BeExactly "done.`n残りの手順: windows/README.md の「新しい PC での導入」の install.ps1 より後"
+  }
+}
+
+Describe 'install.ps1 の手順の書き方（構文木）' {
+  BeforeAll {
+    $Ast = [Management.Automation.Language.Parser]::ParseFile($Install, [ref]$null, [ref]$null)
+    $Steps = @($Ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-Step' }, $true))
+  }
+  It 'どの Invoke-Step も $StepLog に記録する' {
+    $Steps | Should -Not -BeNullOrEmpty
+    @($Steps | ForEach-Object { $_.CommandElements[1].Extent.Text }) | Should -Be (@('$StepLog') * $Steps.Count)
+  }
+  It 'warning: を直接 Write-Host しない（Add-StepFailure か throw にする。一覧に出すため）' {
+    @($Ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Write-Host' -and $n.CommandElements.Count -gt 1 -and $n.CommandElements[1].Extent.Text -match '^[''"]warning:' }, $true)) | Should -BeNullOrEmpty
+  }
+  It '<_> の手順は前提が無いとき黙って return しない' -ForEach @('nvim', 'geoview') {
+    $name = $_
+    $step = @($Steps | Where-Object { $_.CommandElements[2].Extent.Text -eq "'$name'" })
+    $step.Count | Should -Be 1
+    @($step[0].CommandElements[3].FindAll({ param($n) $n -is [Management.Automation.Language.ReturnStatementAst] }, $true)) | Should -BeNullOrEmpty
+  }
+  It '最後は Complete-Install の終了コードで終わる' {
+    $Ast.EndBlock.Statements[-1].Extent.Text | Should -BeExactly 'exit (Complete-Install $StepLog)'
   }
 }
 
@@ -436,10 +511,25 @@ Describe 'Update-TerminalSettings' {
     [IO.File]::ReadAllBytes($S) | Should -Be $before
     (Get-Baks $S).Count | Should -Be 1
   }
-  It 'PowerShell 7 のプロファイルが無ければ defaultProfile を変えない' {
+  It 'PowerShell 7 のプロファイルが無ければ、ほかの設定を書いてから失敗する（defaultProfile は変えない）' {
     $p = New-Settings 'nopwsh' ($Sample -replace '\{574E775E-4F2A-5B96-AC1E-A2962A402336\}', '{00000000-0000-0000-0000-000000000001}')
+    { Update-TerminalSettings $p 6>$null } | Should -Throw '*PowerShell 7 のプロファイルが Windows Terminal に無い*'
+    $j = [IO.File]::ReadAllText($p, $Utf8) | ConvertFrom-Json
+    $j.profiles.defaults.colorScheme | Should -BeExactly 'Atom One Dark'
+    $j.defaultProfile | Should -BeExactly '{61c54bbd-c2c6-5271-96e7-009a87ff44bf}'
+    (Get-Baks $p).Count | Should -Be 1
+    $before = [IO.File]::ReadAllBytes($p)
+    { Update-TerminalSettings $p 6>$null } | Should -Throw
+    [IO.File]::ReadAllBytes($p) | Should -Be $before -Because '2 回目は書かない'
+    (Get-Baks $p).Count | Should -Be 1
+  }
+  It 'Windows Terminal を開き直してプロファイルができた後の再実行では、既定にして失敗しない' {
+    $p = Join-Path $TestDrive 'nopwsh\settings.json'
+    $j = [IO.File]::ReadAllText($p, $Utf8) | ConvertFrom-Json -Depth 50
+    $j.profiles.list += [pscustomobject]@{ guid = $Pwsh7; name = 'PowerShell'; source = 'Windows.Terminal.PowershellCore' }
+    [IO.File]::WriteAllText($p, (ConvertTo-Json $j -Depth 50), $Utf8)
     Update-TerminalSettings $p 6>$null | Should -BeTrue
-    ([IO.File]::ReadAllText($p, $Utf8) | ConvertFrom-Json).defaultProfile | Should -BeExactly '{61c54bbd-c2c6-5271-96e7-009a87ff44bf}'
+    ([IO.File]::ReadAllText($p, $Utf8) | ConvertFrom-Json).defaultProfile | Should -Be $Pwsh7
   }
   It '既に揃っている設定（コメント付き）は 1 バイトも変えず、退避もしない' {
     $done = @'
