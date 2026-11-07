@@ -221,8 +221,8 @@ function ConvertTo-TomlKeyPath {
   param([Parameter(Mandatory)][string]$Text)
   $parts = foreach ($m in [regex]::Matches($Text, '[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*''')) {
     $v = $m.Value
-    if ($v.StartsWith('"')) { ConvertFrom-TomlEscape $v.Substring(1, $v.Length - 2) }
-    elseif ($v.StartsWith("'")) { $v.Substring(1, $v.Length - 2) }
+    if ($v[0] -ceq [char]'"') { ConvertFrom-TomlEscape $v.Substring(1, $v.Length - 2) }
+    elseif ($v[0] -ceq [char]"'") { $v.Substring(1, $v.Length - 2) }
     else { $v }
   }
   @($parts) -join [char]0
@@ -255,7 +255,7 @@ function Step-TomlValue {
       continue
     }
     if ($c -eq "'") {
-      $j = $Text.IndexOf("'", $i + 1)
+      $j = $Text.IndexOf([char]39, $i + 1)
       $i = if ($j -lt 0) { $n } else { $j + 1 }
       continue
     }
@@ -313,7 +313,7 @@ function Assert-TomlUnique {
   $mark = [string][char]1
   $show = { param($p) [regex]::Replace($p.Replace($nul, '.'), "$mark\d+", '') }
   # 配列の表（[[…]]）は要素ごとに別の範囲。名前の途中までの各形に、そこまでにある配列の表の何番目の要素かを付け、要素をまたいだ名前を別物にする
-  $arrayCount = @{}
+  $arrayCount = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
   $qualify = {
     param($name)
     $acc = ''
@@ -334,10 +334,11 @@ function Assert-TomlUnique {
   $allNames = [Collections.Generic.List[object]]::new()
   $dotted = [Collections.Generic.List[object]]::new()
   foreach ($t in (Split-TomlTable $Line)) {
-    if ($t.IsArray) { $arrayCount[$t.Name] = 1 + [int]$arrayCount[$t.Name] }
-    $q = if ($t.Name -ne '') { & $qualify $t.Name } else { @('') }
+    if ($t.IsArray) { $arrayCount[$t.Name] = 1 + $(if ($arrayCount.ContainsKey($t.Name)) { $arrayCount[$t.Name] } else { 0 }) }
+    # 名前の比較は Length で見る（-ne '' は U+00AD のような無視される文字だけの名前を空とみなす）
+    $q = if ($t.Name.Length -gt 0) { & $qualify $t.Name } else { @('') }
     $qName = $q[$q.Count - 1]
-    if ($t.Name -ne '') { $allNames.Add($q) }
+    if ($t.Name.Length -gt 0) { $allNames.Add($q) }
     if ($t.IsArray) {
       $local = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
       foreach ($e in $t.Entries) {
@@ -345,10 +346,10 @@ function Assert-TomlUnique {
       }
       continue
     }
-    if ($t.Name -ne '' -and -not $tableNames.Add($qName)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $qName)" }
+    if ($t.Name.Length -gt 0 -and -not $tableNames.Add($qName)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $qName)" }
     foreach ($e in $t.Entries) {
       if ($null -eq $e.Key) { continue }
-      $path = if ($t.Name -eq '') { $e.Key } else { $qName + $nul + $e.Key }
+      $path = if ($t.Name.Length -eq 0) { $e.Key } else { $qName + $nul + $e.Key }
       if (-not $paths.Add($path)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $path)" }
       if ($e.Key.Contains($nul)) { $dotted.Add(@{ Table = $qName; Key = $e.Key }) }
     }
@@ -402,15 +403,15 @@ function New-CodexConfig {
       $ti = -1
       if (-not $ot.IsArray) {
         for ($k = 0; $k -lt $tmplTables.Count; $k++) {
-          if (-not $tmplTables[$k].IsArray -and $tmplTables[$k].Name -ceq $ot.Name) { $ti = $k; break }
+          if (-not $tmplTables[$k].IsArray -and [string]::Equals($tmplTables[$k].Name, $ot.Name, [StringComparison]::Ordinal)) { $ti = $k; break }
         }
       }
       if ($ti -lt 0) { $kept.Add($ot); continue }
       $tt = $tmplTables[$ti]
-      $keys = @($tt.Entries | Where-Object { $null -ne $_.Key } | ForEach-Object { $_.Key })
+      $keys = [Collections.Generic.HashSet[string]]::new([string[]]@($tt.Entries | Where-Object { $null -ne $_.Key } | ForEach-Object { $_.Key }), [StringComparer]::Ordinal)
       $idx = if ($tt.Entries.Count) { $tt.Entries[$tt.Entries.Count - 1].Last } else { $tt.HeaderIndex }
       foreach ($e in $ot.Entries) {
-        if ($null -eq $e.Key -or $e.Key -cnotin $keys) { $after[$idx].AddRange([string[]]$e.Lines) }
+        if ($null -eq $e.Key -or -not $keys.Contains($e.Key)) { $after[$idx].AddRange([string[]]$e.Lines) }
       }
     }
   }

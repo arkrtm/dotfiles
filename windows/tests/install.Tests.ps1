@@ -458,6 +458,25 @@ lit = '''
       "`n[[a]]`nn = 1`n" +
       "`n[[a]]`nn = 2`n"
     function Get-Baks([string]$Conf) { @(Get-ChildItem -LiteralPath (Split-Path -Parent $Conf) -Force | Where-Object { $_.Name -like "$(Split-Path -Leaf $Conf).bak.*" }) }
+    # 既存の設定 $Old をテンプレートと結合した結果の文字列を返す（2 回目は書き換えないことも確かめる）
+    function Merge-Config([string]$Old) {
+      $conf = Join-Path $TestDrive ('merge\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+      $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+      [IO.File]::WriteAllText($conf, $Old, $Utf8)
+      New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+      $text = [IO.File]::ReadAllText($conf, $Utf8)
+      New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+      $text
+    }
+    # 結合が TOML で表せない $Old は、書かず退避もせず失敗する
+    function Assert-Refused([string]$Old, [string]$Pattern = '*config.toml*') {
+      $conf = Join-Path $TestDrive ('refuse\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+      $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+      [IO.File]::WriteAllText($conf, $Old, $Utf8)
+      { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw $Pattern
+      [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
+      (Get-Baks $conf).Count | Should -Be 0
+    }
   }
   It '無ければ親のディレクトリごと作り、@HOME@ を / 区切りのホームにする' {
     $conf = Join-Path $TestDrive 'new\.codex\config.toml'
@@ -649,6 +668,16 @@ lit = '''
     New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
     [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($Effort, $Effort + $Notify + "`n") + "`n[desktop]`nx = 1`n")
     New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+  }
+  It '比較で無視される文字（<Case>）を含むだけで、テンプレートと別のキー・表は、別のものとして残す' -ForEach @(
+    @{ Case = 'U+00AD のキー'; Old = '"mod\u00adel" = "x"' + "`n"; Expect = { $Base.Replace($Effort, $Effort + '"mod\u00adel" = "x"' + "`n") } }
+    @{ Case = '生の U+00AD のキー'; Old = "`"mod$([char]0xAD)el`" = `"x`"`n"; Expect = { $Base.Replace($Effort, $Effort + "`"mod$([char]0xAD)el`" = `"x`"`n") } }
+    @{ Case = '生の U+200B のキー'; Old = "`"mod$([char]0x200B)el`" = `"x`"`n"; Expect = { $Base.Replace($Effort, $Effort + "`"mod$([char]0x200B)el`" = `"x`"`n") } }
+    @{ Case = 'U+00AD の表'; Old = '[mcp_servers."lin\u00adear"]' + "`nurl = `"keep`"`n"; Expect = { $Base + "`n" + '[mcp_servers."lin\u00adear"]' + "`nurl = `"keep`"`n" } }
+    @{ Case = '生の U+200B の表'; Old = "[mcp_servers.`"lin$([char]0x200B)ear`"]`nurl = `"keep`"`n"; Expect = { $Base + "`n[mcp_servers.`"lin$([char]0x200B)ear`"]`nurl = `"keep`"`n" } }
+    @{ Case = 'U+00AD だけの名前の表'; Old = '["\u00ad"]' + "`nx = 1`n"; Expect = { $Base + "`n" + '["\u00ad"]' + "`nx = 1`n" } }
+  ) {
+    Merge-Config $Old | Should -BeExactly (& $Expect)
   }
 }
 
