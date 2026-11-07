@@ -7,6 +7,10 @@
 	rebase = true
 [rebase]
 	autoStash = true
+	# fixup!/squash! のコミットを自動で寄せる（対話の rebase -i のときだけ）
+	autoSquash = true
+	# 積んだブランチも一緒に動かす（git 2.38 から。古い git は知らないキーとして飛ばす）
+	updateRefs = true
 [push]
 	autoSetupRemote = true
 [fetch]
@@ -14,7 +18,13 @@
 [rerere]
 	enabled = true
 [merge]
+	# zdiff3 にしない: git 2.35 より古い git は merge・rebase などで止まり、~/.gitconfig でも上書きできない
 	conflictStyle = diff3
+[diff]
+	algorithm = histogram
+[transfer]
+	# 受け取るオブジェクトを検査する
+	fsckObjects = true
 # push を受け取る bare 側で効く（この端末の bare は新旧とも、早送りでない push と削除を拒む）
 [receive]
 	denyNonFastForwards = true

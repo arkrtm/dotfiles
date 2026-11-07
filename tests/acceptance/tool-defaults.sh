@@ -35,5 +35,13 @@ chk "config.mux の無い端末（Windows）は多重化せずソケットのパ
 chk "install.sh が config.mux をリンクする" grep -q '^ssh/config\.mux  *\.ssh/config\.mux$' "$ROOT/install.sh"
 chk "install.sh が config.mux を 600 にする" grep -q '^chmod 600 .*ssh/config\.mux' "$ROOT/install.sh"
 
+# git
+G="$ROOT/config/git/config"
+for kv in merge.conflictStyle=diff3 diff.algorithm=histogram rebase.autoSquash=true rebase.updateRefs=true transfer.fsckObjects=true rebase.autoStash=true; do
+  chk "git: ${kv%%=*} = ${kv#*=}" test "$(git config --file "$G" --get "${kv%%=*}" || true)" = "${kv#*=}"
+done
+R="$ROOT/config/git/README.md"
+chk "config/git/README.md の業務の例に SSH 署名がある" sh -c 'grep -q "format = ssh" "$1" && grep -q "gpgSign = true" "$1" && grep -q signingKey "$1"' sh "$R"
+
 [ "$fail" = 0 ] && echo "acceptance tool-defaults: ok"
 [ "$fail" = 0 ]
