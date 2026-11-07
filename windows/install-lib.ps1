@@ -432,10 +432,33 @@ function Assert-TomlUnique {
   }
 }
 
+# TOML の意味（表の名前・キー・値の組の集まり）を文字列の集合にする。並び・コメント・空行・書き方（引用符と空白）の違いは無視する。
+# 配列の表（[[…]]）は何番目の要素かを名前に付ける（要素の順は意味）。その下の表は、直近の要素に属するものとして同じく番号を付ける
+function Get-TomlMeaning {
+  param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
+  $nul = [string][char]0
+  $count = @{}
+  $set = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($t in (Split-TomlTable $Line)) {
+    if ($t.IsArray) { $count[$t.Name] = 1 + $(if ($count.ContainsKey($t.Name)) { $count[$t.Name] } else { 0 }) }
+    $raw = ''
+    $name = @(foreach ($p in $(if ($t.Name.Length) { $t.Name.Split([char]0) })) {
+        $raw = if ($raw.Length) { $raw + $nul + $p } else { $p }
+        if ($count.ContainsKey($raw)) { "$p#$($count[$raw])" } else { $p }
+      }) -join $nul
+    $null = $set.Add("T$nul$name")
+    foreach ($e in $t.Entries) {
+      $text = if ($null -eq $e.Key) { ($e.Lines -join "`n").Trim() } else { ($e.Value + (($e.Lines | Select-Object -Skip 1) -join "`n")).Trim() }
+      $null = $set.Add("E$nul$name$nul$($e.Key)$nul$text")
+    }
+  }
+  , $set
+}
+
 # Codex の config.toml をテンプレートから作る（@HOME@ は / 区切りのホーム。\ は TOML の文字列でエスケープになる）。
 # テンプレートにあるキー（トップレベルと各表）はテンプレートの値にし、ほかのキーと表（Codex デスクトップが書く notify・[desktop]・プラグインなど）は値ごと引き継ぐ。
 # ドット付きのキーで書いたテンプレートの表の項目（mcp_servers.linear.x = 1 など）はその表に結合する。install.sh は引き継ぐ表を限る。値の外のコメントと空行は引き継がない。キーと表の名前は引用符と空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。テンプレートのキー（値）を既存がインライン表や表の配列で定義しているときも、表と値がぶつかって表せないので書かずに失敗する。
-# 中身が違うときだけ退避して置き換える。変わったら $true
+# 意味（表の名前・キー・値）が違うときだけ退避して置き換える。変わったら $true
 function New-CodexConfig {
   param(
     [Parameter(Mandatory)][string]$Template,
@@ -520,6 +543,8 @@ function New-CodexConfig {
   if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     $oldBytes = [IO.File]::ReadAllBytes($ConfigPath)
     if ([Linq.Enumerable]::SequenceEqual([byte[]]$oldBytes, [byte[]]$newBytes)) { return $false }
+    # Codex の CLI は表を自分の順で書き直す。意味が同じで並びだけ違うなら書かない（退避が増えるため）
+    if ((Get-TomlMeaning $oldLines).SetEquals((Get-TomlMeaning $out.ToArray()))) { return $false }
   }
   $dir = Split-Path -Parent $ConfigPath
   if (-not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }

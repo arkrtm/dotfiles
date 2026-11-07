@@ -529,6 +529,27 @@ lit = '''
     [IO.File]::ReadAllBytes($conf) | Should -Be $before
     (Get-Baks $conf).Count | Should -Be 1
   }
+  It 'Codex の CLI が表の並びだけ変えた設定（テンプレートの表が引き継ぐ表の後ろ）では書かず、退避もしない' {
+    $ponytail = "[marketplaces.ponytail]`nsource_type = `"git`"`nsource = `"https://github.com/DietrichGebert/ponytail.git`"`n"
+    $conf = Join-Path $TestDrive 'reordered\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $text = $Base.Replace($ponytail + "`n", '') + "`n[plugins.`"browser@openai-bundled`"]`nenabled = true`n`n" + $ponytail
+    [IO.File]::WriteAllText($conf, $text, $Utf8)
+    $before = [IO.File]::ReadAllBytes($conf)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+    [IO.File]::ReadAllBytes($conf) | Should -Be $before
+    (Get-Baks $conf).Count | Should -Be 0
+  }
+  It '並びが違うだけでなくテンプレートの値と違う値が 1 つあれば、直して退避する' {
+    $ponytail = "[marketplaces.ponytail]`nsource_type = `"git`"`nsource = `"https://github.com/DietrichGebert/ponytail.git`"`n"
+    $conf = Join-Path $TestDrive 'reordered-diff\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $text = $Base.Replace($ponytail + "`n", '').Replace('"xhigh"', '"high"') + "`n[plugins.`"browser@openai-bundled`"]`nenabled = true`n`n" + $ponytail
+    [IO.File]::WriteAllText($conf, $text, $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base + "`n[plugins.`"browser@openai-bundled`"]`nenabled = true`n")
+    (Get-Baks $conf).Count | Should -Be 1
+  }
   It 'テンプレートの表に足されたキーをその表に、テンプレートの表の子の表をテンプレートの後ろに残す' {
     $conf = Join-Path $TestDrive 'extra\config.toml'
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
