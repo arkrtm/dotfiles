@@ -143,6 +143,12 @@ function Update-ProcessPath {
   $env:Path = (@($env:Path -split ';') + @($reg) | Where-Object { $_ } | Select-Object -Unique -CaseInsensitive) -join ';'
 }
 
+# ここから先は失敗しても warning を出して続ける（install.sh で致命でない所に合わせる）
+function Invoke-Step {
+  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Body)
+  try { & $Body } catch { Write-Host "warning: ${Name}: $($_.Exception.Message)（続行）" }
+}
+
 # CRLF で取り出された追跡ファイル（取り出し直せば LF になるもの: index は LF、作業ツリーは CRLF）。
 # 属性で CRLF を求めるもの（windows/.gitattributes の *.cmd text eol=crlf）は CRLF が正しいので除く
 function Get-CrlfCheckout {

@@ -1,7 +1,7 @@
 ﻿#Requires -Version 7.4
 # windows/install.ps1 を一時ホームに -LinksOnly で実行する（本物のホーム・レジストリには触らない）: リンク表のどの行もリポジトリのファイルへのシンボリックリンクになる、
 # 前からあるものは *.bak.（14 桁の時刻） に退避する、2 回目は何も出さない、worktree からは DOTFILES_ALLOW_WORKTREE なしでは拒む、ponytail の band を書く。
-# install-lib.ps1 の New-CodexConfig・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、Add-UserPath をレジストリの代わりのもので確かめる
+# install-lib.ps1 の Invoke-Step・New-CodexConfig・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、Add-UserPath をレジストリの代わりのもので確かめる
 
 BeforeDiscovery {
   # リンク表（spec の表。-HomeDir が本物のホームと違うとき AppData・Documents はホームの下）
@@ -191,6 +191,17 @@ Describe 'worktree からの実行' {
     $r = Invoke-Install -Script $WtScript -HomeDir $wh -Environment @{ DOTFILES_ALLOW_WORKTREE = '1' }
     $r.ExitCode | Should -Be 0 -Because $r.Err
     (Get-Item -LiteralPath (Join-Path $wh '.config\git\config') -Force).LinkType | Should -Be 'SymbolicLink'
+  }
+}
+
+Describe 'Invoke-Step' {
+  BeforeAll { . (Join-Path $Root 'windows\install-lib.ps1') }
+  It '本体の例外を warning: の 1 行にして、外に出さない' {
+    $out = @(Invoke-Step 'a' { throw 'x' } 6>&1)
+    "$out" | Should -BeExactly 'warning: a: x（続行）'
+  }
+  It '本体の出力はそのまま流す' {
+    Invoke-Step 'b' { 'y' } | Should -BeExactly 'y'
   }
 }
 

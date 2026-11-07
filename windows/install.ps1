@@ -87,11 +87,6 @@ if (-not (Get-PathEntry $band)) { [IO.File]::WriteAllText($band, "off`n", [Text.
 # リンク配置だけを検査したい時（windows/tests）はここで終わる
 if ($LinksOnly) { exit 0 }
 
-# ここから先は失敗しても warning を出して続ける（install.sh で致命でない所に合わせる）
-function Invoke-Step {
-  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Body)
-  try { & $Body } catch { Write-Host "warning: ${Name}: $($_.Exception.Message)（続行）" }
-}
 # 取得してから実行する（パイプで渡さない。取得に失敗したら実行しない）
 function Get-RemoteScript {
   param([Parameter(Mandatory)][string]$Uri)
