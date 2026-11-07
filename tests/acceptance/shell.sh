@@ -56,6 +56,12 @@ if [ -n "$ZSH" ]; then
   fp="$(env -i "$ZSH" -fc 'print -r -- "$FPATH"')"
   e="$(env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin FPATH="$I:$fp" "$ZSH" -i -c 'print -r -- "R=${_comps[dotfilesbad]-なし}"' </dev/null 2>&1)"
   chk "誰でも書ける fpath があっても対話 zsh は問いの文を出さず、そこの補完を読まない" test "$e" = 'R=なし'
+  # 同じ名前の補完が安全な場所にもあるとき、危ない場所（fpath で先に来る）の方を読み込まない（zsh 5.8 の compinit -i は fpath から外さない）
+  S="$T/secure"; mkdir "$S"
+  printf '#compdef dotfilesdup\n_dotfilesdup() { _files }\n' > "$S/_dotfilesdup"
+  printf '#compdef dotfilesdup\n_dotfilesdup() { _files }\n' > "$I/_dotfilesdup"
+  e="$(env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin FPATH="$I:$S:$fp" "$ZSH" -i -c 'autoload +X _dotfilesdup 2>/dev/null; zmodload zsh/parameter; print -r -- "F=${functions_source[_dotfilesdup]-なし}"' </dev/null 2>&1)"
+  chk "同じ名前の補完は安全な場所から読み、誰でも書ける fpath の方は読まない" test "$e" = "F=$S/_dotfilesdup"
   if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
     chk "対話 zsh はシステムの vendor-completions（docker）を読む" test "$(zi 'print -r -- "${_comps[docker]-なし}"')" = _docker
   fi
