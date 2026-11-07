@@ -790,6 +790,48 @@ Describe 'Get-CrlfCheckout' {
   }
 }
 
+Describe 'Repair-LfCheckout' {
+  BeforeAll {
+    . (Join-Path $Root 'windows\install-lib.ps1')
+    $Git = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+    $EmptyConfig = Join-Path $TestDrive 'empty-gitconfig2'
+    [IO.File]::WriteAllText($EmptyConfig, '')
+    $GitEnv = @{ GIT_CONFIG_GLOBAL = $EmptyConfig; GIT_CONFIG_NOSYSTEM = '1'; GIT_AUTHOR_NAME = 't'; GIT_AUTHOR_EMAIL = 't@example.com'; GIT_COMMITTER_NAME = 't'; GIT_COMMITTER_EMAIL = 't@example.com' }
+    function Invoke-Git { $r = Invoke-Proc $Git ([string[]]$args) -Environment $GitEnv; $r.ExitCode | Should -Be 0 -Because $r.Err; $r.Out }
+    $SavedGitEnv = @{ GIT_CONFIG_GLOBAL = $env:GIT_CONFIG_GLOBAL; GIT_CONFIG_NOSYSTEM = $env:GIT_CONFIG_NOSYSTEM }
+    # LF で入れたファイルを、Git for Windows の既定（core.autocrlf=true）で clone して CRLF で取り出す
+    $Src = Join-Path $TestDrive 'lf-src'
+    Invoke-Git init -q $Src
+    foreach ($d in 'windows\bin', 'config\git') { $null = New-Item -ItemType Directory -Path (Join-Path $Src $d) -Force }
+    Copy-Item -LiteralPath (Join-Path $Root 'windows\.gitattributes') -Destination (Join-Path $Src 'windows')
+    [IO.File]::WriteAllText((Join-Path $Src 'windows\bin\x.cmd'), "@echo off`n")
+    [IO.File]::WriteAllText((Join-Path $Src 'config\git\config'), "[user]`n`tname = t`n")
+    [IO.File]::WriteAllText((Join-Path $Src 'a.txt'), "x`ny`n")
+    Invoke-Git -C $Src add -A
+    Invoke-Git -C $Src commit -q -m x
+    $Clone = Join-Path $TestDrive 'lf-clone'
+    Invoke-Git -c core.autocrlf=true clone -q $Src $Clone
+    Invoke-Git -C $Clone config core.autocrlf input
+    # install.ps1 がリンクを置いた後の状態: ~/.config/git/config はクローンの追跡ファイルへのリンク
+    $Link = Join-Path $TestDrive 'linked-gitconfig'
+    $null = New-Item -ItemType SymbolicLink -Path $Link -Target (Join-Path $Clone 'config\git\config')
+  }
+  AfterEach { $env:GIT_CONFIG_GLOBAL = $SavedGitEnv.GIT_CONFIG_GLOBAL; $env:GIT_CONFIG_NOSYSTEM = $SavedGitEnv.GIT_CONFIG_NOSYSTEM }
+  It '追跡ファイル（git の設定のリンク先を含む）を消さずに LF で書き直し、.cmd は CRLF のまま、git status は空' {
+    [IO.File]::ReadAllText((Join-Path $Clone 'a.txt')) | Should -Match "`r`n" -Because '前提: CRLF で取り出されている'
+    $env:GIT_CONFIG_GLOBAL = $Link; $env:GIT_CONFIG_NOSYSTEM = '1'
+    { Repair-LfCheckout -Root $Clone } | Should -Not -Throw
+    foreach ($f in 'a.txt', 'config\git\config', 'windows\bin\x.cmd', 'windows\.gitattributes') {
+      Test-Path -LiteralPath (Join-Path $Clone $f) | Should -BeTrue -Because $f
+    }
+    [IO.File]::ReadAllText((Join-Path $Clone 'a.txt')) | Should -BeExactly "x`ny`n"
+    [IO.File]::ReadAllText((Join-Path $Clone 'config\git\config')) | Should -Not -Match "`r"
+    [IO.File]::ReadAllText((Join-Path $Clone 'windows\bin\x.cmd')) | Should -BeExactly "@echo off`r`n"
+    git -C $Clone status --porcelain --untracked-files=all | Should -BeNullOrEmpty
+    @(Get-CrlfCheckout $Clone).Count | Should -Be 0
+  }
+}
+
 Describe 'Add-UserPath' {
   BeforeAll {
     . (Join-Path $Root 'windows\install-lib.ps1')

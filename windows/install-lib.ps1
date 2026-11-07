@@ -189,6 +189,16 @@ function Get-CrlfCheckout {
     })
 }
 
+# 追跡ファイルを LF で書き直す。ファイルは消さない（git の設定のリンク先も追跡ファイルで、消すと git が動かなくなる）:
+# 索引を空にして reset --hard で作り直すと、作業ツリーのファイルが上書きされるだけ
+function Repair-LfCheckout {
+  param([Parameter(Mandatory)][string]$Root)
+  git -C $Root rm -r --cached -q .
+  if ($LASTEXITCODE) { throw 'git rm --cached に失敗' }
+  git -C $Root reset --hard -q
+  if ($LASTEXITCODE) { throw 'git reset に失敗' }
+}
+
 # 自分・SYSTEM・Administrators 以外で書き込める主体の SID（OpenSSH は他人が書ける設定ファイルを拒否する）
 function Get-UnsafeWriter {
   param([Parameter(Mandatory)][string]$Path)

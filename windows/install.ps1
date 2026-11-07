@@ -112,9 +112,7 @@ Invoke-Step $StepLog 'git の改行' {
   if (git -C $DOTFILES status --porcelain --untracked-files=all) {
     throw 'CRLF で取り出されたファイルがあるが、作業ツリーに変更があるので取り出し直さない（片づけてから再実行する）'
   }
-  foreach ($f in $crlf) { Remove-Item -LiteralPath (Join-Path $DOTFILES $f) -Force }
-  git -C $DOTFILES checkout -- .
-  if ($LASTEXITCODE) { throw 'git checkout に失敗' }
+  Repair-LfCheckout -Root $DOTFILES
   Write-Host "LF で取り出し直した: $($crlf.Count) 個"
 }
 
