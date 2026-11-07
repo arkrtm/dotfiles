@@ -1,3 +1,10 @@
-# 共通設定（mac / linux 共通で使える内容のみ）
-# 端末固有の Host は ~/.ssh/config.local に書く（リポジトリ外。無ければ無視される）
+# 共通設定（mac / linux / Windows 共通で使える内容のみ。Windows は install.ps1 が同じファイルをリンクする）
+# 端末固有の Host は ~/.ssh/config.local に書く（リポジトリ外。無ければ無視される）。先に読むので、下の既定より優先される
 Include config.local
+# mac / linux だけ: 接続の多重化（install.sh がリンクする。Windows の OpenSSH は多重化に対応しないのでリンクせず、無いので読まれない）
+Include config.mux
+
+Host *
+  # 無通信で切られないようにし、切れた接続は 3 分で見切る（ServerAliveCountMax の既定 3 回）
+  ServerAliveInterval 60
+  AddKeysToAgent yes

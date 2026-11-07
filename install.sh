@@ -58,6 +58,7 @@ bin/context-nudge        .local/bin/context-nudge
 bin/agent-pane           .local/bin/agent-pane
 bin/geoview              .local/bin/geoview
 ssh/config               .ssh/config
+ssh/config.mux           .ssh/config.mux
 "
 
 link() {
@@ -113,9 +114,9 @@ chmod go-w "$HOME/.local/share/zsh" "$ZCOMP"
 # リンク配置だけを検査したい時（tests/install.sh）はここで終わる
 [ -n "${DOTFILES_LINKS_ONLY:-}" ] && exit 0
 
-# ssh は設定ファイルが他ユーザー書き込み可だと拒否するため権限を絞る
+# ssh は設定ファイル（Include したファイルも）が他ユーザー書き込み可だと拒否するため権限を絞る
 chmod 700 "$HOME/.ssh"
-chmod 600 "$DOTFILES/ssh/config"
+chmod 600 "$DOTFILES/ssh/config" "$DOTFILES/ssh/config.mux"
 
 # git config --global の書き込み先を端末ローカルの ~/.gitconfig にする
 # （存在しないと ~/.config/git/config = リポジトリ側が書き換わる）

@@ -1,0 +1,8 @@
+# mac / linux だけの接続の多重化（install.sh が ~/.ssh/config.mux にリンクする。Windows の OpenSSH は多重化に対応しない）。
+# 2 本目からは 1 本目の接続を使い、最後に閉じてから 10 分残す。
+# ソケットは ~/.ssh に置く（install.sh が 700 にする。共有の /tmp は他人が同じ名前を先に作れる）。パスの長さは HOME + 66 バイトで、
+# Unix ソケットの上限（mac は 104）に収まるのは HOME が 37 バイトまで。超える端末は ~/.ssh/config.local に短い ControlPath を書く
+Host *
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%C
+  ControlPersist 10m
