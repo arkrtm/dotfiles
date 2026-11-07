@@ -28,6 +28,8 @@ export FNM_DIR="$HOME/.local/share/fnm"
 export PATH="$FNM_DIR/aliases/default/bin:$PATH"
 # 入れ子の zsh（tmux → nvim → :terminal など）や mac のログイン（zprofile が前置をやり直す）で同じディレクトリが積まれないように
 [ -n "${ZSH_VERSION:-}" ] && typeset -U path
+# Ubuntu などの /etc/zsh/zshrc は自分で compinit を -i なしで呼び、誰でも書ける fpath があると起動のたびに問う。zshrc の compinit -i だけにする
+[ -n "${ZSH_VERSION:-}" ] && skip_global_compinit=1
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export EDITOR=nvim VISUAL=nvim
 # 端末ごとの設定と秘密（リポジトリの外）。bash も読むので POSIX sh で書く

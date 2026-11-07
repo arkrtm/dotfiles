@@ -47,8 +47,15 @@ if [ -n "$ZSH" ]; then
   chk "install.sh（リンクだけ）が補完の置き場を作る" test -d "$H2/.local/share/zsh/site-functions"
   printf '#compdef dotfilesprobe\n_dotfilesprobe() { _files }\n' 2>/dev/null > "$H2/.local/share/zsh/site-functions/_dotfilesprobe"
   zi() { env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin "$ZSH" -i -c "$1" </dev/null 2>&1; }
+  # compaudit が挙げる危ない場所のうち、この HOME の下（install.sh が作る置き場とその親）だけを見る（システムの fpath は端末による）
   chk "umask 002 で作った補完の置き場とその親を compaudit が危ないとみなさず、対話 zsh が補完を読む（打ち切りや問いの文も出ない）" \
-    test "$(zi 'autoload -Uz compaudit; compaudit >/dev/null 2>&1; print -r -- "A=$? R=${_comps[dotfilesprobe]-なし}"')" = 'A=0 R=_dotfilesprobe'
+    test "$(zi 'autoload -Uz compaudit; print -r -- "A=$(compaudit 2>/dev/null | grep -c "^$HOME/") R=${_comps[dotfilesprobe]-なし}"')" = 'A=0 R=_dotfilesprobe'
+  # 誰でも書ける fpath（GitHub の実行環境の /usr/local/share/zsh/site-functions など）があっても、compinit は問わずに読み飛ばす
+  I="$T/insecure"; mkdir "$I"; chmod 777 "$I"
+  printf '#compdef dotfilesbad\n_dotfilesbad() { _files }\n' > "$I/_dotfilesbad"
+  fp="$(env -i "$ZSH" -fc 'print -r -- "$FPATH"')"
+  e="$(env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin FPATH="$I:$fp" "$ZSH" -i -c 'print -r -- "R=${_comps[dotfilesbad]-なし}"' </dev/null 2>&1)"
+  chk "誰でも書ける fpath があっても対話 zsh は問いの文を出さず、そこの補完を読まない" test "$e" = 'R=なし'
   if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
     chk "対話 zsh はシステムの vendor-completions（docker）を読む" test "$(zi 'print -r -- "${_comps[docker]-なし}"')" = _docker
   fi

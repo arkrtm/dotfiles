@@ -8,7 +8,8 @@ setopt share_history hist_ignore_all_dups hist_ignore_space hist_reduce_blanks
 # install.sh が書き出す道具の補完と、システムの vendor-completions（docker など。zsh-bin の fpath には無い）
 fpath=(~/.local/share/zsh/site-functions(N/) /usr/share/zsh/vendor-completions(N/) $fpath)
 typeset -U fpath
-autoload -Uz compinit && compinit
+# -i: 誰でも書ける fpath（共有の端末・CI の /usr/local など）は問わずに読み飛ばす（-u と違い、そこのファイルは読まない）
+autoload -Uz compinit && compinit -i
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}' # 大文字小文字を区別しない
 zstyle ':completion:*' menu select
 
