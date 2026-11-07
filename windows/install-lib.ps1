@@ -290,7 +290,7 @@ function Split-TomlTable {
   $tables.ToArray()
 }
 
-# 同じキーが 2 回ある TOML は Codex が読めない。表の名前・キーの完全なパスの重複（書き方の違いは正規化して比べる）があれば throw する。
+# 同じキーが 2 回ある TOML は Codex が読めない。表の名前・キーの完全なパスの重複（書き方の違いは正規化して比べる）があれば throw する。ドット付きのキーの途中までの名前が表の見出しと同じ場合も throw する。
 # 配列の表（[[…]]）は何回あってもよく、その中のキーの重複だけ見る。値で定義したキー（インライン表など）の下に表の見出しがある場合も throw する
 function Assert-TomlUnique {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
@@ -299,6 +299,7 @@ function Assert-TomlUnique {
   $tableNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   $allNames = [Collections.Generic.List[string]]::new()
+  $dotted = [Collections.Generic.List[object]]::new()
   foreach ($t in (Split-TomlTable $Line)) {
     if ($t.Name -ne '') { $allNames.Add($t.Name) }
     if ($t.IsArray) {
@@ -313,10 +314,19 @@ function Assert-TomlUnique {
       if ($null -eq $e.Key) { continue }
       $path = if ($t.Name -eq '') { $e.Key } else { $t.Name + $nul + $e.Key }
       if (-not $paths.Add($path)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $path)" }
+      if ($e.Key.Contains($nul)) { $dotted.Add(@{ Table = $t.Name; Key = $e.Key }) }
     }
   }
   foreach ($name in $tableNames) {
     if ($paths.Contains($name)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $name)" }
+  }
+  # ドット付きのキーは、その途中までの名前の表を作る。同じ名前の表の見出しがあると、同じ表を 2 回定義することになる
+  foreach ($d in $dotted) {
+    $parts = $d.Key.Split([char]0)
+    for ($n = 1; $n -lt $parts.Count; $n++) {
+      $name = (@($d.Table | Where-Object { $_ }) + $parts[0..($n - 1)]) -join $nul
+      if ($tableNames.Contains($name)) { throw "config.toml にドット付きのキーと同じ名前の表がある（書かない）: $(& $show $name)" }
+    }
   }
   # 値（インライン表・配列など）で定義した名前の下には表を作れない（親のキーのパスが、表の名前の先頭になっている）
   foreach ($name in $allNames) {

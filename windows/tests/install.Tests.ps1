@@ -558,6 +558,27 @@ lit = '''
     [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
     (Get-Baks $conf).Count | Should -Be 0
   }
+  It 'ドット付きのキー（<Case>）が表の名前の途中までと同じなら、同じ表を 2 回定義することになるので、書かず退避もせず失敗する' -ForEach @(
+    @{ Case = 'トップレベルのキーとテンプレートの表'; Old = "mcp_servers.linear.command = `"x`"`n"; Key = 'mcp_servers.linear' }
+    @{ Case = '残す表の中のキーとテンプレートの表'; Old = "[mcp_servers]`nlinear.command = `"x`"`n"; Key = 'mcp_servers.linear' }
+    @{ Case = '残す表の中のキーと、その途中の名前の子の表'; Old = "[desktop]`na.b.c = 1`n`n[desktop.a.b]`nd = 1`n"; Key = 'desktop.a.b' }
+  ) {
+    $conf = Join-Path $TestDrive ('dotted\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Old, $Utf8)
+    { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw "*config.toml*$Key*"
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
+    (Get-Baks $conf).Count | Should -Be 0
+  }
+  It 'ドット付きのキーで作った表に、さらに深い名前の子の表を足すのは正しい TOML なので受け入れ、2 回目は書き換えない' {
+    $conf = Join-Path $TestDrive 'subtable\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $keep = "`n[desktop]`napple.color = `"red`"`n`n[desktop.apple.texture]`nsmooth = true`n"
+    [IO.File]::WriteAllText($conf, $keep.TrimStart("`n"), $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base + $keep)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+  }
   It '複数行の文字列が <Delim> を 4 個・5 個並べて閉じても 1 つの値として残し、後ろの表を別の表として扱い、2 回目は書き換えない' -ForEach @(
     @{ Delim = '"""'; Notify = 'notify = ["pwsh", "-Command", """Write-Host "done""""]' }
     @{ Delim = '"""'; Notify = 'notify = ["pwsh", "-Command", """Write-Host ""done"""""]' }
