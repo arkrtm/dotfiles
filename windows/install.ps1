@@ -112,7 +112,7 @@ Invoke-Step $StepLog 'git の改行' {
   if (git -C $DOTFILES status --porcelain --untracked-files=all) {
     throw 'CRLF で取り出されたファイルがあるが、作業ツリーに変更があるので取り出し直さない（片づけてから再実行する）'
   }
-  Repair-LfCheckout -Root $DOTFILES
+  Repair-LfCheckout -Root $DOTFILES -Path $crlf
   Write-Host "LF で取り出し直した: $($crlf.Count) 個"
 }
 

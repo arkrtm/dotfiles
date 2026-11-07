@@ -189,16 +189,20 @@ function Get-CrlfCheckout {
     })
 }
 
-# 追跡ファイルを LF で書き直す。ファイルは消さない（git の設定のリンク先も追跡ファイルで、消すと git が動かなくなる）。
-# 索引は空にしない（途中で失敗しても追跡の一覧が残り、再実行で直る）: 索引を今の木で読み直して stat を無効にし、
-# checkout-index で全部書き直す（stat が合うファイルは書き直されないため。-u で stat も更新する）
+# 指定した追跡ファイル（Get-CrlfCheckout の結果）だけを LF で書き直す。ファイルは消さない（git の設定のリンク先も追跡ファイルで、消すと git が動かなくなる）。
+# 索引は読み直さず空にもしない（途中で失敗しても追跡の一覧とフラグが残り、再実行で直る）。skip-worktree・assume-unchanged のファイルは
+# 手元の編集を持つかもしれない（git status に出ない）ので書き直さない。stat が索引と合うファイルは --force でも書き直されないので、
+# 更新時刻を古くして合わなくしてから checkout-index で書き直す（-u で stat も更新する）
 function Repair-LfCheckout {
-  param([Parameter(Mandatory)][string]$Root)
-  $tree = git -C $Root write-tree
-  if ($LASTEXITCODE) { throw 'git write-tree に失敗' }
-  git -C $Root read-tree $tree
-  if ($LASTEXITCODE) { throw 'git read-tree に失敗' }
-  git -C $Root checkout-index --force --all -u
+  param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Path)
+  $v = git -C $Root ls-files -v -z
+  if ($LASTEXITCODE) { throw 'git ls-files に失敗' }
+  # 先頭の 1 文字が H 以外（S: skip-worktree、小文字: assume-unchanged など）のファイルは対象にしない
+  $held = @((@($v) -join "`n") -split "`0" | Where-Object { $_.Length -gt 2 -and $_[0] -cne 'H' } | ForEach-Object { $_.Substring(2) })
+  $targets = @($Path | Where-Object { $_ -and $_ -notin $held })
+  if ($targets.Count -eq 0) { return }
+  foreach ($p in $targets) { [IO.File]::SetLastWriteTimeUtc((Join-Path $Root $p), [datetime]'2000-01-01') }
+  git -C $Root checkout-index --force -u -- $targets
   if ($LASTEXITCODE) { throw 'git checkout-index に失敗' }
 }
 

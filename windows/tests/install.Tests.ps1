@@ -807,6 +807,7 @@ Describe 'Repair-LfCheckout' {
     [IO.File]::WriteAllText((Join-Path $Src 'windows\bin\x.cmd'), "@echo off`n")
     [IO.File]::WriteAllText((Join-Path $Src 'config\git\config'), "[user]`n`tname = t`n")
     [IO.File]::WriteAllText((Join-Path $Src 'a.txt'), "x`ny`n")
+    foreach ($f in 's.txt', 't.txt', 'u.txt') { [IO.File]::WriteAllText((Join-Path $Src $f), "orig`n") }
     Invoke-Git -C $Src add -A
     Invoke-Git -C $Src commit -q -m x
     $Clone = Join-Path $TestDrive 'lf-clone'
@@ -820,7 +821,7 @@ Describe 'Repair-LfCheckout' {
   It '追跡ファイル（git の設定のリンク先を含む）を消さずに LF で書き直し、.cmd は CRLF のまま、git status は空' {
     [IO.File]::ReadAllText((Join-Path $Clone 'a.txt')) | Should -Match "`r`n" -Because '前提: CRLF で取り出されている'
     $env:GIT_CONFIG_GLOBAL = $Link; $env:GIT_CONFIG_NOSYSTEM = '1'
-    { Repair-LfCheckout -Root $Clone } | Should -Not -Throw
+    { Repair-LfCheckout -Root $Clone -Path @(Get-CrlfCheckout $Clone) } | Should -Not -Throw
     foreach ($f in 'a.txt', 'config\git\config', 'windows\bin\x.cmd', 'windows\.gitattributes') {
       Test-Path -LiteralPath (Join-Path $Clone $f) | Should -BeTrue -Because $f
     }
@@ -837,14 +838,37 @@ Describe 'Repair-LfCheckout' {
     $env:GIT_CONFIG_GLOBAL = $EmptyConfig; $env:GIT_CONFIG_NOSYSTEM = '1'
     $before = @(git -C $c2 ls-files).Count
     $before | Should -BeGreaterThan 0
+    $crlf = @(Get-CrlfCheckout $c2)
     # 別のプロセスがファイルを掴んでいる状態（Windows では書き換えも削除もできない）
     $lock = [IO.File]::Open((Join-Path $c2 'a.txt'), 'Open', 'Read', 'None')
-    try { { Repair-LfCheckout -Root $c2 } | Should -Throw }
+    try { { Repair-LfCheckout -Root $c2 -Path $crlf } | Should -Throw }
     finally { $lock.Dispose() }
     @(git -C $c2 ls-files).Count | Should -Be $before
     @(Get-CrlfCheckout $c2) | Should -Contain 'a.txt'
-    { Repair-LfCheckout -Root $c2 } | Should -Not -Throw
+    { Repair-LfCheckout -Root $c2 -Path @(Get-CrlfCheckout $c2) } | Should -Not -Throw
     @(Get-CrlfCheckout $c2).Count | Should -Be 0
+  }
+  It 'skip-worktree と assume-unchanged のファイルの手元の編集を上書きせず、フラグも残し、ほかの CRLF は LF にする' {
+    $c3 = Join-Path $TestDrive 'lf-clone-flags'
+    Invoke-Git -c core.autocrlf=true clone -q $Src $c3
+    Invoke-Git -C $c3 config core.autocrlf input
+    Invoke-Git -C $c3 update-index --skip-worktree s.txt u.txt
+    Invoke-Git -C $c3 update-index --assume-unchanged t.txt
+    # s・t は LF の手元の編集、u は CRLF のまま（git status には出ない）
+    [IO.File]::WriteAllText((Join-Path $c3 's.txt'), "mine-s`n")
+    [IO.File]::WriteAllText((Join-Path $c3 't.txt'), "mine-t`n")
+    $env:GIT_CONFIG_GLOBAL = $EmptyConfig; $env:GIT_CONFIG_NOSYSTEM = '1'
+    $crlf = @(Get-CrlfCheckout $c3)
+    $crlf | Should -Contain 'a.txt'
+    { Repair-LfCheckout -Root $c3 -Path $crlf } | Should -Not -Throw
+    [IO.File]::ReadAllText((Join-Path $c3 's.txt')) | Should -BeExactly "mine-s`n"
+    [IO.File]::ReadAllText((Join-Path $c3 't.txt')) | Should -BeExactly "mine-t`n"
+    [IO.File]::ReadAllText((Join-Path $c3 'u.txt')) | Should -BeExactly "orig`r`n"
+    [IO.File]::ReadAllText((Join-Path $c3 'a.txt')) | Should -BeExactly "x`ny`n"
+    $flags = @((Invoke-Git -C $c3 ls-files -v) -split "`r?`n" | Where-Object { $_ -match '[stu]\.txt$' })
+    $flags | Should -Contain 'S s.txt'
+    $flags | Should -Contain 'h t.txt'
+    $flags | Should -Contain 'S u.txt'
   }
 }
 
