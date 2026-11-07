@@ -546,6 +546,32 @@ lit = '''
     [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
     (Get-Baks $conf).Count | Should -Be 0
   }
+  It '値（<Case>）で定義した名前の下や同じ名前に表を作ることになるなら、書かず退避もせず失敗する' -ForEach @(
+    @{ Case = 'インライン表のトップレベルのキーとテンプレートの子の表'; Old = "mcp_servers = { other = { command = `"my-mcp`" } }`n"; Key = 'mcp_servers' }
+    @{ Case = '残す表の中のキーと、その下の子の表'; Old = "[desktop]`nx = { y = 1 }`n`n[desktop.x.z]`nw = 1`n"; Key = 'desktop.x' }
+    @{ Case = '残す表の中のキーとテンプレートの表の見出し'; Old = "[plugins]`n`"ponytail@ponytail`" = { enabled = false }`n"; Key = 'plugins.ponytail@ponytail' }
+  ) {
+    $conf = Join-Path $TestDrive ('parent\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Old, $Utf8)
+    { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw "*config.toml*$Key*"
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
+    (Get-Baks $conf).Count | Should -Be 0
+  }
+  It '複数行の文字列が <Delim> を 4 個・5 個並べて閉じても 1 つの値として残し、後ろの表を別の表として扱い、2 回目は書き換えない' -ForEach @(
+    @{ Delim = '"""'; Notify = 'notify = ["pwsh", "-Command", """Write-Host "done""""]' }
+    @{ Delim = '"""'; Notify = 'notify = ["pwsh", "-Command", """Write-Host ""done"""""]' }
+    @{ Delim = "'''"; Notify = "notify = [`"pwsh`", `"-Command`", '''Write-Host 'done'''']" }
+    @{ Delim = "'''"; Notify = "notify = [`"pwsh`", `"-Command`", '''Write-Host ''done''''']" }
+  ) {
+    $conf = Join-Path $TestDrive ('quotes\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $old = "model = `"old`"`n$Notify`n[plugins.`"ponytail@ponytail`"]`nenabled = false`n`n[desktop]`nx = 1`n"
+    [IO.File]::WriteAllText($conf, $old, $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($Effort, $Effort + $Notify + "`n") + "`n[desktop]`nx = 1`n")
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+  }
 }
 
 Describe 'Get-CrlfCheckout' {

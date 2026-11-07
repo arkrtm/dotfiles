@@ -220,12 +220,15 @@ function Step-TomlValue {
   $n = $Text.Length
   while ($i -lt $n) {
     $three = if ($i + 3 -le $n) { $Text.Substring($i, 3) } else { '' }
+    # 複数行の文字列は、閉じる区切りの直前に引用符を 1〜2 個置ける（3〜5 個の連続を全部閉じる区切りとして消費する）
     if ($State.Quote -eq '"""') {
-      if ($three -eq '"""') { $State.Quote = ''; $i += 3 } elseif ($Text[$i] -eq '\') { $i += 2 } else { $i++ }
+      if ($three -eq '"""') { $State.Quote = ''; $i += [Math]::Min(5, [regex]::Match($Text.Substring($i), '^"+').Length) }
+      elseif ($Text[$i] -eq '\') { $i += 2 } else { $i++ }
       continue
     }
     if ($State.Quote -eq "'''") {
-      if ($three -eq "'''") { $State.Quote = ''; $i += 3 } else { $i++ }
+      if ($three -eq "'''") { $State.Quote = ''; $i += [Math]::Min(5, [regex]::Match($Text.Substring($i), "^'+").Length) }
+      else { $i++ }
       continue
     }
     if ($three -eq '"""' -or $three -eq "'''") { $State.Quote = $three; $i += 3; continue }
@@ -288,14 +291,16 @@ function Split-TomlTable {
 }
 
 # 同じキーが 2 回ある TOML は Codex が読めない。表の名前・キーの完全なパスの重複（書き方の違いは正規化して比べる）があれば throw する。
-# 配列の表（[[…]]）は何回あってもよく、その中のキーの重複だけ見る
+# 配列の表（[[…]]）は何回あってもよく、その中のキーの重複だけ見る。値で定義したキー（インライン表など）の下に表の見出しがある場合も throw する
 function Assert-TomlUnique {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $nul = [string][char]0
   $show = { param($p) $p.Replace($nul, '.') }
   $tableNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  $allNames = [Collections.Generic.List[string]]::new()
   foreach ($t in (Split-TomlTable $Line)) {
+    if ($t.Name -ne '') { $allNames.Add($t.Name) }
     if ($t.IsArray) {
       $local = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
       foreach ($e in $t.Entries) {
@@ -312,6 +317,14 @@ function Assert-TomlUnique {
   }
   foreach ($name in $tableNames) {
     if ($paths.Contains($name)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $name)" }
+  }
+  # 値（インライン表・配列など）で定義した名前の下には表を作れない（親のキーのパスが、表の名前の先頭になっている）
+  foreach ($name in $allNames) {
+    $parts = $name.Split([char]0)
+    for ($n = 1; $n -lt $parts.Count; $n++) {
+      $parent = $parts[0..($n - 1)] -join $nul
+      if ($paths.Contains($parent)) { throw "config.toml に値で定義した名前の下に表がある（書かない）: $(& $show $parent)" }
+    }
   }
 }
 
