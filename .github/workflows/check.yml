@@ -4,14 +4,17 @@ on:
   pull_request:
   push:
     branches: [main]
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      # 検査が使う道具のうち ubuntu-latest に無いもの（dash・jq・git はある。uv は Codex の config.toml の検査が使う）
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # 検査が使う道具のうち ubuntu-latest に無いもの（dash・jq・git はある。uv は Codex の config.toml の検査が使う）。mise と herdr は入れない（その検査は省いたと出る。関門は端末の integrate）
       - run: sudo apt-get update && sudo apt-get install -y zsh tmux
-      - run: pipx install uv
+      - run: pipx install uv==0.13.7
       # tests/static.sh が使う shellcheck。版は config/mise/config.toml と同じ
       - run: pipx install shellcheck-py==0.11.0.1
       - run: sh scripts/check
