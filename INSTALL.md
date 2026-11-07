@@ -2,7 +2,7 @@
 
 `install.sh` がやること:
 
-1. `install.sh` の LINKS のファイル（説明は各ディレクトリの README）をシンボリックリンクで配置し、ponytail の band（プロンプトの上の行）を既定で隠す（`~/.claude/.ponytail-band` が無ければ `off` を書く。出し続ける端末は中身を `on` にする）
+1. `install.sh` の LINKS のファイル（説明は各ディレクトリの README）をシンボリックリンクで配置し、ponytail の band（プロンプトの上の行）を既定で隠す（`~/.claude/.ponytail-band` が無ければ `off` を書く。出し続ける端末は中身を `on` にする）。WSL では Windows の powershell.exe・win32yank.exe を `~/.local/bin` にリンクする
 2. `~/.ssh` を 700、`ssh/config` を 600 にする（ssh は他ユーザーが書ける設定ファイルを拒むため）
 3. zsh プラグイン 2 つを clone（プラグインマネージャなし。版は固定せず再実行で最新に）
 4. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
@@ -21,4 +21,4 @@ install.sh の対象外（GUI 端末・管理者権限が要るもの。サー�
 | Tailscale | 公式 pkg（自動更新） | `curl -fsSL https://tailscale.com/install.sh \| sh` → `sudo tailscale up` |
 | GitHub | `gh auth login` | `gh auth login` |
 | ログインシェル | 標準で zsh | 任意: `chsh -s "$(command -v zsh)"`（`/etc/shells` に無い zsh は不可）。しなくても ssh・コンソールでは `bash_profile` が `exec zsh`（GUI 端末は非ログインの bash なので chsh か Ghostty の `command` が要る） |
-| クリップボード | — | `sudo apt install wl-clipboard`（Neovim のヤンクをデスクトップのクリップボードへ。SSH 越しは OSC52 で不要） |
+| クリップボード | — | Ubuntu: `sudo apt install wl-clipboard`（Neovim のヤンクをデスクトップのクリップボードへ。SSH 越しは OSC52 で不要） / WSL: Windows で `winget install -e --id equalsraf.win32yank`（install.sh がリンクし、Neovim が直接呼ぶ） |

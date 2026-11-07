@@ -84,6 +84,25 @@ done
 # 出し続ける端末は中身を on にする（off 以外なら出る）。リンクと同じく tests/install.sh で確かめるので、早期終了の前に置く
 [ -e "$HOME/.claude/.ponytail-band" ] || echo off > "$HOME/.claude/.ponytail-band"
 
+# WSL: shell/zshenv が Windows の PATH を絞るので、名前で呼ばれる Windows の道具は ~/.local/bin にリンクする
+# （powershell.exe は herdr・Codex のクリップボード、win32yank.exe は Neovim のクリップボード）。
+# 先が無ければぶら下がったリンクを作らず warning を出す。リンクと同じく tests/acceptance/wsl.sh で確かめるので、早期終了の前に置く
+if [ -n "${WSL_DISTRO_NAME:-}" ]; then
+  wsl_ps=""; wsl_yank=""
+  if wsl_cmd="$(command -v cmd.exe)"; then
+    wsl_sys32="$(dirname "$wsl_cmd")"
+    wsl_ps="$wsl_sys32/WindowsPowerShell/v1.0/powershell.exe"
+    # cmd.exe は Linux のディレクトリで起動すると UNC パスの警告を出すので、system32 で起動する。Windows のユーザー名は Linux と同じとは限らない
+    if wsl_lad="$(cd "$wsl_sys32" && cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')" && [ -n "$wsl_lad" ] && wsl_lad="$(wslpath -u "$wsl_lad" 2>/dev/null)"; then
+      wsl_yank="$wsl_lad/Microsoft/WinGet/Links/win32yank.exe"
+    fi
+  fi
+  if [ -e "$wsl_ps" ]; then link "$wsl_ps" .local/bin/powershell.exe
+  else echo "warning: Windows の powershell.exe を見つけられず、リンクしない（続行）"; fi
+  if [ -e "$wsl_yank" ]; then link "$wsl_yank" .local/bin/win32yank.exe
+  else echo "warning: Windows の win32yank.exe を見つけられず、リンクしない（Neovim のクリップボードが動かない。Windows で winget install -e --id equalsraf.win32yank）"; fi
+fi
+
 # リンク配置だけを検査したい時（tests/install.sh）はここで終わる
 [ -n "${DOTFILES_LINKS_ONLY:-}" ] && exit 0
 

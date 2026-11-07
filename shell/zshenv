@@ -1,5 +1,24 @@
 # 全ての zsh（非対話含む: スクリプト、Claude Code のコマンド実行等）で読まれる。bash の起動ファイル（shell/bashrc）も
 # これを読むので、POSIX sh で読める書き方にする（zsh だけの行は ZSH_VERSION で囲む）
+# WSL: Windows が足す PATH（/mnt/<ドライブ>/…、20 本ほど）は mise の hook と shim を 1 回 0.2 秒ほど遅くするので、system32 と WINDOWS だけ残す
+# （clip.exe・explorer.exe・wsl.exe は名前で呼べる）。mise が PATH を作り直す元の __MISE_ORIG_PATH は親から受け継ぐ古い値が戻すので、同じに絞る。
+# ほかの Windows の道具は絶対パスで呼ぶか、install.sh が ~/.local/bin にリンクする（powershell.exe・win32yank.exe）
+if [ -n "${WSL_DISTRO_NAME:-}" ]; then
+  _wsl_trim() {
+    _wsl_r=""; _wsl_rest="$1:"
+    while [ -n "$_wsl_rest" ]; do
+      _wsl_e="${_wsl_rest%%:*}"; _wsl_rest="${_wsl_rest#*:}"
+      case "$_wsl_e" in
+        /mnt/[!/]/[Ww][Ii][Nn][Dd][Oo][Ww][Ss] | /mnt/[!/]/[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32) ;;
+        /mnt/[!/] | /mnt/[!/]/*) continue ;;
+      esac
+      _wsl_r="${_wsl_r:+$_wsl_r:}$_wsl_e"
+    done
+  }
+  _wsl_trim "$PATH"; PATH="$_wsl_r"
+  if [ -n "${__MISE_ORIG_PATH:-}" ]; then _wsl_trim "$__MISE_ORIG_PATH"; export __MISE_ORIG_PATH="$_wsl_r"; fi
+  unset -f _wsl_trim; unset _wsl_r _wsl_rest _wsl_e
+fi
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 # Node は fnm の既定版（install.sh が入れる）。非対話でも使えるよう PATH に直接置く（fnm env は対話シェルだけ）
 # Node は fnm に一本化するので mise の shims より前（非対話ではプロジェクトの mise.toml で固定した node より優先。
