@@ -17,6 +17,7 @@ trap 'exit 1' HUP INT TERM
 T="$(trap '' HUP INT TERM; mktemp -d)"
 # 本物の gitleaks の実体（mise の shim は一時 HOME では動かないので実体）。HOME と PATH を変える前に取る。無ければ空
 GL="$(mise which gitleaks 2>/dev/null || command -v gitleaks 2>/dev/null || true)"
+case "$GL" in */mise/shims/*) GL="" ;; esac  # mise で有効でない gitleaks の shim しか無い
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 export XDG_STATE_HOME="$T/state" HOME="$T/home"
