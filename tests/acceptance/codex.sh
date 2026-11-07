@@ -1,7 +1,8 @@
 #!/bin/sh
 # codex-review の受け入れ検査: 偽の codex を PATH の先頭に置き、使い方の誤りは終了コード 2、
 # plan と branch は codex exec を読み取り専用の sandbox・effort xhigh で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと、
-# branch は結果を <共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存すること
+# branch は結果を <共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存すること、
+# 依頼文に「直す」と「参考」の仕分けの規則を含めること
 #   sh tests/acceptance/codex.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/codex.sh  通った項目も
 set -u
@@ -44,15 +45,21 @@ for args in "" foo plan "plan missing.md"; do
 done
 
 has() { grep -qx -- "$1" "$T/args"; }
+# 仕分けの規則（「直す」と「参考」）を依頼文に含む
+triage() { grep -qF '「直す」と「参考」に分けて' "$T/args" && grep -qF '実際には起こりにくい入力や環境は「参考」' "$T/args"; }
+# 全体のレビュー: 再レビューの語が無く、仕分けの規則と「直す」が無ければ PASS
+full() { ! grep -qF '前回の「直す」' "$T/args" && triage && grep -qF '「直す」の指摘がなければ「VERDICT: PASS」' "$T/args"; }
 # フックを止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる）
 common() { has exec && has --sandbox && has read-only && has model_reasoning_effort=xhigh && has features.hooks=false; }
 echo plan > "$T/x.md"
 sh "$CR" plan x.md; rc=$?
 [ "$rc" = 0 ] && common && grep -q 'x.md' "$T/args" && ok "plan は計画書のパスを読み取り専用・effort xhigh で渡す" || ng "plan: rc=$rc $(cat "$T/args" 2>/dev/null)"
 has --skip-git-repo-check && ok "plan は git のリポジトリの外でも動く（--skip-git-repo-check）" || ng "plan に --skip-git-repo-check が無い"
+triage && ok "plan は仕分けの規則を渡す" || ng "plan に仕分けの規則が無い: $(cat "$T/args" 2>/dev/null)"
 rm -f "$T/args"; sh "$CR" branch
 common && grep -qF "$(git merge-base main HEAD)...$(git rev-parse HEAD)" "$T/args" && grep -q 'VERDICT: PASS' "$T/args" \
   && ok "branch は <merge-base>...<HEAD> を SHA で固定して VERDICT と渡す" || ng "branch: $(cat "$T/args" 2>/dev/null)"
+full && ok "branch の初回は全体のレビューを、仕分けの規則と「直す」が無ければ PASS で依頼する" || ng "branch の初回: $(cat "$T/args" 2>/dev/null)"
 saved="$(ls "$T/.git/codex-review/"*-branch-"$(git merge-base main HEAD)-$(git rev-parse HEAD)".md 2>/dev/null)"
 [ "$(printf '%s\n' "$saved" | grep -c .)" = 1 ] && [ "$(tail -n 1 "$saved")" = 'VERDICT: PASS' ] \
   && ok "branch は結果を codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存する" || ng "branch の結果の保存: $(ls -R "$T/.git/codex-review" 2>&1)"
