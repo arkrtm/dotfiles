@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code の構成の受け入れ検査: settings.json（プラグインの宣言と hook の配線）、skill（issue・wrap-up のリンク）、
-# グローバル指示（config/agents/AGENTS.md。CC・Codex 共通）と dotfiles の文書（手順は superpowers に任せ、Linear・superpowers の情報をリポジトリに入れない規則が揃っていること）、config/claude/README.md の新しい端末の手順。
+# config/claude/README.md の新しい端末の手順。指示や文書の文そのものは見ない（振る舞いの検査が別にある）。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・sh tests/install-nosudo.sh）は別に実行する。
 # LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で config/claude/README.md の
 # 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
@@ -85,120 +85,7 @@ check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
 git -C "$ROOT" grep -q -I -E '\b[P]i\b|\.p[i]/|bigpower[s]|/skil[l]:|pi-tinymemor[y]|yamlfi[x]|ask_user_questio[n]'; rc=$? # 1 = 一致なし、0 = 記述がある、ほかは実行の失敗
 check "pi 向けの記述が無い（git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
 
-# ---- グローバルの CLAUDE.md: 手順は superpowers、Linear の記録は /issue・/wrap-up、plan の置き場所
-C="$ROOT/config/agents/AGENTS.md"
-for h in 作業の哲学 規約 Linear スクリーンショット; do
-  check "グローバルの CLAUDE.md に「$h」の節がある" grep -Eq "^#+ .*$h" "$C"
-done
-# Karpathy と Ponytail は全文を取り込まず要約にする（ponytail はプラグインが毎ターン入れる）
-for h in 'Karpathy guidelines' 'Ponytail, lazy senior dev mode'; do
-  check "グローバルの CLAUDE.md に「$h」の全文が無い" sh -c "! grep -q '$h' '$C'"
-done
-# レビューは Codex: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify。
-# 指摘は「直す」と「参考」に分け、「参考」は issue の本文、2 回目からは前回の指摘と修正の差分だけ
-for w in 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' 'notify' \
-  '「直す」と「参考」に分ける' '実際には起こりにくい入力や環境は「参考」' 'FAIL の理由になるのは「直す」だけ' \
-  '「参考」の指摘は直さず、作業中の issue の本文に書く' '2 回目からは' '前回の「直す」が直ったかと、その後の修正の差分だけ'; do
-  check "グローバルの CLAUDE.md の「レビュー」に「$w」" sh -c "sed -n '/^## レビュー/,/^## /p' '$C' | grep -qF '$w'"
-done
-check "config/codex/README.md の codex-review の説明に仕分けと再レビュー" \
-  sh -c "grep -qF '「直す」と「参考」に分けさせる' '$ROOT/config/codex/README.md' && grep -qF '<その HEAD>...<HEAD>' '$ROOT/config/codex/README.md'"
-# フェーズごとのモデル: 各役の Agent ツールの model・effort
-for w in '| 設計・計画 | サブエージェント | `opus`・`xhigh` |' '| 実装（plan のタスクごと） | サブエージェント | `sonnet`・`high` |' \
-  '| 検証（受け入れ条件を実際に動かす） | 実装と別のサブエージェント | `opus`・`high` |' '`model: haiku`'; do
-  check "グローバルの CLAUDE.md の「モデルの割り当て」に「$w」" sh -c "sed -n '/^## モデルの割り当て/,/^## /p' '$C' | grep -qF -- '$w'"
-done
-# Agent の description は役割名で始める（herdr の中では agent-pane がサブエージェントの pane の名前に出す）
-for w in 'Agent の description は役割名とコロンで始める' '`plan`' '`impl`' '`verify`' '`explore`'; do
-  check "グローバルの CLAUDE.md の「モデルの割り当て」に「$w」" sh -c "sed -n '/^## モデルの割り当て/,/^## /p' '$C' | grep -qF -- '$w'"
-done
-check "グローバルの CLAUDE.md: 作業の哲学に優先順位がある" grep -q '正しさと堅牢さ > 読みやすさ > コードの少なさ > 速さ' "$C"
-check "グローバルの CLAUDE.md: 開発の手順は superpowers の skill に従う" grep -q '開発の手順.*superpowers の skill に従う' "$C"
-check "グローバルの CLAUDE.md: 経緯（harness）は書かない" [ "$(grep -c harness "$C")" = 0 ]
-check "グローバルの CLAUDE.md: issue は /issue で始める" grep -q '`/issue ARK-nn`' "$C"
-check "グローバルの CLAUDE.md: /wrap-up は統合の前に作業ブランチの上で" grep -q '統合の前に、作業ブランチの上で `/wrap-up`' "$C"
-check "グローバルの CLAUDE.md: plan のファイルは .superpowers/plans/ に置き、本文が正本" sh -c "grep -q '\.superpowers/plans/' '$C' && grep -q '本文が正本' '$C'"
-check "グローバルの CLAUDE.md: docs/superpowers/ は作らない" grep -q 'docs/superpowers/.*作らない' "$C"
-check "グローバルの CLAUDE.md: Linear が使えないときの記録は .superpowers/tasks/ に置き、リポジトリの中には置かない" \
-  sh -c "grep -qF '.superpowers/tasks/<短い名前>.md' '$C' && ! grep -qF 'docs/tasks' '$C'"
-check "グローバルの CLAUDE.md: 検証の行はテストを TDD に従わせる" grep -Eq '^- \*\*検証\*\*.*TDD' "$C"
-# スクショは WSL で Windows のピクチャの Screenshots の最新を見る（転送はやめた）。ユーザー名は glob で書き、固定しない
-ss="$(sed -n '/^## スクリーンショット/,/^## /p' "$C")"
-for w in 'ls -t /mnt/c/Users/*/Pictures/Screenshots/*.png | head' 'WSL 以外'; do
-  check "グローバルの CLAUDE.md の「スクリーンショット」に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$ss" "$w"
-done
-check "グローバルの CLAUDE.md の「スクリーンショット」に転送の記述（~/screenshots・ss-YYYYmmdd）と固定のユーザー名（/mnt/c/Users/<名前>）が無い" \
-  sh -c '! printf "%s\n" "$1" | grep -qE "~/screenshots|ss-YYYYmmdd|/mnt/c/Users/[^*]"' _ "$ss"
-check "グローバルの CLAUDE.md: 会話の区切りは CC は /clear（herdr の中では handoff skill）、Codex は /new" \
-  grep -qxF -- '- 会話の区切り: CC は `/clear`（herdr の中では handoff skill で自分で clear して続ける）、Codex は `/new`' "$C"
-for w in 'この指示は Claude Code と Codex の共通' 'Codex での読み替え:' '- skill の呼び出し: CC は `/issue`、Codex は `$issue`' \
-  '- 選択肢での質問: CC は AskUserQuestion、Codex は選択肢に番号を付けて尋ねる'; do
-  check "グローバルの CLAUDE.md: 読み替えは Codex だけ（$w）" grep -qF -- "$w" "$C"
-done
-
-# ---- skill: issue はコメントの規則をグローバル指示に委ねる
-check "issue のコメントの節目はグローバル指示の Linear の節に従う（書き写さない）" grep -q 'コメントの節目はグローバル指示の Linear の節に従う' "$ROOT/config/agents/skills/issue/SKILL.md"
-
-# ---- Git の運用: 1 issue = 1 ブランチ = 1 worktree、統合は origin で決める、relay は統合の後に片づける。
-#      統合は integrate だけ。テストを弱めるときは人が --human-approved。
-#      最上位のブランチ・種類・テストはリポジトリごとの integrate setup
-for w in 'feature/' '.worktrees/' '--no-track' 'origin/<最上位>' 'refactor:' 'issue 番号' 'PR を出す前だけ' \
-  'integrate setup' 'git rebase origin/<最上位>' '強制 push' 'codex-review branch origin/<最上位>' '`integrate`' 'integrate --human-approved'; do
-  check "グローバルの CLAUDE.md の「Git」に「$w」" sh -c "sed -n '/^## Git/,/^## /p' '$C' | grep -qF -- '$w'"
-done
-# Linear と superpowers の情報（すべて）はリポジトリに入るものに書かない。.superpowers/ の中と dotfiles の使い方の説明・設定は対象外
-G="$(sed -n '/^## Git/,/^## /p' "$C")"
-for w in '- Linear と superpowers の情報は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない' \
-  '  - Linear: issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前など、すべて' \
-  '理由や経緯が要る所には番号や spec・plan のパスで指さずにその文を書き' \
-  '  - superpowers: spec・plan の中身の書き写しや参照（ファイルのパス、Task の番号）、skill の名前など、すべて（仕組みや設計の判断を、コードから分かる形で README などに書くのは構わない）' \
-  '  - 対象外: gitignore した `.superpowers/` の中' \
-  '  - dotfiles の例外: Linear・superpowers の使い方の説明と設定（指示・skill・プラグインの宣言など）は入れてよい。issue 番号など実際の情報は dotfiles にも書かない'; do
-  check "グローバルの CLAUDE.md の「Git」の、リポジトリに入れない情報の規則に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$G" "$w"
-done
-check "グローバルの CLAUDE.md に古い規則（issue 番号はコミット・PR・ブランチ名に入れない）が無い" sh -c "! grep -qF 'issue 番号はコミット・PR・ブランチ名に入れない' '$C'"
-check "グローバルの CLAUDE.md: 作業中の保存は relay のタグ" grep -qF -- '--tags relay' "$C"
-I="$ROOT/config/agents/skills/issue/SKILL.md"
-for w in '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最上位>'; do
-  check "issue の SKILL.md に「$w」" grep -qF -- "$w" "$I"
-done
-W="$ROOT/config/agents/skills/wrap-up/SKILL.md"
-check "wrap-up の SKILL.md に「## 5. 統合の後」の節がある" grep -qx '## 5. 統合の後' "$W"
-check "wrap-up の振り分け: issue の本文の「参考」の指摘を Backlog の issue に起こすか決める" grep -qF 'issue の本文の「参考」の指摘を、1 件ずつ Backlog の issue に起こすか決める' "$W"
-check "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" sh -c "! grep -qF 'git branch -d' '$W'"
-for w in 'origin/<base>' 'baseRefName' 'integrate setup --show' 'ブランチが `<base>` なら' 'git branch -D feature/<作業内容>'; do
-  check "wrap-up の SKILL.md に「$w」" grep -qF -- "$w" "$W"
-done
-for w in Done relay 'tinymemory archive' 'git worktree remove' headRefOid '--ff-only'; do
-  check "wrap-up の「統合の後」に「$w」" sh -c "sed -n '/^## 5. 統合の後/,\$p' '$W' | grep -qF -- '$w'"
-done
-WR="$(grep -F '| **README・設計メモ** |' "$W")" # 置き場所の表の README の行
-check "wrap-up の表の README の行: 仕組みと限界だけ、理由や経緯は Linear にだけ置き、Linear の情報で指さない" \
-  sh -c 'printf "%s\n" "$1" | grep -qF "理由や経緯は書かない（Linear にだけ置く。issue 番号など Linear の情報も書かない）" && ! printf "%s\n" "$1" | grep -qF "issue 番号で指す"' _ "$WR"
-check "wrap-up の振り分け: 同じ内容をリポジトリの中から issue 番号で指させない" sh -c "! grep -qF 'issue 番号やパスで指す' '$W'"
-check "wrap-up の振り分け: リポジトリに入るものには Linear・superpowers の情報を書かない（グローバル指示の Git の節）" grep -qF 'リポジトリに入るものには Linear・superpowers の情報を書かない: グローバル指示の Git の節' "$W"
-
-# ---- 統合の後に次の issue を始める: wrap-up の 5 の最後と handoff skill の使い方
-W5="$(sed -n '/^## 5. 統合の後/,$p' "$W" | sed -n '/^5\. /,$p')" # 5 の最後の項目（5.）とその下の行
-check "wrap-up の 5 の最後の項目（5.）を読めた" [ -n "$W5" ]
-for w in 'ユーザーが示した作業' '続きの指示に書かれたもの' 'そのリポジトリで新しいセッションを開いて続きの指示の文' '同じリポジトリ' '優先度の高い順' '番号の小さい順' 'Todo・Backlog' 'ほかのリポジトリの Todo' '新しいセッション' '選択肢' '答えを待つ' 'handoff skill' 'herdr の中なら' '`/clear`' '`/new`' '続きの指示' '`/issue ARK-nn`'; do
-  check "wrap-up の 5 の最後の項目に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$W5" "$w"
-done
-check "wrap-up の 5 の最後: 次の作業は 示された作業 → 同じリポジトリの Todo → 尋ねて待つ の順（1 行）" \
-  sh -c 'printf "%s\n" "$1" | grep -q "ユーザーが示した作業.*同じリポジトリ.*Todo.*答えを待つ"' _ "$W5"
-H="$ROOT/config/agents/skills/handoff/SKILL.md"
-check "handoff の description に「統合の後に次の issue を始める」" \
-  sh -c "sed -n '2,/^---\$/p' '$H' | grep '^description:' | grep -qF '統合の後に次の issue を始める'"
-for w in '統合の後に次の issue を始める' 'relay の記憶のタイトルと Linear のコメントを次の issue の番号で書き' '`/issue ARK-nn` から始める'; do
-  check "handoff の「使う条件」に「$w」" sh -c "sed -n '/^## 使う条件/,/^## /p' '$H' | grep -qF -- '$w'"
-done
-
-# ---- dotfiles の文書
-check "dotfiles の CLAUDE.md が手順の担い手として superpowers を書く" grep -q '開発の手順はプラグイン superpowers' "$ROOT/CLAUDE.md"
-check "dotfiles の CLAUDE.md がコミットの前に流すテストを書く（static・install・acceptance）" \
-  sh -c "grep -q 'sh tests/static.sh' '$ROOT/CLAUDE.md' && grep -q 'sh tests/install.sh' '$ROOT/CLAUDE.md' && grep -q 'sh tests/acceptance.sh' '$ROOT/CLAUDE.md'"
-check "config/claude/README.md に superpowers の入れ方がある" grep -qF 'claude plugin install superpowers@claude-plugins-official' "$ROOT/config/claude/README.md"
-check "tests/README.md に tests/ の説明がある" grep -q '`tests/`' "$ROOT/tests/README.md"
+# ---- config/claude/README.md の新しい端末の手順（LIVE が実行する）
 # config/claude/README.md の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
 steps="$(grep -F '新しい端末では' "$ROOT/config/claude/README.md" | grep -m1 -F 'claude plugin install superpowers@claude-plugins-official' | grep -o '`claude plugin [^`]*`' | tr -d '`')"
 check "config/claude/README.md の新しい端末の手順を読み取れた（claude plugin が 6 つ）" [ "$(printf '%s\n' "$steps" | grep -c .)" = 6 ]
