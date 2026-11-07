@@ -20,9 +20,9 @@ T="$(trap '' HUP INT TERM; mktemp -d)"
 # PATH: shell/ の 5 つを一時 HOME に直接リンクする（install.sh に依らない）
 H="$T/h"; mkdir "$H"
 for f in zshenv zprofile zshrc bashrc bash_profile; do ln -s "$ROOT/shell/$f" "$H/.$f"; done
-IN='/usr/bin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/Windows/System32/OpenSSH:/mnt/c/Program Files/Git/cmd:/mnt/d/tools:/mnt/wsl/x'
+IN='/usr/bin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/Windows/System32:/mnt/c/Windows/System32/OpenSSH:/mnt/c/Program Files/Git/cmd:/mnt/d/tools:/mnt/wsl/x'
 mnt() { printf '%s\n' "$1" | tr ':' '\n' | grep '^/mnt/' | tr '\n' '|'; } # /mnt の項目を順に（空白を含む項目があるので | でつなぐ）
-WANT='/mnt/c/WINDOWS/system32|/mnt/c/WINDOWS|/mnt/wsl/x|'
+WANT='/mnt/c/WINDOWS/system32|/mnt/c/WINDOWS|/mnt/c/Windows/System32|/mnt/wsl/x|'
 if [ -n "$ZSH" ]; then
   out="$(env -i HOME="$H" PATH="$IN" WSL_DISTRO_NAME=Test __MISE_ORIG_PATH="$IN" "$ZSH" -c 'print -r -- "$PATH"; print -r -- "$__MISE_ORIG_PATH"' 2>&1)"
   chk "WSL の zsh: PATH の /mnt は Windows の system32 と WINDOWS だけ（大文字小文字を問わない。/mnt/wsl は残す）" \

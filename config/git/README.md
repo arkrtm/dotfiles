@@ -12,7 +12,7 @@
 [user]
 	name = <業務の名前>
 	email = <業務のアドレス>
-	signingKey = ~/.ssh/id_ed25519.pub
+	signingKey = ~/.ssh/id_ed25519
 [core]
 	hooksPath = ~/.config/git/hooks-nosign
 [gpg]
@@ -21,4 +21,4 @@
 	gpgSign = true
 ```
 
-コミットの SSH 署名は、署名に使う公開鍵を GitHub などに署名の鍵（Signing Key）として登録する（git 2.34 から）。
+コミットの SSH 署名は、署名に使う公開鍵を GitHub などに署名の鍵（Signing Key）として登録する（git 2.34 から）。`signingKey` は秘密鍵のパスにする（公開鍵の `.pub` を書くと、ssh-agent に鍵が入っていない端末では署名に失敗してコミットできない）。

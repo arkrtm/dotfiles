@@ -42,6 +42,8 @@ for kv in merge.conflictStyle=diff3 diff.algorithm=histogram rebase.autoSquash=t
 done
 R="$ROOT/config/git/README.md"
 chk "config/git/README.md の業務の例に SSH 署名がある" sh -c 'grep -q "format = ssh" "$1" && grep -q "gpgSign = true" "$1" && grep -q signingKey "$1"' sh "$R"
+# 公開鍵（.pub）を指すと、ssh-agent の無い端末で署名が失敗する
+chk "業務の例の signingKey は秘密鍵のパス" sh -c 'grep -q "signingKey = ~/.ssh/id_ed25519$" "$1" && ! grep -q "signingKey = .*\.pub" "$1"' sh "$R"
 
 # tmux と herdr
 C="$ROOT/config/tmux/tmux.conf"
