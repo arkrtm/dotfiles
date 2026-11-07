@@ -179,6 +179,16 @@ if [ -s "$T/long.term" ] && ! alive "${q:-0}"; then ok "止められたら、後
 else ng "止めたとき: TERM=$(cat "$T/long.term" 2>/dev/null) 生きている=$(alive "${q:-0}" && echo はい || echo いいえ)"
   case "$(ps -o args= -p "${q:-0}" 2>/dev/null)" in *e-long.sh*) kill "$q" 2>/dev/null ;; esac
 fi
+# 結果を記録できなければ、検査ゼロ件で成功にしない。一時ディレクトリを作れないとき、検査の結果の記録を書けないとき（その名前がディレクトリで、書けない）はどちらも失敗する
+A4="$T/a4"; mkdir -p "$A4/tests/acceptance"; cp "$ROOT/tests/acceptance.sh" "$A4/tests/acceptance.sh"
+printf '%s\n' 'touch "$RAN"; exit 0' > "$A4/tests/acceptance/f-ok.sh"
+out="$(RAN="$T/ran.a4" TMPDIR=/dev/null sh "$A4/tests/acceptance.sh" 2>&1)"; rc=$?
+if [ "$rc" != 0 ] && [ ! -e "$T/ran.a4" ] && ! printf '%s\n' "$out" | grep -q '^acceptance: ok'; then ok "一時ディレクトリを作れなければ、検査を走らせず失敗する"
+else ng "acceptance.sh の一時ディレクトリを作れない: rc=$rc 出力=$out"; fi
+mkdir -p "$T/fk/f-ok.sh.rc" "$T/bin2"; printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$FAKE_DIR"' > "$T/bin2/mk""temp"; chmod +x "$T/bin2/mk""temp"
+out="$(FAKE_DIR="$T/fk" RAN="$T/ran.a4" PATH="$T/bin2:$PATH" sh "$A4/tests/acceptance.sh" 2>&1)"; rc=$?
+if [ "$rc" != 0 ] && printf '%s\n' "$out" | grep -q '^FAIL f-ok.sh' && ! printf '%s\n' "$out" | grep -q '^acceptance: ok [1-9]'; then ok "検査の結果を記録できなければ、成功にせず失敗する"
+else ng "acceptance.sh の結果を記録できない: rc=$rc 出力=$out"; fi
 # 検査が一時ディレクトリを読めなくしても（find が失敗する）、成功にしない。root は権限で止まらないので省く
 if [ "$(id -u)" != 0 ]; then
   run locked; d="$(cat "$PF.dir" 2>/dev/null)"; chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d"
