@@ -57,10 +57,13 @@ if [ -n "$ZSH" ]; then
   printf '#compdef dotfilesbad\n_files\n' > "$I/_dotfilesbad"
   printf '#compdef dotfilesdup\n_files\n' > "$S/_dotfilesdup" # 本体だけ（中で関数を定義すると zsh 5.9 は読み込み元を残さない）
   printf '#compdef dotfilesdup\n_files\n' > "$I/_dotfilesdup"
-  printf 'fpath=(%s %s $fpath)\n' "$I" "$S" > "$H2/.zshenv.local"
-  e="$(zi 'zmodload zsh/parameter; print -r -- "P=${fpath[(I)$1]}" 2>/dev/null; autoload +X _dotfilesdup 2>/dev/null; print -r -- "R=${_comps[dotfilesbad]-なし} F=${functions_source[_dotfilesdup]-なし}"')"
-  chk "誰でも書ける fpath があっても対話 zsh は問いの文を出さず、そこの補完を読まない。同じ名前の補完は安全な場所から読む" \
-    test "$(printf '%s\n' "$e" | grep -v '^P=')" = "R=なし F=$S/_dotfilesdup"
+  # 親だけが誰でも書ける場所（例: /usr/local/share/zsh が 777 で、その下の site-functions は 755）も、親に .zwc を置けるので読まない
+  Q="$T/openparent"; mkdir -p "$Q/sf"; chmod 777 "$Q"; chmod 755 "$Q/sf"
+  printf '#compdef dotfilesdup2\n_files\n' > "$Q/sf/_dotfilesdup2"; printf '#compdef dotfilesdup2\n_files\n' > "$S/_dotfilesdup2"
+  printf 'fpath=(%s %s %s $fpath)\n' "$I" "$Q/sf" "$S" > "$H2/.zshenv.local"
+  e="$(zi 'zmodload zsh/parameter; autoload +X _dotfilesdup _dotfilesdup2 2>/dev/null; print -r -- "R=${_comps[dotfilesbad]-なし} F=${functions_source[_dotfilesdup]-なし} G=${functions_source[_dotfilesdup2]-なし}"')"
+  chk "誰でも書ける fpath（とその下）があっても対話 zsh は問いの文を出さず、そこの補完を読まない。同じ名前の補完は安全な場所から読む" \
+    test "$e" = "R=なし F=$S/_dotfilesdup G=$S/_dotfilesdup2"
   rm -f "$H2/.zshenv.local"
   if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
     chk "対話 zsh はシステムの vendor-completions（docker）を読む" test "$(zi 'print -r -- "${_comps[docker]-なし}"')" = _docker
