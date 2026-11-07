@@ -90,7 +90,7 @@ else skip "ロックの検査（flock が無い）"
 fi
 # 同時に 2 つ呼んでも /clear は 1 回だけ（1 本目が待っている間に 2 本目が来る）
 touch "$T/wait_sleep"; rm -f "$LOG"; d0="$(done_lines)"
-for x in 1 2; do HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "前の作業の続き" >/dev/null 2>&1; done
+for _ in 1 2; do HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "前の作業の続き" >/dev/null 2>&1; done
 i=0; while [ "$(done_lines)" -lt $((d0 + 2)) ] && [ "$i" -lt 80 ]; do sleep 0.1; i=$((i + 1)); done; sleep 0.2
 [ "$(grep -c 'prompt w1:p2 /clear' "$LOG")" = 1 ] && ok "同時に 2 つ呼んでも /clear は 1 回" || ng "二重: $(cat "$LOG")"
 rm -f "$T/wait_sleep"

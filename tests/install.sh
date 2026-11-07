@@ -62,7 +62,7 @@ B="$HOME/.claude/.ponytail-band"
 echo on > "$B"
 
 # pi はやめた: ~/.pi に何も置かない
-[ ! -e "$HOME/.pi" ] && ok "~/.pi を作らない" || ng "~/.pi が作られた: $(ls -A "$HOME/.pi")"
+[ ! -e "$HOME/.pi" ] && ok "ホームに .pi を作らない" || ng "ホームに .pi が作られた: $(ls -A "$HOME/.pi")"
 
 # 再実行しても何も起きない（べき等）: 2 回目の出力に link: / backup: が無い
 out=$(DOTFILES_LINKS_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 sh "$DOTFILES/install.sh")

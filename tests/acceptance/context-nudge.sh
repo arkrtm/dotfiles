@@ -29,7 +29,7 @@ at 30; [ -z "$out" ] && ok "compact などで下がったときは出さない" 
 at 63; printf '%s' "$out" | grep -q '63%' && ok "下がった後にまた 60% を超えたら出す" || ng "下がった後の 63%: $out"
 # 並行する PostToolUse でも 1 回だけ
 echo 64 > "$C/s1"; echo 50 > "$C/s1.nudged"; rm -f "$T/par"
-for x in 1 2 3 4 5 6; do nudge "$main" >> "$T/par" & done; wait
+for _ in 1 2 3 4 5 6; do nudge "$main" >> "$T/par" & done; wait
 [ "$(grep -c additionalContext "$T/par")" = 1 ] && ok "並行して呼ばれても 1 回だけ出す" || ng "並行: $(grep -c additionalContext "$T/par") 回"
 rm -f "$C/s1" "$C/s1.nudged"; out="$(nudge "$main")"; [ $? = 0 ] && [ -z "$out" ] && ok "使用率のファイルが無ければ何も出さない" || ng "ファイルなし: $out"
 at null; [ "$rc" = 0 ] && [ -z "$out" ] && ok "null では何も出さない" || ng "null: $out"

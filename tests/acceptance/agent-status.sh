@@ -18,7 +18,8 @@ H="$(trap '' HUP INT TERM; mktemp -d /tmp/agent-$$.XXXXXX)"; S="$H/sock" # TMPDI
 tmux -S "$S" -f /dev/null new-session -d -x 80 -y 24 sleep 600
 tmux -S "$S" split-window -d sleep 600
 # agent-status の tmux は $TMUX のソケットを使う（本物の hook と同じ条件）
-export TMUX="$(tmux -S "$S" display -p '#{socket_path}'),0,0"
+TMUX="$(tmux -S "$S" display -p '#{socket_path}'),0,0"; export TMUX
+# shellcheck disable=SC2046 # pane の id（%0 など）を語に分けて受ける
 set -- $(tmux -S "$S" list-panes -F '#{pane_id}'); p1=$1; p2=$2
 agg() { tmux -S "$S" show -w -v @agent 2>/dev/null || true; }
 st() { TMUX_PANE="$1" sh "$ROOT/bin/agent-status" "$2" </dev/null; }
@@ -33,8 +34,8 @@ tmux -S "$S" set -p -t "$p1" -u @agent_pane
 
 st "$p1" working; [ "$(agg)" = working ] && ok "1 ペインが working → ウィンドウは working" || ng "working が集約されない: $(agg)"
 st "$p2" waiting; [ "$(agg)" = waiting ] && ok "waiting は working より優先" || ng "waiting が優先されない: $(agg)"
-st "$p2" done; [ "$(agg)" = working ] && ok "working は done より優先" || ng "done の集約が違う: $(agg)"
-st "$p1" idle; [ "$(agg)" = done ] && ok "idle のペインは数えない" || ng "idle の後の集約が違う: $(agg)"
+st "$p2" 'done'; [ "$(agg)" = working ] && ok "working は done より優先" || ng "done の集約が違う: $(agg)"
+st "$p1" idle; [ "$(agg)" = 'done' ] && ok "idle のペインは数えない" || ng "idle の後の集約が違う: $(agg)"
 st "$p2" idle; [ -z "$(agg)" ] && ok "全ペインが idle なら @agent が消える" || ng "@agent が残る: $(agg)"
 
 # 読みと書きが 1 回の tmux 呼び出し: tmux を記録するラッパーを PATH の先頭に置く（; で連ねた 1 コマンドなら、同時に 2 本走っても交錯しない）

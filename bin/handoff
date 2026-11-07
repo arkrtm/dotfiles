@@ -49,7 +49,7 @@ case "${1:-}" in
     # 呼んだ会話ではなくなったので取り消す。印は消さず、行数で比べる
     seen() { n="$(wc -l < "$mark" 2>/dev/null || echo 0)"; echo $((n - base)); }
     # 子には fd 9（ロック）を渡さない（この処理が死んだら、待っている子が残っていてもロックが外れるように）
-    st="$(exec 9>&-; herdr agent wait "$pane" --until idle --until done --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
+    st="$(exec 9>&-; herdr agent wait "$pane" --until idle --until 'done' --until blocked --timeout "${HANDOFF_TIMEOUT_MS:-1800000}" 2>/dev/null \
       | jq -r '[.. | .agent_status? // empty] | first // empty' 2>/dev/null)"
     case "$st" in idle|done) ;; *) stop "ターンの終わりを待てなかった（状態: ${st:-不明}）" ;; esac
     [ "$(seen)" = 0 ] || stop "待っている間にこの pane のセッションが替わった"
