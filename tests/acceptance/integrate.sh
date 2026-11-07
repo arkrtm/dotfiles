@@ -159,6 +159,17 @@ echo 'sys.exit(1)' > src/run.py; echo 'items.Skip(5)' > src/Q.cs
 printf 'rows = Model.objects.onl''y("id")\ncursor.ski''p(10)\n' > tests/test_db.py; git add -A; git commit -qm plain; review PASS
 accepted "ふつうの行（skip の語、Django・Mongo・C# の only・skip の呼び出し、exit。テストのファイルの中のふつうの API も）では止めない"
 
+# ---- Linear の issue 番号（チームのキーと数字）は、ブランチ名・コミットメッセージ・各コミットの差分（文書も）にあれば止める。人の承認でも通さない
+setup "$T/r.git"; add notes.md 'AR''K-12 の続き'; review PASS; early "文書の差分に issue 番号"
+setup "$T/r.git"; echo 2 >> a; git commit -qam "fix: AR""K-7 の続き"; review PASS; early "コミットメッセージに issue 番号"
+setup "$T/r.git"; add n.txt 'AR''K-9'; git rm -q n.txt; git commit -qm rm; review PASS; early "issue 番号を足して後で消した（履歴ごと push される）"
+setup "$T/r.git"; git branch -m "feature/ar""k-3-x"; review PASS; early "ブランチ名に issue 番号（Linear の小文字のブランチ名）"
+setup "$T/r.git"; add notes.txt 'AR''K-12'; review PASS; refused "issue 番号は --human-approved でも通さない" --human-approved
+setup "$T/r.git"; add notes.md "AR""K-12 TOKEN=$secret"; review PASS; early "秘密と同じ行の issue 番号"
+! grep -qF "$secret" "$T/err" && grep -qF 'notes.md:' "$T/err" && grep -qiF 'AR''K-12' "$T/err" && ok "止めた理由は「場所: 番号」だけで、同じ行の秘密を出さない" || ng "止めた理由の出力: $(sed "s/$secret/<秘密>/g" "$T/err")"
+setup "$T/r.git"; add notes.md 'SHA-256 と UTF-8 と ISO-8601、ARK-nn、MAR''K-1'; review PASS
+accepted "ふつうの語（SHA-256・UTF-8・ISO-8601・ARK-nn・語の一部）では止めない"
+
 # ---- main が進んでいたら通さない
 setup "$T/r.git"; review PASS
 git clone -q "$BARE" "$T/o" 2>/dev/null && (cd "$T/o" && add b 1 && git push -q origin HEAD:main)

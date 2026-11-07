@@ -3,7 +3,7 @@
 #   usage: integrate [--human-approved] | integrate setup [--force] [--kind K] [--base B] [--test CMD] | integrate setup --show
 #   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
 # 関門（安い順。テストは最後）: setup の設定がある・最上位のブランチ（base）の上でない・未コミットの変更が無い・origin/<base> を含む・
-#       今のコミットの origin/<base> との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない・設定の test が通る
+#       今のコミットの origin/<base> との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない・Linear の issue 番号を書いていない・設定の test が通る
 # 統合: kind=bare・github は base へ push（早送りだけ）。kind=pr はブランチを push して base に向けた PR を作るだけ（マージはチーム）
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
 # setup: リポジトリの種類（kind: bare・github・pr）・最上位のブランチ（base）・テストのコマンド（test）を
@@ -221,7 +221,22 @@ if [ -z "$approved" ]; then
     || fail "テストのファイルが削除・移動されている。必要なら理由を書いて人が integrate --human-approved で通す"
 fi
 
-# 3. テスト（設定の test）。安い関門を先に、遅いテストは最後に（テストの前に止まれば、待たずに理由が分かる）
+# 3. Linear の issue 番号（キー + 数字）を、ブランチ名・コミットメッセージ・各コミットの差分（文書も）に書いていない。
+# キーはこの端末の Linear のチーム（今は 1 つ。増えたら | で足す）。大文字小文字を問わない（Linear が出すブランチ名は小文字）。
+# 後のコミットで消しても履歴ごと push されるので、差分でなく各コミットを見る。漏れなので --human-approved でも通さない
+issue_keys='ARK'
+msgs="$(git log --format=%B "$from..$head")" || fail "コミットメッセージを読めない"
+patches="$(git log -p --format= --no-renames --no-color --no-ext-diff --text --no-textconv "$from..$head")" || fail "コミットの差分を取れない"
+rc=0
+{ printf 'ブランチ名\t%s\n' "$branch"; printf '%s\n' "$msgs" | sed "s/^/コミットメッセージ$tab/"; printf '%s\n' "$patches" | added; } \
+  | found "(^|[^A-Za-z0-9_])($issue_keys)-[0-9]+" -i || rc=$?
+case "$rc" in
+  0) fail "Linear の issue 番号がブランチ名・コミットメッセージ・差分にある（上の行）。番号でなく理由の文を書き、含むコミットを作り直す" ;;
+  1) ;;
+  *) fail "issue 番号の検査が失敗した（rc=$rc）" ;;
+esac
+
+# 4. テスト（設定の test）。安い関門を先に、遅いテストは最後に（テストの前に止まれば、待たずに理由が分かる）
 if ! out="$(sh -c "$conf_test" 2>&1)"; then
   printf '%s\n' "$out" | tail -n 40 >&2
   fail "テスト（$conf_test）が通らない"
