@@ -121,16 +121,17 @@ chmod 600 "$DOTFILES/ssh/config"
 # （存在しないと ~/.config/git/config = リポジトリ側が書き換わる）
 touch "$HOME/.gitconfig"
 
-# zsh プラグイン（プラグインマネージャは使わず clone のみ。あえて版は固定せず、再実行で最新に追随する: mise の道具と同じ方針。
-# zsh-bin を固定するのはインストーラを実行するから）。更新の失敗は致命にしない（オフラインでも後段を通す）
+# zsh プラグイン（プラグインマネージャは使わず、コミットを固定して取得する。上げるときは下の SHA を直す）。
+# 取得の失敗は致命にしない（オフラインでも後段を通す。zshrc はファイルがあるときだけ読むので、プラグイン無しで起動でき、再実行で入る）
 ZPLUGINS="$HOME/.local/share/zsh/plugins"
 mkdir -p "$ZPLUGINS"
-for repo in zsh-users/zsh-autosuggestions zsh-users/zsh-syntax-highlighting; do
-  dir="$ZPLUGINS/${repo#*/}"
-  if [ -d "$dir/.git" ]; then
-    git -C "$dir" pull -q --ff-only || echo "warning: $repo の更新に失敗（続行）"
-  else
-    git clone -q --depth 1 "https://github.com/$repo.git" "$dir"
+for p in zsh-users/zsh-autosuggestions@85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5 \
+         zsh-users/zsh-syntax-highlighting@e6683f20e5c38d3e5447f45845d04ddda75d0f23; do
+  repo="${p%@*}"; sha="${p#*@}"; dir="$ZPLUGINS/${repo#*/}"
+  if [ ! -d "$dir/.git" ] || [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" != "$sha" ]; then
+    { [ -d "$dir/.git" ] || git init -q "$dir"; } \
+      && git -C "$dir" fetch -q --depth 1 "https://github.com/$repo.git" "$sha" && git -C "$dir" checkout -q --detach "$sha" \
+      || echo "warning: $repo を $sha にできなかった（続行）"
   fi
 done
 # zsh が無ければ静的ビルド（zsh-bin）を ~/.local に入れる（/etc/shells は触らない。chsh できない時は bash_profile が exec zsh）

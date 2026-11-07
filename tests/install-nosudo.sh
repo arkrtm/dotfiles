@@ -48,6 +48,13 @@ if [ "${1:-}" = --check ]; then
   # zsh の補完: install.sh が書き出した補完を、対話 zsh の compinit が読む
   c="$(clean script -qec "$HOME/.local/bin/zsh -ic 'print -r -- \${_comps[gh]}/\${_comps[mise]}/\${_comps[uv]}/\${_comps[uvx]}/\${_comps[rg]}/\${_comps[fd]}'" /dev/null 2>&1 | tr -d '\r' | sed "s/$(printf '\033')\[[?0-9;]*[a-zA-Z]//g" || true)"
   [ "$c" = "_gh/_mise/_uv/_uvx/_rg/_fd" ] && ok "対話 zsh に gh・mise・uv・uvx・rg・fd の補完がある" || ng "zsh の補完: $c"
+  # zsh のプラグイン: install.sh に書いたコミット（2 回の install の後。再実行でも変わらない）
+  n=0
+  for p in $(grep -o 'zsh-users/[a-z-]*@[0-9a-f]\{40\}' "$HOME/dotfiles/install.sh"); do
+    r="${p%@*}"; h="$(git -C "$HOME/.local/share/zsh/plugins/${r#*/}" rev-parse HEAD 2>/dev/null || true)"
+    if [ "$h" = "${p#*@}" ]; then n=$((n + 1)); else ng "zsh のプラグイン $r が ${p#*@} でない（${h:-なし}）"; fi
+  done
+  [ "$n" = 2 ] && ok "zsh のプラグイン 2 つが install.sh に書いたコミットで、再実行でも変わらない" || ng "固定したプラグインの数: $n"
 
   p="$(clean "$HOME/.local/bin/zsh" -lc 'echo "$PATH"' 2>&1 || true)"
   case "$p" in "$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.local/share/mise/shims:"*) ok "ログイン zsh（zprofile）でも PATH の先頭はユーザー領域で重複が無い" ;; *) ng "ログイン zsh の PATH: $p" ;; esac
