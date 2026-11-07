@@ -22,8 +22,8 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
    ```
    - PowerShell 7 は MSI 版（`--installer-type wix`）。MSIX 版（Microsoft Store 版。winget が既定で選ぶことがある）は Codex のサンドボックスから動かせない。VC++ ランタイムが無いと mise・nvim・bat・yazi が起動しない。ARM64 の PC は `Microsoft.VCRedist.2015+.arm64`
    - 入っていれば winget は「既に入っている」と出して 0 以外で終わる。成否は確かめるコマンドで見る
-   - `winget` が無ければ Microsoft Store の「アプリ インストーラー」を入れる（人がやる）。Windows Terminal が無ければ `winget install -e --id Microsoft.WindowsTerminal --source winget`
-   - 確かめる（エージェントが実行。PATH を読み直してから）: `git --version`、`pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'` が 7.4 以上、`Test-Path $env:WINDIR\System32\vcruntime140.dll` が `True`
+   - `winget` が無ければ Microsoft Store の「アプリ インストーラー」を入れる（人がやる）。Windows Terminal が無ければ `winget install -e --id Microsoft.WindowsTerminal --source winget`。ssh（OpenSSH のクライアント。Windows 11 は普通入っている）が無ければ、管理者の PowerShell で `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`（Windows Update に届かず 0x80072ee6 などで失敗したら `winget install -e --id Microsoft.OpenSSH.Preview --source winget`）
+   - 確かめる（エージェントが実行。PATH を読み直してから）: `git --version`、`pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'` が 7.4 以上、`Test-Path $env:WINDIR\System32\vcruntime140.dll` が `True`、`ssh -V` が動く
 3. Hack Nerd Font（Nerd Fonts 3.5.0 以上。Windows Terminal のフォントと、starship・statusline のアイコン）— エージェントが実行（自分用に入れるので管理者は要らない）
    ```powershell
    $ProgressPreference = 'SilentlyContinue'
