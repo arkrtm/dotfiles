@@ -845,8 +845,23 @@ Describe 'Repair-LfCheckout' {
     finally { $lock.Dispose() }
     @(git -C $c2 ls-files).Count | Should -Be $before
     @(Get-CrlfCheckout $c2) | Should -Contain 'a.txt'
+    # install.ps1 の再実行は git status が空のときだけ取り出し直す。書き直せたファイルの stat が索引に残っていてはいけない
+    git -C $c2 status --porcelain --untracked-files=all | Should -BeNullOrEmpty
     { Repair-LfCheckout -Root $c2 -Path @(Get-CrlfCheckout $c2) } | Should -Not -Throw
     @(Get-CrlfCheckout $c2).Count | Should -Be 0
+  }
+  It '失敗の後に git status が索引の stat を更新しても、もう一度呼べば LF に直る' {
+    $c4 = Join-Path $TestDrive 'lf-clone-refreshed'
+    Invoke-Git -c core.autocrlf=true clone -q $Src $c4
+    Invoke-Git -C $c4 config core.autocrlf input
+    $env:GIT_CONFIG_GLOBAL = $EmptyConfig; $env:GIT_CONFIG_NOSYSTEM = '1'
+    $crlf = @(Get-CrlfCheckout $c4)
+    $lock = [IO.File]::Open((Join-Path $c4 'a.txt'), 'Open', 'Read', 'None')
+    try { { Repair-LfCheckout -Root $c4 -Path $crlf } | Should -Throw }
+    finally { $lock.Dispose() }
+    $null = git -C $c4 status --porcelain
+    { Repair-LfCheckout -Root $c4 -Path @(Get-CrlfCheckout $c4) } | Should -Not -Throw
+    [IO.File]::ReadAllText((Join-Path $c4 'a.txt')) | Should -BeExactly "x`ny`n"
   }
   It 'skip-worktree と assume-unchanged のファイルの手元の編集を上書きせず、フラグも残し、ほかの CRLF は LF にする' {
     $c3 = Join-Path $TestDrive 'lf-clone-flags'
@@ -854,15 +869,16 @@ Describe 'Repair-LfCheckout' {
     Invoke-Git -C $c3 config core.autocrlf input
     Invoke-Git -C $c3 update-index --skip-worktree s.txt u.txt
     Invoke-Git -C $c3 update-index --assume-unchanged t.txt
-    # s・t は LF の手元の編集、u は CRLF のまま（git status には出ない）
+    # s は LF の手元の編集、t は CRLF の手元の編集、u は CRLF のまま（git status には出ない）
     [IO.File]::WriteAllText((Join-Path $c3 's.txt'), "mine-s`n")
-    [IO.File]::WriteAllText((Join-Path $c3 't.txt'), "mine-t`n")
+    [IO.File]::WriteAllText((Join-Path $c3 't.txt'), "mine-t`r`n")
     $env:GIT_CONFIG_GLOBAL = $EmptyConfig; $env:GIT_CONFIG_NOSYSTEM = '1'
     $crlf = @(Get-CrlfCheckout $c3)
     $crlf | Should -Contain 'a.txt'
+    $crlf | Should -Contain 't.txt' -Because '前提: CRLF の手元の編集は書き直しの対象に見える'
     { Repair-LfCheckout -Root $c3 -Path $crlf } | Should -Not -Throw
     [IO.File]::ReadAllText((Join-Path $c3 's.txt')) | Should -BeExactly "mine-s`n"
-    [IO.File]::ReadAllText((Join-Path $c3 't.txt')) | Should -BeExactly "mine-t`n"
+    [IO.File]::ReadAllText((Join-Path $c3 't.txt')) | Should -BeExactly "mine-t`r`n"
     [IO.File]::ReadAllText((Join-Path $c3 'u.txt')) | Should -BeExactly "orig`r`n"
     [IO.File]::ReadAllText((Join-Path $c3 'a.txt')) | Should -BeExactly "x`ny`n"
     $flags = @((Invoke-Git -C $c3 ls-files -v) -split "`r?`n" | Where-Object { $_ -match '[stu]\.txt$' })
