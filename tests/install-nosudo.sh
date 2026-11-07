@@ -51,8 +51,8 @@ if [ "${1:-}" = --check ]; then
   sh="$(clean sh -c 'PATH="$HOME/.local/bin:$PATH"; command -v tinymemory' 2>&1 || true)"
   [ "$sh" = "$HOME/.local/bin/tinymemory" ] && ok "tinymemory の shim が ~/.local/bin にある（Claude Code の hook が探す場所）" || ng "tinymemory の shim: ${sh:-なし}"
 
-  # Codex: 公式のインストーラーで ~/.local/bin に入り、起動ファイルに PATH を書き足さない。config.toml はテンプレートから生成され、
-  # 既存は 1 回だけ退避（2 回目は同じ中身なので退避しない）。ponytail が入り、tinymemory の hook がある
+  # Codex: 公式のインストーラーで ~/.local/bin に入り、起動ファイルに PATH を書き足さない。config.toml はテンプレートと既存の結合で、
+  # 既存は 1 回だけ退避（2 回目は意味が同じなので退避しない）。テンプレートに無い表は値ごと残る。ponytail が入り、tinymemory の hook がある
   cv="$(clean "$HOME/.local/bin/codex" --version 2>&1 || true)"
   case "$cv" in codex-cli*) ok "codex が ~/.local/bin に入り動く（$cv）" ;; *) ng "codex が動かない: $cv" ;; esac
   grep -l 'Codex installer' "$HOME"/dotfiles/shell/* "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc" 2>/dev/null | grep . && ng "Codex のインストーラーが起動ファイルに書き足した" || ok "Codex のインストーラーは起動ファイルを変えない"
@@ -62,7 +62,7 @@ if [ "${1:-}" = --check ]; then
   bk="$(ls "$CT".bak.* 2>/dev/null || true)"
   [ "$(echo "$bk" | grep -c .)" = 1 ] && grep -qx 'model = "old"' "$bk" && ok "既存の config.toml は 1 回だけ退避される" || ng "config.toml の退避: ${bk:-なし}"
   grep -qxF '[hooks.state."a:session_start:0:0"]' "$CT" && grep -qx 'trusted_hash = "sha256:aa"' "$CT" && grep -qxF '[projects."/x"]' "$CT" \
-    && ! grep -q 'model = "old"' "$CT" && ! grep -qx '\[other\]' "$CT" && ok "Codex が書いた承認と信頼の表だけ引き継ぐ" || ng "引き継ぎ: $(cat "$CT")"
+    && ! grep -q 'model = "old"' "$CT" && grep -qx '\[other\]' "$CT" && grep -qx 'k = 1' "$CT" && ok "テンプレートに無い表（Codex が書いた承認・信頼・ほか）は値ごと残る" || ng "引き継ぎ: $(cat "$CT")"
   clean "$HOME/.local/bin/codex" plugin list 2>/dev/null | grep -q 'ponytail@ponytail  *installed, enabled' && ok "Codex に ponytail が入る" || ng "Codex に ponytail が入っていない"
   grep -q 'tinymemory hook session-start' "$HOME/.codex/hooks.json" 2>/dev/null && ok "Codex の hooks.json に tinymemory の SessionStart がある" || ng "Codex の hooks.json に tinymemory が無い"
 
@@ -75,13 +75,22 @@ if [ "${1:-}" = --in-container ]; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git curl ca-certificates >/dev/null
   useradd -m -s /bin/bash u
   cp -R /src /home/u/dotfiles && chown -R u:u /home/u/dotfiles
-  # 既存の config.toml: 退避されること、Codex が書いた承認（hooks.state）・信頼（projects）・表示（tui）の表は引き継がれること
+  # 既存の config.toml: 退避されること、テンプレートに無い表（承認・信頼・[other]）が値ごと残ること
   mkdir -p /home/u/.codex && printf 'model = "old"\n\n[projects."/x"]\ntrust_level = "trusted"\n\n[hooks.state."a:session_start:0:0"]\ntrusted_hash = "sha256:aa"\n\n[other]\nk = 1\n' > /home/u/.codex/config.toml && chown -R u:u /home/u/.codex
   for run in 1 2; do # 2 回目は「再実行しても安全」の確認
     su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1 || { tail -40 /tmp/install.log; echo "FAIL install.sh（$run 回目）が失敗した"; exit 1; }
     # 想定外の warning / error は失敗にする（2 回目の fnm の「インストール済み」だけは想定内）
     if grep -iE "warning|error" /tmp/install.log | grep -v "Version already installed"; then echo "FAIL install.sh（$run 回目）が warning / error を出した"; exit 1; fi
   done
+  # テンプレートと混ぜられない config.toml（command 方式の [mcp_servers.linear]）では、フルの install.sh も config.toml の生成で止まり、
+  # config.toml を変えず退避もしない。確かめた後は元に戻す（--check は 2 回目までの結果を見る）
+  C=/home/u/.codex/config.toml
+  cp -p "$C" /tmp/keep.toml && printf '[mcp_servers.linear]\ncommand = "npx"\n' > "$C" && cp -p "$C" /tmp/bad.toml
+  nb="$(ls "$C".bak.* | wc -l)"
+  if su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1; then tail -40 /tmp/install.log; echo "FAIL install.sh が command 方式の linear で止まらなかった"; exit 1; fi
+  grep -qF 'mcp_servers.linear' /tmp/install.log && ! grep -qx 'done.' /tmp/install.log && cmp -s "$C" /tmp/bad.toml && [ "$(ls "$C".bak.* | wc -l)" = "$nb" ] \
+    || { tail -40 /tmp/install.log; echo "FAIL command 方式の linear で、理由を出して止まり config.toml を変えず退避しないこと"; exit 1; }
+  cp -p /tmp/keep.toml "$C"
   exec su - u -c "sh ~/dotfiles/tests/install-nosudo.sh --check"
 fi
 

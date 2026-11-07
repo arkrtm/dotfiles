@@ -9,6 +9,18 @@ if [ -f "$DOTFILES/.git" ] && [ -z "${DOTFILES_ALLOW_WORKTREE:-}" ]; then
   exit 1
 fi
 
+# Codex: config.toml はリンクせずテンプレートから作る（writable_roots にホームの絶対パスが要るため）。テンプレートにあるキーはテンプレートの値にし、
+# 既存のほかのキーと表（Codex の CLI・デスクトップが書く notify・プラグイン・MCP・承認など）は値ごと残す。意味が変わるときだけ既存を退避して置き換え、
+# 作れないとき（command 方式の [mcp_servers.linear]、壊れた TOML、書き出しの読み直しの不一致）は止まる。結合は config/codex/merge-config.py（tomlkit）。
+# 引数は uv を呼ぶコマンド。--managed-python でシステムの python3 を使わず、--script と --no-config で呼んだ場所や dotfiles の上の場所（~/uv.toml など）の uv・Python の設定に左右されない
+codex_config() {
+  mkdir -p "$HOME/.codex"
+  "$@" run --no-config --managed-python --quiet --script "$DOTFILES/config/codex/merge-config.py" \
+    "$DOTFILES/config/codex/config.toml.tmpl" "$HOME/.codex/config.toml" "$HOME"
+}
+# config.toml の生成だけを検査したい時（tests/acceptance/codex-config.sh）は、PATH の uv で作って終わる（リンクもほかの設定もしない）
+if [ -n "${DOTFILES_CODEX_CONFIG_ONLY:-}" ]; then codex_config uv; exit 0; fi
+
 # リンク定義: <リポジトリ内パス> <$HOME からの配置先>
 LINKS="
 shell/zshenv             .zshenv
@@ -126,24 +138,8 @@ export FNM_DIR="$HOME/.local/share/fnm"
 # 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く
 ln -sfn "$HOME/.local/share/mise/shims/tinymemory" "$HOME/.local/bin/tinymemory"
 
-# Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）。
-# 中身が違うときだけ既存を退避して置き換える。Codex が書いた表のうち、フックの承認（hooks.state）・プロジェクトの信頼（projects）・
-# 表示の状態（tui）は既存から引き継ぐ（消すと /hooks の承認が要り直す）。ほかに Codex が書き込んだ分は再実行で消える
-mkdir -p "$HOME/.codex"
-codex_conf="$HOME/.codex/config.toml"
-{
-  sed "s|@HOME@|$HOME|g" "$DOTFILES/config/codex/config.toml.tmpl"
-  [ -f "$codex_conf" ] && awk '/^\[/ { keep = /^\[(hooks\.state|projects\.|tui)/; if (keep) print "" } keep && NF' "$codex_conf"
-} > "$codex_conf.new"
-if cmp -s "$codex_conf.new" "$codex_conf"; then
-  rm "$codex_conf.new"
-else
-  if [ -e "$codex_conf" ]; then
-    mv "$codex_conf" "$codex_conf.bak.$(date +%Y%m%d%H%M%S)"
-    echo "backup: $codex_conf"
-  fi
-  mv "$codex_conf.new" "$codex_conf"
-fi
+# Codex の config.toml（上の codex_config）。uv は mise のもの（$HOME で実行する）
+codex_config "$MISE" exec -- uv
 # Codex 本体は公式のインストーラー（~/.local/bin、sha256 で検証）。入っていれば何もしない（npm などで入れた端末もそのまま）。
 # ~/.local/bin が PATH に無いと起動ファイル（dotfiles へのリンク）に書き足すので、PATH に入れてから呼ぶ
 CODEX="$(command -v codex || echo "$HOME/.local/bin/codex")"

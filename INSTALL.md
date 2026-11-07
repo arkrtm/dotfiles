@@ -8,7 +8,7 @@
 4. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
 5. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ（インストーラは取得してから版を固定して実行）、`config/mise/config.toml` のツール（tmux を含む）を全部入れる
 6. fnm で Node の最新 LTS を入れて既定にする（`~/.local/share/fnm`。再実行で新しい LTS に追随）
-7. Codex: `~/.codex/config.toml` を `config/codex/config.toml.tmpl` から生成（承認と信頼の表は引き継ぐ。中身が違えば既存を `*.bak.<日時>` に退避）。codex が無ければ[公式のインストーラー](https://github.com/openai/codex)で `~/.local/bin` に入れ、ponytail のプラグインと `tinymemory init codex` の hook を入れる
+7. Codex: `~/.codex/config.toml` を `config/codex/config.toml.tmpl` と既存から作る（テンプレートのキーはテンプレートの値、ほかは値ごと残す。意味が変わるときだけ既存を `*.bak.<日時>` に退避。説明は `config/codex/README.md`）。codex が無ければ[公式のインストーラー](https://github.com/openai/codex)で `~/.local/bin` に入れ、ponytail のプラグインと `tinymemory init codex` の hook を入れる
 8. Neovim プラグインを `lazy-lock.json` の版に揃える
 9. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定）
 

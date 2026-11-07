@@ -1,6 +1,7 @@
 # config/codex
 
-- `config/codex/config.toml.tmpl`: `~/.codex/config.toml` を生成する（リンクしない）。Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。リンクしないのはホームの絶対パスが要るため。Codex が書き込んだ分は install.sh の再実行で消える。ただしフックの承認（`hooks.state`）・プロジェクトの信頼（`projects`）・表示（`tui`）の表は引き継ぐ
+- `config/codex/config.toml.tmpl`: `~/.codex/config.toml` の元（リンクしない。ホームの絶対パスが要るため）。Codex の設定: モデル sol（`gpt-6.1-sol`）・effort xhigh に固定、ponytail、tinymemory の書き込み先、Linear の MCP。install.sh は既存の config.toml と結合する: テンプレートにあるキーはテンプレートの値にし、ほかのキーと表（Codex の CLI・デスクトップが書く notify・プラグイン・MCP・承認・信頼など）は値ごと残す。意味が同じなら書き換えない（表の並びと書式の違いは見ない）。書き換えるときは既存を `config.toml.bak.<日時>` に退避する。**テンプレートから消したキーは各端末の config.toml に残り続ける**（要らなければ各端末で手で消す）。既存の `[mcp_servers.linear]` が command 方式（テンプレートの url と混ぜると Codex が起動しない）、TOML として読めない、書き出しを読み直すと結合の結果と違う、のどれかなら書かずに install.sh を止める
+- `config/codex/merge-config.py`: 上の結合。install.sh が mise の uv で、uv の管理する Python と版を固定した tomlkit で実行する（システムの python3 は使わない）。既存の文書を土台にテンプレートのキーだけを書き換えるので、既存のコメント・並び・書式は残る（既存が無ければテンプレートをコメントごと書く）
 
 ## Codex の手順
 
