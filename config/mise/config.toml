@@ -8,6 +8,7 @@ fzf = "latest"
 starship = "latest"
 gh = "latest"
 jq = "latest" # tests/acceptance と tests/static.sh が使う（Ubuntu / WSL には既定で無い）
+shellcheck = "0.11.0" # tests/static.sh が使う。版を固定する（新しい版で警告が増えると関門が急に落ちる。.github/workflows/check.yml の shellcheck-py と一緒に上げる）
 
 # 言語ツール（ランタイム自体の管理は uv / fnm に任せる）
 uv = "latest"

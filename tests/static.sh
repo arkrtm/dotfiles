@@ -1,5 +1,5 @@
 #!/bin/sh
-# 静的な検査（ネットワーク無し・数秒。道具が無くて省いた節は 省いた … を出す）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
+# 静的な検査（ネットワーク無し・数秒。道具が無くて省いた節は 省いた … を出す）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、shellcheck の警告、
 # tmux.conf の読み込み、ssh/config の構文、SKILL.md の frontmatter、settings.json（JSON として読める、hooks の event 名が既知、
 # hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、herdr の config.toml にエラーが無い、一時ファイルを作る検査の trap の形、追跡するファイルに Linear の issue 番号が無い
 #   sh tests/static.sh
@@ -12,15 +12,18 @@ skip() { echo "省いた $1"; }
 
 # ---- 構文: #!/bin/sh のファイルは dash（Debian の /bin/sh。無ければ sh）、#!/usr/bin/env bash のファイルと zsh・bash の起動ファイルはそれぞれのシェル
 SH="$(command -v dash || echo sh)"
+sc="" # 警告を見る対象（構文を見たファイル）
 for f in $(git -C "$ROOT" ls-files); do
   [ -f "$ROOT/$f" ] || continue
   case "$(head -n 1 "$ROOT/$f")" in '#!/bin/sh'*) ;; *) continue ;; esac
   "$SH" -n "$ROOT/$f" 2>/dev/null && ok "構文（$(basename "$SH") -n）: $f" || ng "構文エラー: $f"
+  sc="$sc $ROOT/$f"
 done
 for f in $(git -C "$ROOT" ls-files); do
   [ -f "$ROOT/$f" ] || continue
   case "$(head -n 1 "$ROOT/$f")" in '#!/usr/bin/env bash'*) ;; *) continue ;; esac
   bash -n "$ROOT/$f" 2>/dev/null && ok "構文（bash -n）: $f" || ng "構文エラー: $f"
+  sc="$sc $ROOT/$f"
 done
 if command -v zsh >/dev/null 2>&1; then
   for f in shell/zshenv shell/zprofile shell/zshrc; do
@@ -32,6 +35,17 @@ fi
 for f in shell/bashrc shell/bash_profile; do
   bash -n "$ROOT/$f" 2>/dev/null && ok "構文（bash -n）: $f" || ng "構文エラー: $f"
 done
+
+# ---- shellcheck: 警告以上が無い。対象は構文を見た #!/bin/sh と #!/usr/bin/env bash のファイルと、bash の起動ファイル（shebang が無いので -s bash）。
+#      zsh の起動ファイルは shellcheck が zsh を読めないので見ない。道具が無ければ黙って省かず落とす（版は config/mise/config.toml で固定）
+# shellcheck disable=SC2086 # sc は空白で分けたパスの並び
+if command -v shellcheck >/dev/null 2>&1; then
+  n="$(echo $sc | wc -w | tr -d ' ')"
+  r="$(shellcheck -S warning -f gcc $sc 2>&1 && shellcheck -S warning -f gcc -s bash "$ROOT/shell/bashrc" "$ROOT/shell/bash_profile" 2>&1)" \
+    && ok "shellcheck -S warning に警告が無い（$n 本と bash の起動ファイル 2 本）" || ng "shellcheck -S warning の警告:
+$r"
+else ng "shellcheck が無い（mise で入る: mise install）"
+fi
 
 # ---- tmux.conf: 私設のサーバで読み込める（new-session は壊れた conf でも 0 を返すので source-file で見る）。
 #      prefix r の再読込は、追記する terminal-features を既定に戻してから読み直す（戻さないと再読込のたびに増える）

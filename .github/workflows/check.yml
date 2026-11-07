@@ -12,4 +12,6 @@ jobs:
       # 検査が使う道具のうち ubuntu-latest に無いもの（dash・jq・git はある。uv は Codex の config.toml の検査が使う）
       - run: sudo apt-get update && sudo apt-get install -y zsh tmux
       - run: pipx install uv
+      # tests/static.sh が使う shellcheck。版は config/mise/config.toml と同じ
+      - run: pipx install shellcheck-py==0.11.0.1
       - run: sh scripts/check
