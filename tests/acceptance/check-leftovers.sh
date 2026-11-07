@@ -133,6 +133,17 @@ if [ -d /proc/self ]; then
     if [ "$rc" = 0 ] && [ -z "$rest" ]; then ok "TMPDIR が ${#L} バイトでも $f は通り、/tmp の一時ディレクトリを残さない"
     else ng "長い TMPDIR（${#L} バイト）で $f: rc=$rc 残り=[$rest] 出力=$(printf '%s\n' "$out" | grep -v '^ok ' | head -3)"; [ -z "$rest" ] || rm -rf $rest; fi
   done
+  # INT を使う検査（stop-cleanup.sh）は、INT を無視しない状態で走る（後ろで走らせると、非対話の sh は INT を無視して始める）。自分が無視して起動されたときは確かめられない
+  ign="$(sed -n 's/^SigIgn:[[:space:]]*//p' /proc/$$/status 2>/dev/null)"
+  if [ -z "$ign" ] || [ $((0x$ign & 2)) != 0 ]; then skip "INT を使う検査を前で走らせる確かめ（INT を無視して起動された）"
+  else
+    A2="$T/a2"; mkdir -p "$A2/tests/acceptance"; cp "$ROOT/tests/acceptance.sh" "$A2/tests/acceptance.sh"
+    printf '%s\n' "sed -n 's/^SigIgn:[[:space:]]*//p' /proc/\$\$/status > \"\$SIGF\"" > "$A2/tests/acceptance/stop-cleanup.sh"
+    SIGF="$T/sig" sh "$A2/tests/acceptance.sh" >/dev/null 2>&1
+    s="$(cat "$T/sig" 2>/dev/null)"
+    if [ -n "$s" ] && [ $((0x$s & 2)) = 0 ]; then ok "INT を使う検査（stop-cleanup.sh）は INT を無視しない状態で走る"
+    else ng "INT を使う検査の SigIgn: [$s]"; fi
+  fi
 else skip "残ったプロセスと長い TMPDIR の検査（/proc が無い）"
 fi
 
@@ -149,6 +160,20 @@ if [ "$(cat "$T/rc.acc" 2>/dev/null)" = 1 ] && grep -q '^FAIL b-fail.sh' "$T/out
   ok "子が出力をつないだまま残っても、acceptance.sh は戻り、失敗した検査の出力を出す"; else ng "acceptance.sh: rc=$(cat "$T/rc.acc" 2>/dev/null) 出力=$(cat "$T/out.acc")"; fi
 for p in $(cat "$PF" 2>/dev/null); do case "$(ps -o args= -p "$p" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac; done # 残した子は自分の pid で止める
 wait "$aw"
+# 止められたら、後ろで走っている検査にも TERM を送り、終わるのを待ってから消す（後ろの検査は INT を無視して始まるので、残らないよう TERM で止める）
+A3="$T/a3"; mkdir -p "$A3/tests/acceptance"; cp "$ROOT/tests/acceptance.sh" "$A3/tests/acceptance.sh"
+cat > "$A3/tests/acceptance/e-long.sh" <<'SH'
+echo $$ > "$LONG"; trap 'echo TERM > "$LONG.term"; exit 1' TERM
+i=0; while [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+SH
+LONG="$T/long" sh "$A3/tests/acceptance.sh" > "$T/out.a3" 2>&1 & a3p=$!
+i=0; while [ ! -s "$T/long" ] && [ "$i" -lt 50 ]; do i=$((i + 1)); sleep 0.1; done
+kill "$a3p" 2>/dev/null; wait "$a3p" 2>/dev/null
+q="$(cat "$T/long" 2>/dev/null)"
+if [ -s "$T/long.term" ] && ! alive "${q:-0}"; then ok "止められたら、後ろで走っている検査にも TERM を送り、終わるのを待ってから消す"
+else ng "止めたとき: TERM=$(cat "$T/long.term" 2>/dev/null) 生きている=$(alive "${q:-0}" && echo はい || echo いいえ)"
+  case "$(ps -o args= -p "${q:-0}" 2>/dev/null)" in *e-long.sh*) kill "$q" 2>/dev/null ;; esac
+fi
 # 検査が一時ディレクトリを読めなくしても（find が失敗する）、成功にしない。root は権限で止まらないので省く
 if [ "$(id -u)" != 0 ]; then
   run locked; d="$(cat "$PF.dir" 2>/dev/null)"; chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d"
