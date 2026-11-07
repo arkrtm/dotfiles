@@ -39,5 +39,20 @@ R="$ROOT/shell/README.md"
 chk "shell/README.md に端末ごとの設定と秘密の置き場がある" \
   sh -c 'for f in .zshenv.local .zshrc.local .bashrc.local; do grep -qF "~/$f" "$1" || exit 1; done; grep -q 秘密 "$1"' sh "$R"
 
+# 補完: install.sh（リンクだけ）に umask 002 で一時 HOME を作らせる。対話 zsh には LOGNAME=dotfiles-nogroup を渡し、
+# compaudit の「自分だけのグループなら group が書けてもよい」例外を外す（端末に依らず厳しい条件にする）
+if [ -n "$ZSH" ]; then
+  H2="$T/h2"; mkdir "$H2"
+  (umask 002; env -i HOME="$H2" PATH=/usr/bin:/bin DOTFILES_LINKS_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 sh "$ROOT/install.sh" >/dev/null 2>&1)
+  chk "install.sh（リンクだけ）が補完の置き場を作る" test -d "$H2/.local/share/zsh/site-functions"
+  printf '#compdef dotfilesprobe\n_dotfilesprobe() { _files }\n' 2>/dev/null > "$H2/.local/share/zsh/site-functions/_dotfilesprobe"
+  zi() { env -i HOME="$H2" LOGNAME=dotfiles-nogroup PATH=/usr/bin:/bin "$ZSH" -i -c "$1" </dev/null 2>&1; }
+  chk "umask 002 で作った補完の置き場とその親を compaudit が危ないとみなさず、対話 zsh が補完を読む（打ち切りや問いの文も出ない）" \
+    test "$(zi 'autoload -Uz compaudit; compaudit >/dev/null 2>&1; print -r -- "A=$? R=${_comps[dotfilesprobe]-なし}"')" = 'A=0 R=_dotfilesprobe'
+  if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
+    chk "対話 zsh はシステムの vendor-completions（docker）を読む" test "$(zi 'print -r -- "${_comps[docker]-なし}"')" = _docker
+  fi
+fi
+
 [ "$fail" = 0 ] && echo "acceptance shell: ok"
 [ "$fail" = 0 ]

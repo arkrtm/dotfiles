@@ -103,6 +103,13 @@ if [ -n "${WSL_DISTRO_NAME:-}" ]; then
   else echo "warning: Windows の win32yank.exe を見つけられず、リンクしない（Neovim のクリップボードが動かない。Windows で winget install -e --id equalsraf.win32yank）"; fi
 fi
 
+# zsh の補完の置き場。compaudit は fpath のディレクトリとその親が他人（group を含む）に書けると、対話の起動のたびに続けるか尋ね、
+# 端末が無ければ compinit を打ち切る。umask 002 の端末では mkdir -p が 775 にするので、毎回 go-w にする（前から 775 の端末も直る）。
+# 早期終了の前に置くのは、一時 HOME の検査（tests/acceptance/shell.sh）で umask 002 の結果を確かめるため
+ZCOMP="$HOME/.local/share/zsh/site-functions"
+mkdir -p "$ZCOMP"
+chmod go-w "$HOME/.local/share/zsh" "$ZCOMP"
+
 # リンク配置だけを検査したい時（tests/install.sh）はここで終わる
 [ -n "${DOTFILES_LINKS_ONLY:-}" ] && exit 0
 
@@ -152,6 +159,24 @@ fi
 export FNM_DIR="$HOME/.local/share/fnm"
 "$MISE" exec -- fnm install --lts
 "$MISE" exec -- fnm default lts-latest
+
+# zsh の補完を道具に書き出させる（git・tmux・jq は zsh に同梱の補完がある）。再実行で道具の版に追随する。足すときは zcomp を 1 行足す。
+# 一時ファイルに書いてから置き換え、道具が無い・失敗・出力が空なら前のファイルを残して warning を出す（続行）。stderr は捨てる（mise の更新の知らせなどを混ぜない）
+zcomp() { # <名前> <コマンド…>
+  zc_name="$1"; shift
+  if "$MISE" exec -- "$@" > "$ZCOMP/_$zc_name.new" 2>/dev/null && [ -s "$ZCOMP/_$zc_name.new" ]; then
+    mv "$ZCOMP/_$zc_name.new" "$ZCOMP/_$zc_name"
+  else
+    rm -f "$ZCOMP/_$zc_name.new"
+    echo "warning: zsh の補完 $zc_name を作れなかった（続行）"
+  fi
+}
+zcomp gh gh completion -s zsh
+zcomp mise "$MISE" completion zsh
+zcomp uv uv generate-shell-completion zsh
+zcomp uvx uvx --generate-shell-completion zsh
+zcomp rg rg --generate complete-zsh
+zcomp fd fd --gen-completions zsh
 
 # tinymemory の hook は PATH + ~/.local/bin + ~/.cargo/bin しか探さない（hook 文字列は Codex の
 # 信頼ハッシュに固定されていて変更不可）。PATH が最小でも見つかるよう ~/.local/bin に shim を置く

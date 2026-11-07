@@ -5,6 +5,9 @@ SAVEHIST=50000
 setopt share_history hist_ignore_all_dups hist_ignore_space hist_reduce_blanks
 
 # ===== 補完 =====
+# install.sh が書き出す道具の補完と、システムの vendor-completions（docker など。zsh-bin の fpath には無い）
+fpath=(~/.local/share/zsh/site-functions(N/) /usr/share/zsh/vendor-completions(N/) $fpath)
+typeset -U fpath
 autoload -Uz compinit && compinit
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}' # 大文字小文字を区別しない
 zstyle ':completion:*' menu select

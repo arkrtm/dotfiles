@@ -45,6 +45,9 @@ if [ "${1:-}" = --check ]; then
   # 対話 zsh（zsh-bin の 5.8）で zshrc がエラーなく読まれ、fnm env が効く（端末が無いと zle が使えないので script で疑似端末を付ける）
   i="$(clean script -qec "$HOME/.local/bin/zsh -ic 'echo fnm=\${FNM_MULTISHELL_PATH:+ok}'" /dev/null 2>&1 | tr -d '\r' | sed "s/$(printf '\033')\[[?0-9;]*[a-zA-Z]//g" || true)" # 端末の制御シーケンスは除く
   [ "$i" = "fnm=ok" ] && ok "対話 zsh で zshrc がエラーなく読まれ、fnm env が効く" || ng "対話 zsh の zshrc: $i"
+  # zsh の補完: install.sh が書き出した補完を、対話 zsh の compinit が読む
+  c="$(clean script -qec "$HOME/.local/bin/zsh -ic 'print -r -- \${_comps[gh]}/\${_comps[mise]}/\${_comps[uv]}/\${_comps[uvx]}/\${_comps[rg]}/\${_comps[fd]}'" /dev/null 2>&1 | tr -d '\r' | sed "s/$(printf '\033')\[[?0-9;]*[a-zA-Z]//g" || true)"
+  [ "$c" = "_gh/_mise/_uv/_uvx/_rg/_fd" ] && ok "対話 zsh に gh・mise・uv・uvx・rg・fd の補完がある" || ng "zsh の補完: $c"
 
   p="$(clean "$HOME/.local/bin/zsh" -lc 'echo "$PATH"' 2>&1 || true)"
   case "$p" in "$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.local/share/mise/shims:"*) ok "ログイン zsh（zprofile）でも PATH の先頭はユーザー領域で重複が無い" ;; *) ng "ログイン zsh の PATH: $p" ;; esac
