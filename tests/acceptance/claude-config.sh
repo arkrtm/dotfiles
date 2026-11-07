@@ -85,24 +85,43 @@ check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
 git -C "$ROOT" grep -q -I -E '\b[P]i\b|\.p[i]/|bigpower[s]|/skil[l]:|pi-tinymemor[y]|yamlfi[x]|ask_user_questio[n]'; rc=$? # 1 = 一致なし、0 = 記述がある、ほかは実行の失敗
 check "pi 向けの記述が無い（git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
 
-# ---- 指示と skill に、安全な手順の要が残っている。消えると統合の関門や片づけが壊れる語（コマンド・オプション・確かめの名前）だけを見る。
-#      文の言い回しは見ない（言い換えでは落ちず、語が消えたら落ちる）。振る舞いは integrate.sh・codex.sh・integrate-setup.sh・git-workflow.sh が確かめる
+# ---- 指示と skill の規則が残っている。規則ごとに、消えれば規則が無くなる語（コマンド・オプション・名前）を 1〜3 つ見る。
+#      文の言い回しは見ない（言い換えでは落ちず、規則ごと消えたら落ちる）。規則を変えたら、ここの語も変える
 C="$ROOT/config/agents/AGENTS.md"; WU="$ROOT/config/agents/skills/wrap-up/SKILL.md"; IS="$ROOT/config/agents/skills/issue/SKILL.md"
+HO="$ROOT/config/agents/skills/handoff/SKILL.md"
 # words <説明> <ファイル> <節の見出しの正規表現（空なら全体）> <語>…
 words() {
   wd="$1" f="$2" sec="$3"; shift 3
   if [ -n "$sec" ]; then txt="$(sed -n "/^$sec/,/^## /p" "$f")"; else txt="$(cat "$f")"; fi
+  check "$wd を読めた" [ -n "$txt" ]
   for w in "$@"; do check "$wd に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$txt" "$w"; done
 }
-words "グローバル指示の「レビュー」" "$C" '## レビュー' 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' notify
+# absent <説明> <ファイル> <語>: 消した規則や古い記述が戻っていない
+absent() { check "$1" sh -c '! grep -qF -- "$2" "$1"' _ "$2" "$3"; }
+for h in 作業の哲学 規約 レビュー モデルの割り当て Git Linear スクリーンショット; do check "グローバル指示に「$h」の節がある" grep -Eq "^#+ .*$h" "$C"; done
+words "グローバル指示の「作業の哲学」" "$C" '## 作業の哲学' '正しさと堅牢さ' superpowers 'テストは superpowers の TDD'
+words "グローバル指示の読み替え（Codex）" "$C" '' '`$issue`' AskUserQuestion '`/new`'
+words "グローバル指示の「規約」" "$C" '## 規約' '`uv`' '--tags relay' remember
+words "グローバル指示の「レビュー」" "$C" '## レビュー' 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' notify '「直す」' '「参考」'
+words "グローバル指示の「モデルの割り当て」" "$C" '## モデルの割り当て' '`opus`' '`sonnet`' '`model: haiku`' '`plan`' '`impl`' '`verify`' '`explore`'
 words "グローバル指示の「Git」" "$C" '## Git' integrate 'integrate setup' 'integrate --human-approved' 'git rebase origin/<最上位>' \
-  'codex-review branch origin/<最上位>' '--no-track' '.worktrees/' 'origin/<最上位>'
-words "issue の SKILL.md" "$IS" '' '.worktrees/' 'git worktree list'
-words "wrap-up の SKILL.md" "$WU" '' 'git merge-base --is-ancestor' headRefOid baseRefName '--ff-only' 'git worktree remove' 'integrate setup --show' 'git branch -D'
-# 統合の後の片づけ（Done・relay の記憶の archive）
-words "wrap-up の SKILL.md の「統合の後」" "$WU" '## 5\. 統合の後' Done 'index("relay")' 'tinymemory archive'
-words "グローバル指示の「規約」" "$C" '## 規約' '--tags relay'
-check "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" sh -c "! grep -qF 'git branch -d' '$WU'"
+  'codex-review branch origin/<最上位>' '--no-track' '.worktrees/' 'feature/' 'refactor:' '強制 push' 'PR を出す前だけ' 'Linear と superpowers の情報'
+words "グローバル指示の「Linear」" "$C" '## Linear' '`/issue' 'In Progress' Done Backlog '.superpowers/plans/' '.superpowers/tasks/' 'docs/superpowers/' '作業ブランチの上で `/wrap-up`'
+words "グローバル指示の「スクリーンショット」" "$C" '## スクリーンショット' 'ls -t /mnt/c/Users/*/Pictures/Screenshots/*.png' 'WSL 以外'
+absent "グローバル指示に経緯（harness）が無い" "$C" harness
+absent "グローバル指示に Karpathy の全文が無い" "$C" 'Karpathy guidelines'
+# shellcheck disable=SC2088 # 文字の ~ を探す（展開しない）
+absent "グローバル指示に古いスクショの転送が無い" "$C" '~/screenshots'
+words "issue の SKILL.md" "$IS" '' '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最上位>' 'グローバル指示の Linear の節'
+words "wrap-up の SKILL.md" "$WU" '' '参考' Backlog 'git merge-base --is-ancestor' headRefOid baseRefName '--ff-only' 'git worktree remove' \
+  'integrate setup --show' 'git branch -D' 'Linear・superpowers の情報を書かない'
+# 統合の後の片づけ（Done・relay の記憶の archive）と、次の作業の決め方（示された作業 → Todo → 尋ねて答えを待つ）
+words "wrap-up の SKILL.md の「統合の後」" "$WU" '## 5\. 統合の後' Done 'index("relay")' 'tinymemory archive' 'ユーザーが示した作業' Todo '答えを待つ' handoff
+absent "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" "$WU" 'git branch -d'
+words "handoff の SKILL.md" "$HO" '' '統合の後に次の issue を始める' '`/issue ARK-nn`' relay
+words "dotfiles の CLAUDE.md" "$ROOT/CLAUDE.md" '' superpowers 'sh tests/static.sh' 'sh tests/install.sh' 'sh tests/acceptance.sh'
+words "config/codex/README.md" "$ROOT/config/codex/README.md" '' '「直す」' '「参考」' '<その HEAD>...<HEAD>'
+words "config/claude/README.md" "$ROOT/config/claude/README.md" '' 'claude plugin install superpowers@claude-plugins-official'
 
 # ---- config/claude/README.md の新しい端末の手順（LIVE が実行する）
 # config/claude/README.md の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
