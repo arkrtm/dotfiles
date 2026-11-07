@@ -26,6 +26,8 @@ argument-hint: "[ARK-nn]"
 | **tinymemory `session`** | 現在の状態と次の手順（1 件。150 行以内）。Linear にあることは issue 番号で指し、書き写さない | 次のセッションの開始時に自動で（**端末ごと**。別の端末で続けるなら Linear のコメントが要る） |
 | **残さない** | デバッグの途中経過、試行錯誤の履歴、一時的な状態、他の場所にあるもの | — |
 
+Codex のレビューの「参考」: issue の本文の「参考」の指摘を、1 件ずつ Backlog の issue に起こすか決める。
+
 降格・更新:
 - 既存の fact を `tinymemory search` で確認し、**同じ話題があれば同じタイトルで保存し直す**（supersede）。間違いになったもの、指示ファイルや README と重なるものは `tinymemory delete <id>`
 - 以前の session（`tinymemory list`）の「次の手順」を今回ですべて終え、状態も古くなったなら、`tinymemory archive <id>` で recall から外す（未完了や判断待ちの状態が次のセッションに残らないように）。作業中の中継の記憶（relay）は 5 で外す

@@ -94,10 +94,15 @@ done
 for h in 'Karpathy guidelines' 'Ponytail, lazy senior dev mode'; do
   check "グローバルの CLAUDE.md に「$h」の全文が無い" sh -c "! grep -q '$h' '$C'"
 done
-# レビューは Codex: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify
-for w in 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' 'notify'; do
+# レビューは Codex: 計画は codex-review plan、最終は codex-review branch を VERDICT: PASS まで、2 往復で通らなければ notify。
+# 指摘は「直す」と「参考」に分け、「参考」は issue の本文、2 回目からは前回の指摘と修正の差分だけ
+for w in 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' 'notify' \
+  '「直す」と「参考」に分ける' '実際には起こりにくい入力や環境は「参考」' 'FAIL の理由になるのは「直す」だけ' \
+  '「参考」の指摘は直さず、作業中の issue の本文に書く' '2 回目からは' '前回の「直す」が直ったかと、その後の修正の差分だけ'; do
   check "グローバルの CLAUDE.md の「レビュー」に「$w」" sh -c "sed -n '/^## レビュー/,/^## /p' '$C' | grep -qF '$w'"
 done
+check "config/codex/README.md の codex-review の説明に仕分けと再レビュー" \
+  sh -c "grep -qF '「直す」と「参考」に分けさせる' '$ROOT/config/codex/README.md' && grep -qF '<その HEAD>...<HEAD>' '$ROOT/config/codex/README.md'"
 # フェーズごとのモデル: 各役の Agent ツールの model・effort
 for w in '| 設計・計画 | サブエージェント | `opus`・`xhigh` |' '| 実装（plan のタスクごと） | サブエージェント | `sonnet`・`high` |' \
   '| 検証（受け入れ条件を実際に動かす） | 実装と別のサブエージェント | `opus`・`high` |' '`model: haiku`'; do
@@ -159,6 +164,7 @@ for w in '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最
 done
 W="$ROOT/config/agents/skills/wrap-up/SKILL.md"
 check "wrap-up の SKILL.md に「## 5. 統合の後」の節がある" grep -qx '## 5. 統合の後' "$W"
+check "wrap-up の振り分け: issue の本文の「参考」の指摘を Backlog の issue に起こすか決める" grep -qF 'issue の本文の「参考」の指摘を、1 件ずつ Backlog の issue に起こすか決める' "$W"
 check "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" sh -c "! grep -qF 'git branch -d' '$W'"
 for w in 'origin/<base>' 'baseRefName' 'integrate setup --show' 'ブランチが `<base>` なら' 'git branch -D feature/<作業内容>'; do
   check "wrap-up の SKILL.md に「$w」" grep -qF -- "$w" "$W"
