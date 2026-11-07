@@ -433,7 +433,7 @@ function Assert-TomlUnique {
 }
 
 # TOML の意味（表の名前・キー・値の組の集まり）を文字列の集合にする。並び・コメント・空行・書き方（引用符と空白）の違いは無視する。
-# 配列の表（[[…]]）は何番目の要素かを名前に付ける（要素の順は意味）。その下の表は、直近の要素に属するものとして同じく番号を付ける
+# 配列の表（[[…]]）は何番目の要素かを名前に付ける（要素の順は意味。番号の前の印は U+0001 で、キーの部分には現れない）。その下の表は、直近の要素に属するものとして同じく番号を付ける
 function Get-TomlMeaning {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $nul = [string][char]0
@@ -444,11 +444,11 @@ function Get-TomlMeaning {
     $raw = ''
     $name = @(foreach ($p in $(if ($t.Name.Length) { $t.Name.Split([char]0) })) {
         $raw = if ($raw.Length) { $raw + $nul + $p } else { $p }
-        if ($count.ContainsKey($raw)) { "$p#$($count[$raw])" } else { $p }
+        if ($count.ContainsKey($raw)) { "$p$([char]1)$($count[$raw])" } else { $p }
       }) -join $nul
     $null = $set.Add("T$nul$name")
     foreach ($e in $t.Entries) {
-      $text = if ($null -eq $e.Key) { ($e.Lines -join "`n").Trim() } else { ($e.Value + (($e.Lines | Select-Object -Skip 1) -join "`n")).Trim() }
+      $text = if ($null -eq $e.Key) { ($e.Lines -join "`n").Trim() } else { ((@($e.Value) + @($e.Lines | Select-Object -Skip 1)) -join "`n").Trim() }
       $null = $set.Add("E$nul$name$nul$($e.Key)$nul$text")
     }
   }
@@ -544,7 +544,9 @@ function New-CodexConfig {
     $oldBytes = [IO.File]::ReadAllBytes($ConfigPath)
     if ([Linq.Enumerable]::SequenceEqual([byte[]]$oldBytes, [byte[]]$newBytes)) { return $false }
     # Codex の CLI は表を自分の順で書き直す。意味が同じで並びだけ違うなら書かない（退避が増えるため）
-    if ((Get-TomlMeaning $oldLines).SetEquals((Get-TomlMeaning $out.ToArray()))) { return $false }
+    # 既存が不正（同じキーや表が 2 回）なら比べずに直す。集合にすると重複が消えて同じに見えるため
+    $oldValid = try { Assert-TomlUnique $oldLines; $true } catch { $false }
+    if ($oldValid -and (Get-TomlMeaning $oldLines).SetEquals((Get-TomlMeaning $out.ToArray()))) { return $false }
   }
   $dir = Split-Path -Parent $ConfigPath
   if (-not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }

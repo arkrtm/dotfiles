@@ -550,6 +550,25 @@ lit = '''
     [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base + "`n[plugins.`"browser@openai-bundled`"]`nenabled = true`n")
     (Get-Baks $conf).Count | Should -Be 1
   }
+  It '既存の設定に同じキーや同じ表が 2 回あって不正なときは、重複が消えて同じ意味に見えても直して退避する' {
+    $ponytail = "[marketplaces.ponytail]`nsource_type = `"git`"`nsource = `"https://github.com/DietrichGebert/ponytail.git`"`n"
+    foreach ($case in @(@{ n = 'dup-key'; t = $Base.Replace("model = `"gpt-6.1-sol`"`n", "model = `"gpt-6.1-sol`"`nmodel = `"gpt-6.1-sol`"`n") }, @{ n = 'dup-table'; t = $Base + "`n" + $ponytail })) {
+      $conf = Join-Path $TestDrive "$($case.n)\config.toml"
+      $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+      $case.t | Should -Not -BeExactly $Base
+      [IO.File]::WriteAllText($conf, $case.t, $Utf8)
+      New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+      [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Base
+      (Get-Baks $conf).Count | Should -Be 1
+    }
+  }
+  It 'Get-TomlMeaning は複数行の文字列の改行を区別し、配列の表の番号は名前の中の文字と混ざらない' {
+    $mean = { param($s) , (Get-TomlMeaning ($s -split "`n")) }
+    (& $mean "x = `"`"`"a`nb`"`"`"").SetEquals((& $mean "x = `"`"`"ab`"`"`"")) | Should -BeFalse
+    (& $mean "x = '''a`nb'''").SetEquals((& $mean "x = '''ab'''")) | Should -BeFalse
+    (& $mean "[[a]]`nx = 1").SetEquals((& $mean "[`"a#1`"]`nx = 1")) | Should -BeFalse
+    (& $mean "[[a]]`nx = 1").SetEquals((& $mean "[[a]]`nx = 1")) | Should -BeTrue
+  }
   It 'テンプレートの表に足されたキーをその表に、テンプレートの表の子の表をテンプレートの後ろに残す' {
     $conf = Join-Path $TestDrive 'extra\config.toml'
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
