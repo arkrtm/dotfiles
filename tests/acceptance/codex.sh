@@ -2,7 +2,8 @@
 # codex-review の受け入れ検査: 偽の codex を PATH の先頭に置き、使い方の誤りは終了コード 2、
 # plan と branch は codex exec を読み取り専用の sandbox・effort xhigh で、計画書のパス／<ベース>...HEAD と VERDICT を含むプロンプトで呼ぶこと、
 # branch は結果を <共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md に保存すること、
-# 依頼文に「直す」と「参考」の仕分けの規則を含めること
+# 依頼文に「直す」と「参考」の仕分けの規則を含めること、
+# 2 回目からは、同じ merge-base への結果のうち今の HEAD の祖先で最新のものの本文と <その HEAD>...<HEAD> で再レビューを依頼し、無ければ全体。前回を読めなければ止まること
 #   sh tests/acceptance/codex.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/codex.sh  通った項目も
 set -u
@@ -83,6 +84,39 @@ MOVE=1 sh "$CR" branch 2>"$T/err"; rc=$?
 [ "$rc" != 0 ] && ! ls "$T/.git/codex-review/"*"-$h0.md" >/dev/null 2>&1 \
   && ok "レビューの途中で HEAD が変わったら結果を保存しない" || ng "途中で HEAD が変わった: rc=$rc $(ls "$T/.git/codex-review" 2>&1)"
 git reset -q --hard "$h0"
+
+# 2 回目から: 同じ比較元への結果のうち、今の HEAD の祖先で最新のもの（今の HEAD の結果は除く）を前回とし、その本文と <前回の HEAD>...<HEAD> だけを見させる。
+# 保存先は codex-review と同じく git に聞く
+d="$(git rev-parse --path-format=absolute --git-common-dir)/codex-review"; from="$(git merge-base main HEAD)"
+rm -rf "$d"; mkdir -p "$d"
+# 前回は「直す」「参考」の分けが無い形の FAIL（分ける前の版で作った結果）
+printf '前回の指摘 A\nVERDICT: FAIL\n' > "$d/20000101-000000-branch-$from-$h0.md"
+# 共通ディレクトリはほかの worktree と共有する: 別のブランチのもっと新しい結果は使わない
+other="$(git commit-tree -p "$from" -m other "$from^{tree}")"
+printf '別のブランチの指摘\nVERDICT: PASS\n' > "$d/20991231-235959-branch-$from-$other.md"
+git commit -q --allow-empty -m fix; h1="$(git rev-parse HEAD)"
+# again <前回の本文の 1 行> <前回の HEAD> <今の HEAD>: 再レビューの依頼（前回の本文を依頼文に入れ、分けが無い前回は仕分け直させる）
+again() { grep -qxF "$1" "$T/args" && grep -qF "$2...$3" "$T/args" && ! grep -qF "$from...$3" "$T/args" && ! grep -qF '別のブランチの指摘' "$T/args" \
+  && grep -qF '前回の「直す」' "$T/args" && grep -qF '仕分け直して' "$T/args" && triage && grep -qF 'VERDICT: PASS' "$T/args"; }
+rm -f "$T/args"; sh "$CR" branch
+again '前回の指摘 A' "$h0" "$h1" && ok "2 回目は前回の本文と <前回の HEAD>...<HEAD> の再レビュー（別のブランチの新しい結果は使わない）" || ng "2 回目: $(cat "$T/args" 2>/dev/null)"
+rm -f "$T/args"; sh "$CR" branch
+again '前回の指摘 A' "$h0" "$h1" && ok "同じ HEAD でやり直しても、今の HEAD の結果は前回に使わない" || ng "同じ HEAD でやり直し: $(cat "$T/args" 2>/dev/null)"
+git commit -q --allow-empty -m fix2; h2="$(git rev-parse HEAD)"
+rm -f "$T/args"; sh "$CR" branch
+again '指摘なし' "$h1" "$h2" && ok "3 回目は、保存された再レビューの結果（祖先で最新）を前回にする" || ng "3 回目: $(cat "$T/args" 2>/dev/null)"
+# 前回の結果を読めない（空）なら、codex を呼ばず、保存もせずに失敗する
+: > "$d/20991231-235958-branch-$from-$h1.md"; n0="$(ls -A "$d" | wc -l)"
+rm -f "$T/args"; sh "$CR" branch 2>"$T/err"; rc=$?
+[ "$rc" != 0 ] && [ ! -e "$T/args" ] && [ "$(ls -A "$d" | wc -l)" = "$n0" ] && ok "前回の結果を読めなければ、codex を呼ばず保存もしない" || ng "前回を読めない: rc=$rc $(cat "$T/err") $(ls -A "$d")"
+rm -f "$d/20991231-235958-branch-$from-$h1.md"
+# 比較元（merge-base）が変われば、前回の結果があっても全体のレビュー
+rm -f "$T/args"; sh "$CR" branch "$h0"
+full && grep -qF "$h0...$h2" "$T/args" && ok "比較元が変われば全体のレビュー" || ng "比較元が変わった: $(cat "$T/args" 2>/dev/null)"
+# 履歴を書き換えて（rebase など）、保存のどの HEAD も祖先でなくなれば全体のレビュー
+git reset -q --hard "$from"; git commit -q --allow-empty -m rewritten; h3="$(git rev-parse HEAD)"
+rm -f "$T/args"; sh "$CR" branch
+full && grep -qF "$from...$h3" "$T/args" && ok "履歴を書き換えて前回の HEAD が祖先でなくなれば全体のレビュー" || ng "履歴の書き換え: $(cat "$T/args" 2>/dev/null)"
 
 [ "$fail" = 0 ] && echo "acceptance codex: ok"
 [ "$fail" = 0 ]
