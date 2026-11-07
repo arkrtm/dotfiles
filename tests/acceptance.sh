@@ -5,6 +5,9 @@
 # INT を使う検査（SERIAL）は前で順に、ほかは後ろで同時に走らせる（非対話の sh が後ろで走らせた子は INT を無視して始まるので、
 # INT を送る検査を後ろで走らせると中身を省いてしまう）。INT を使う検査を足したら SERIAL に入れる
 set -u
+# git rebase -x や git の hook が渡す GIT_DIR などを外す（残すと、検査が一時ディレクトリで実行する git が外のリポジトリに効く）
+# shellcheck disable=SC2046 # 名前の並びを語に分ける
+unset $(git rev-parse --local-env-vars)
 DIR="$(cd "$(dirname "$0")" && pwd)/acceptance"
 SERIAL="stop-cleanup.sh check-leftovers.sh"
 # 各検査の出力は一時ファイルに書く（子が残って出力のパイプを持ったままだと、$(…) で受ける形は戻らない）

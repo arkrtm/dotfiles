@@ -6,6 +6,9 @@
 # ただし static.sh と agent-status.sh の tmux のソケットは、パスが 104 バイトを超えないよう、ここの外の /tmp/<名前>-<pid>.* に作るので見ない（残った tmux のサーバは環境で見つかる）。
 # 各検査が自分の trap で消し、残らないことは check-leftovers.sh（普通に終わったとき）と stop-cleanup.sh（止めたとき）が確かめる
 cd "$(dirname "$0")/.." || exit 1
+# git rebase -x や git の hook が渡す GIT_DIR などを外す（残すと、検査が一時ディレクトリで実行する git が外のリポジトリに効く）
+# shellcheck disable=SC2046 # 名前の並びを語に分ける
+unset $(git rev-parse --local-env-vars)
 W=""; trap 'trap "" HUP INT TERM; rm -rf ${W:+"$W"}' EXIT
 trap 'exit 1' HUP INT TERM
 W="$(trap '' HUP INT TERM; mktemp -d /tmp/check.XXXXXX)" # 親。検査の TMPDIR は $W/t、出力は $W/out（共有の /tmp に予測できる名前のファイルを作らない）
