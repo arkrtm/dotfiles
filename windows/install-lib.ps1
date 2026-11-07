@@ -201,12 +201,27 @@ function Get-UnsafeWriter {
     } | ForEach-Object { $_.IdentityReference.Value } | Select-Object -Unique)
 }
 
+# TOML の基本文字列の中身のエスケープ（\b \t \n \f \r \" \\ \uXXXX \UXXXXXXXX。ほかは不正）を実際の文字にする
+function ConvertFrom-TomlEscape {
+  param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+  $map = @{ b = "`b"; t = "`t"; n = "`n"; f = "`f"; r = "`r"; '"' = '"'; '\' = '\' }
+  [regex]::Replace($Text, '\\(?:u(?<s>[0-9A-Fa-f]{4})|U(?<l>[0-9A-Fa-f]{8})|(?<c>.))', {
+      param($m)
+      if ($m.Groups['s'].Success -or $m.Groups['l'].Success) {
+        $hex = $m.Groups['s'].Value + $m.Groups['l'].Value
+        try { [char]::ConvertFromUtf32([Convert]::ToInt32($hex, 16)) } catch { throw "config.toml のキーに不正なエスケープがある（書かない）: $($m.Value)" }
+      }
+      elseif ($map.ContainsKey($m.Groups['c'].Value)) { $map[$m.Groups['c'].Value] }
+      else { throw "config.toml のキーに不正なエスケープがある（書かない）: $($m.Value)" }
+    })
+}
+
 # TOML のキー（a."b.c".'d'。ドットの前後の空白可）を部分に分けて正規化し、NUL でつなぐ。引用符と空白の書き方が違っても同じキーなら同じ文字列になる
 function ConvertTo-TomlKeyPath {
   param([Parameter(Mandatory)][string]$Text)
   $parts = foreach ($m in [regex]::Matches($Text, '[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*''')) {
     $v = $m.Value
-    if ($v.StartsWith('"')) { [regex]::Unescape($v.Substring(1, $v.Length - 2)) }
+    if ($v.StartsWith('"')) { ConvertFrom-TomlEscape $v.Substring(1, $v.Length - 2) }
     elseif ($v.StartsWith("'")) { $v.Substring(1, $v.Length - 2) }
     else { $v }
   }
@@ -295,13 +310,34 @@ function Split-TomlTable {
 function Assert-TomlUnique {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $nul = [string][char]0
-  $show = { param($p) $p.Replace($nul, '.') }
+  $mark = [string][char]1
+  $show = { param($p) [regex]::Replace($p.Replace($nul, '.'), "$mark\d+", '') }
+  # 配列の表（[[…]]）は要素ごとに別の範囲。名前の途中までの各形に、そこまでにある配列の表の何番目の要素かを付け、要素をまたいだ名前を別物にする
+  $arrayCount = @{}
+  $qualify = {
+    param($name)
+    $acc = ''
+    $raw = ''
+    $out = [Collections.Generic.List[string]]::new()
+    $parts = $name.Split([char]0)
+    for ($i = 0; $i -lt $parts.Count; $i++) {
+      $raw = if ($i -eq 0) { $parts[$i] } else { $raw + $nul + $parts[$i] }
+      $q = $parts[$i]
+      if ($arrayCount.ContainsKey($raw)) { $q += $mark + $arrayCount[$raw] }
+      $acc = if ($i -eq 0) { $q } else { $acc + $nul + $q }
+      $out.Add($acc)
+    }
+    , $out.ToArray()
+  }
   $tableNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-  $allNames = [Collections.Generic.List[string]]::new()
+  $allNames = [Collections.Generic.List[object]]::new()
   $dotted = [Collections.Generic.List[object]]::new()
   foreach ($t in (Split-TomlTable $Line)) {
-    if ($t.Name -ne '') { $allNames.Add($t.Name) }
+    if ($t.IsArray) { $arrayCount[$t.Name] = 1 + [int]$arrayCount[$t.Name] }
+    $q = if ($t.Name -ne '') { & $qualify $t.Name } else { @('') }
+    $qName = $q[$q.Count - 1]
+    if ($t.Name -ne '') { $allNames.Add($q) }
     if ($t.IsArray) {
       $local = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
       foreach ($e in $t.Entries) {
@@ -309,12 +345,12 @@ function Assert-TomlUnique {
       }
       continue
     }
-    if ($t.Name -ne '' -and -not $tableNames.Add($t.Name)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $t.Name)" }
+    if ($t.Name -ne '' -and -not $tableNames.Add($qName)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $qName)" }
     foreach ($e in $t.Entries) {
       if ($null -eq $e.Key) { continue }
-      $path = if ($t.Name -eq '') { $e.Key } else { $t.Name + $nul + $e.Key }
+      $path = if ($t.Name -eq '') { $e.Key } else { $qName + $nul + $e.Key }
       if (-not $paths.Add($path)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $path)" }
-      if ($e.Key.Contains($nul)) { $dotted.Add(@{ Table = $t.Name; Key = $e.Key }) }
+      if ($e.Key.Contains($nul)) { $dotted.Add(@{ Table = $qName; Key = $e.Key }) }
     }
   }
   foreach ($name in $tableNames) {
@@ -329,10 +365,9 @@ function Assert-TomlUnique {
     }
   }
   # 値（インライン表・配列など）で定義した名前の下には表を作れない（親のキーのパスが、表の名前の先頭になっている）
-  foreach ($name in $allNames) {
-    $parts = $name.Split([char]0)
-    for ($n = 1; $n -lt $parts.Count; $n++) {
-      $parent = $parts[0..($n - 1)] -join $nul
+  foreach ($prefixes in $allNames) {
+    for ($n = 0; $n -lt $prefixes.Count - 1; $n++) {
+      $parent = $prefixes[$n]
       if ($paths.Contains($parent)) { throw "config.toml に値で定義した名前の下に表がある（書かない）: $(& $show $parent)" }
     }
   }

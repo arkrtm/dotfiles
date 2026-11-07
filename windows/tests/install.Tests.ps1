@@ -579,6 +579,63 @@ lit = '''
     [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base + $keep)
     New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
   }
+  It 'Unicode エスケープ（\uXXXX・\UXXXXXXXX）を含む正しい表の名前もそのまま残し、2 回目は書き換えない' {
+    $conf = Join-Path $TestDrive 'unicode\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $keep = "`n[projects.`"C:/work/\U0001F680`"]`ntrust_level = `"trusted`"`n`n[projects.`"C:/work/\u00e9`"]`ntrust_level = `"trusted`"`n"
+    [IO.File]::WriteAllText($conf, $keep.TrimStart("`n"), $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base + $keep)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+  }
+  It 'エスケープで書いた名前は、実際の文字で書いたテンプレートの表と同じ名前として扱う' {
+    $conf = Join-Path $TestDrive 'unicode-merge\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, "[mcp_servers.`"\u006c\U00000069near`"]`nurl = `"https://old.example/mcp`"`n", $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Base
+  }
+  It 'エスケープの書き方だけ違う同じキー（<Case>）は重複として、書かず退避もせず失敗する' -ForEach @(
+    @{ Case = '\u'; Old = "[desktop]`n`"\u00e9`" = 1`n`"$([char]0x00e9)`" = 2`n" }
+    @{ Case = '\U'; Old = "[desktop]`n`"\U0001F680`" = 1`n`"$([char]::ConvertFromUtf32(0x1F680))`" = 2`n" }
+    @{ Case = '\t と \"'; Old = "[desktop]`n`"a\tb\`"`" = 1`n'a`tb`"' = 2`n" }
+  ) {
+    $conf = Join-Path $TestDrive ('esc\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Old, $Utf8)
+    { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw '*同じキーが 2 回ある*desktop*'
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
+    (Get-Baks $conf).Count | Should -Be 0
+  }
+  It 'TOML に無いエスケープを名前に含む設定は、書かず退避もせず失敗する' {
+    $conf = Join-Path $TestDrive 'badesc\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $old = "[desktop]`n`"a\xb`" = 1`n"
+    [IO.File]::WriteAllText($conf, $old, $Utf8)
+    { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw '*エスケープ*'
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $old
+    (Get-Baks $conf).Count | Should -Be 0
+  }
+  It '配列の表の要素ごとに子の表を持つ設定（<Case>）は正しい TOML なので受け入れ、2 回目は書き換えない' -ForEach @(
+    @{ Case = '同じ名前の子の表'; Old = "[[a]]`n[a.options]`nx = 1`n[[a]]`n[a.options]`nx = 2`n"; Kept = "`n[[a]]`n`n[a.options]`nx = 1`n`n[[a]]`n`n[a.options]`nx = 2`n" }
+    @{ Case = '片方の要素の値の下に、もう片方の要素の子の表'; Old = "[[a]]`n[a.o]`nx = { y = 1 }`n[[a]]`n[a.o.x]`nz = 1`n"; Kept = "`n[[a]]`n`n[a.o]`nx = { y = 1 }`n`n[[a]]`n`n[a.o.x]`nz = 1`n" }
+  ) {
+    $conf = Join-Path $TestDrive ('elem\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Old, $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base + $Kept)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+  }
+  It '同じ配列の表の要素の中で子の表が重複したら、書かず退避もせず失敗する' {
+    $conf = Join-Path $TestDrive 'elemdup\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $old = "[[a]]`n[a.options]`nx = 1`n[[a]]`n[a.options]`nx = 2`n[a.options]`ny = 3`n"
+    [IO.File]::WriteAllText($conf, $old, $Utf8)
+    { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw '*同じキーが 2 回ある*a.options*'
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $old
+    (Get-Baks $conf).Count | Should -Be 0
+  }
   It '複数行の文字列が <Delim> を 4 個・5 個並べて閉じても 1 つの値として残し、後ろの表を別の表として扱い、2 回目は書き換えない' -ForEach @(
     @{ Delim = '"""'; Notify = 'notify = ["pwsh", "-Command", """Write-Host "done""""]' }
     @{ Delim = '"""'; Notify = 'notify = ["pwsh", "-Command", """Write-Host ""done"""""]' }
