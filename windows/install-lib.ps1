@@ -201,8 +201,124 @@ function Get-UnsafeWriter {
     } | ForEach-Object { $_.IdentityReference.Value } | Select-Object -Unique)
 }
 
-# Codex の config.toml をテンプレートから作る（install.sh の生成と同じ）。@HOME@ は / 区切りのホーム（\ は TOML の文字列でエスケープになる）。
-# 既存の表のうち hooks.state・projects.・tui・windows（サンドボックスの選択）は引き継ぐ。中身が違うときだけ退避して置き換える。変わったら $true
+# TOML のキー（a."b.c".'d'。ドットの前後の空白可）を部分に分けて正規化し、NUL でつなぐ。引用符と空白の書き方が違っても同じキーなら同じ文字列になる
+function ConvertTo-TomlKeyPath {
+  param([Parameter(Mandatory)][string]$Text)
+  $parts = foreach ($m in [regex]::Matches($Text, '[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*''')) {
+    $v = $m.Value
+    if ($v.StartsWith('"')) { [regex]::Unescape($v.Substring(1, $v.Length - 2)) }
+    elseif ($v.StartsWith("'")) { $v.Substring(1, $v.Length - 2) }
+    else { $v }
+  }
+  @($parts) -join [char]0
+}
+
+# 1 行ぶんの値の走査。括弧の深さ（Depth）と開いたままの複数行の文字列（Quote）を State に持ち、行をまたいで引き継ぐ
+function Step-TomlValue {
+  param([Parameter(Mandatory)][AllowEmptyString()][string]$Text, [Parameter(Mandatory)][hashtable]$State)
+  $i = 0
+  $n = $Text.Length
+  while ($i -lt $n) {
+    $three = if ($i + 3 -le $n) { $Text.Substring($i, 3) } else { '' }
+    if ($State.Quote -eq '"""') {
+      if ($three -eq '"""') { $State.Quote = ''; $i += 3 } elseif ($Text[$i] -eq '\') { $i += 2 } else { $i++ }
+      continue
+    }
+    if ($State.Quote -eq "'''") {
+      if ($three -eq "'''") { $State.Quote = ''; $i += 3 } else { $i++ }
+      continue
+    }
+    if ($three -eq '"""' -or $three -eq "'''") { $State.Quote = $three; $i += 3; continue }
+    $c = $Text[$i]
+    if ($c -eq '"') {
+      $j = $i + 1
+      while ($j -lt $n -and $Text[$j] -ne '"') { if ($Text[$j] -eq '\') { $j += 2 } else { $j++ } }
+      $i = [Math]::Min($j + 1, $n)
+      continue
+    }
+    if ($c -eq "'") {
+      $j = $Text.IndexOf("'", $i + 1)
+      $i = if ($j -lt 0) { $n } else { $j + 1 }
+      continue
+    }
+    if ($c -eq '#') { break }
+    if ($c -eq '[' -or $c -eq '{') { $State.Depth++ } elseif ($c -eq ']' -or $c -eq '}') { $State.Depth-- }
+    $i++
+  }
+}
+
+# TOML を行単位で表と項目に分ける（値の中は解釈しない。複数行の値は 1 項目）。先頭は必ずトップレベル（Name が空）。
+# 空行とコメントの行は捨てる。見出しは Name（正規化したキー）・IsArray・Header（行そのまま）・HeaderIndex、項目は Key（正規化。キーでない行は $null）・Lines・Last（最後の行の番号）を持つ
+function Split-TomlTable {
+  param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
+  $part = '(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*'')'
+  $keyRe = "^\s*(?<k>$part(?:\s*\.\s*$part)*)\s*=(?<v>.*)`$"
+  $new = { param($name, $isArray, $header, $index) [pscustomobject]@{ Name = $name; IsArray = $isArray; Header = $header; HeaderIndex = $index; Entries = [Collections.Generic.List[object]]::new() } }
+  $tables = [Collections.Generic.List[object]]::new()
+  $cur = & $new '' $false $null -1
+  $tables.Add($cur)
+  for ($i = 0; $i -lt $Line.Count; $i++) {
+    $l = $Line[$i]
+    if ($l -match '^\s*(#.*)?$') { continue }
+    if ($l -match '^\s*\[\[\s*(?<n>.+?)\s*\]\]\s*(#.*)?$') {
+      $cur = & $new (ConvertTo-TomlKeyPath $Matches.n) $true $l $i
+      $tables.Add($cur)
+      continue
+    }
+    if ($l -match '^\s*\[\s*(?<n>.+?)\s*\]\s*(#.*)?$') {
+      $cur = & $new (ConvertTo-TomlKeyPath $Matches.n) $false $l $i
+      $tables.Add($cur)
+      continue
+    }
+    $key = $null
+    $lines = @($l)
+    if ($l -match $keyRe) {
+      $key = ConvertTo-TomlKeyPath $Matches.k
+      $state = @{ Depth = 0; Quote = '' }
+      Step-TomlValue $Matches.v $state
+      while (($state.Depth -gt 0 -or $state.Quote -ne '') -and $i + 1 -lt $Line.Count) {
+        $i++
+        $lines += $Line[$i]
+        Step-TomlValue $Line[$i] $state
+      }
+    }
+    $cur.Entries.Add([pscustomobject]@{ Key = $key; Lines = [string[]]$lines; Last = $i })
+  }
+  $tables.ToArray()
+}
+
+# 同じキーが 2 回ある TOML は Codex が読めない。表の名前・キーの完全なパスの重複（書き方の違いは正規化して比べる）があれば throw する。
+# 配列の表（[[…]]）は何回あってもよく、その中のキーの重複だけ見る
+function Assert-TomlUnique {
+  param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
+  $nul = [string][char]0
+  $show = { param($p) $p.Replace($nul, '.') }
+  $tableNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($t in (Split-TomlTable $Line)) {
+    if ($t.IsArray) {
+      $local = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+      foreach ($e in $t.Entries) {
+        if ($null -ne $e.Key -and -not $local.Add($e.Key)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show ($t.Name + $nul + $e.Key))" }
+      }
+      continue
+    }
+    if ($t.Name -ne '' -and -not $tableNames.Add($t.Name)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $t.Name)" }
+    foreach ($e in $t.Entries) {
+      if ($null -eq $e.Key) { continue }
+      $path = if ($t.Name -eq '') { $e.Key } else { $t.Name + $nul + $e.Key }
+      if (-not $paths.Add($path)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $path)" }
+    }
+  }
+  foreach ($name in $tableNames) {
+    if ($paths.Contains($name)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $name)" }
+  }
+}
+
+# Codex の config.toml をテンプレートから作る（@HOME@ は / 区切りのホーム。\ は TOML の文字列でエスケープになる）。
+# テンプレートにあるキー（トップレベルと各表）はテンプレートの値にし、ほかのキーと表（Codex デスクトップが書く notify・[desktop]・プラグインなど）は値ごと引き継ぐ。
+# install.sh は引き継ぐ表を限る。値の外のコメントと空行は引き継がない。キーと表の名前は引用符と空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。
+# 中身が違うときだけ退避して置き換える。変わったら $true
 function New-CodexConfig {
   param(
     [Parameter(Mandatory)][string]$Template,
@@ -211,22 +327,48 @@ function New-CodexConfig {
   )
   $utf8 = [Text.UTF8Encoding]::new($false)
   $homeSlash = $HomeDir.TrimEnd('\', '/') -replace '\\', '/'
-  $sb = [Text.StringBuilder]::new()
-  $null = $sb.Append([IO.File]::ReadAllText($Template, $utf8).Replace('@HOME@', $homeSlash))
+  $tmplText = [IO.File]::ReadAllText($Template, $utf8).Replace('@HOME@', $homeSlash)
+  if ($tmplText.EndsWith("`n")) { $tmplText = $tmplText.Substring(0, $tmplText.Length - 1) }
+  $t = $tmplText -split "`n"
+  $tmplTables = @(Split-TomlTable $t)
+  # テンプレートの行の番号 → その直後に入れる行（テンプレートの表の最後の項目の後ろ。トップレベルに項目が無ければ -1 = 先頭の前）
+  $after = @{}
+  foreach ($tt in $tmplTables) {
+    $idx = if ($tt.Entries.Count) { $tt.Entries[$tt.Entries.Count - 1].Last } else { $tt.HeaderIndex }
+    $after[$idx] = [Collections.Generic.List[string]]::new()
+  }
+  $kept = [Collections.Generic.List[object]]::new()
   if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
-    # awk '/^\[/ { keep = /^\[(...)/; if (keep) print "" } keep && NF' と同じ
-    $keep = $false
-    foreach ($line in [IO.File]::ReadAllText($ConfigPath, $utf8).TrimStart([char]0xFEFF) -split "`n") {
-      $line = $line.TrimEnd("`r")
-      if ($line.StartsWith('[')) {
-        # awk と同じく大文字小文字を区別する（[TUI] は引き継がない）
-        $keep = $line -cmatch '^\[(hooks\.state|projects\.|tui|windows)'
-        if ($keep) { $null = $sb.Append("`n") }
+    $oldLines = @([IO.File]::ReadAllText($ConfigPath, $utf8).TrimStart([char]0xFEFF) -split "`n" | ForEach-Object { $_.TrimEnd("`r") })
+    foreach ($ot in (Split-TomlTable $oldLines)) {
+      $ti = -1
+      if (-not $ot.IsArray) {
+        for ($k = 0; $k -lt $tmplTables.Count; $k++) {
+          if (-not $tmplTables[$k].IsArray -and $tmplTables[$k].Name -ceq $ot.Name) { $ti = $k; break }
+        }
       }
-      if ($keep -and $line.Trim()) { $null = $sb.Append($line).Append("`n") }
+      if ($ti -lt 0) { $kept.Add($ot); continue }
+      $tt = $tmplTables[$ti]
+      $keys = @($tt.Entries | Where-Object { $null -ne $_.Key } | ForEach-Object { $_.Key })
+      $idx = if ($tt.Entries.Count) { $tt.Entries[$tt.Entries.Count - 1].Last } else { $tt.HeaderIndex }
+      foreach ($e in $ot.Entries) {
+        if ($null -eq $e.Key -or $e.Key -cnotin $keys) { $after[$idx].AddRange([string[]]$e.Lines) }
+      }
     }
   }
-  $newBytes = $utf8.GetBytes($sb.ToString())
+  $out = [Collections.Generic.List[string]]::new()
+  if ($after.ContainsKey(-1)) { $out.AddRange($after[-1]) }
+  for ($i = 0; $i -lt $t.Count; $i++) {
+    $out.Add($t[$i])
+    if ($after.ContainsKey($i)) { $out.AddRange($after[$i]) }
+  }
+  foreach ($kt in $kept) {
+    $out.Add('')
+    $out.Add($kt.Header)
+    foreach ($e in $kt.Entries) { $out.AddRange([string[]]$e.Lines) }
+  }
+  Assert-TomlUnique $out.ToArray()
+  $newBytes = $utf8.GetBytes(($out -join "`n") + "`n")
   if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     $oldBytes = [IO.File]::ReadAllBytes($ConfigPath)
     if ([Linq.Enumerable]::SequenceEqual([byte[]]$oldBytes, [byte[]]$newBytes)) { return $false }

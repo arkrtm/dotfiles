@@ -61,7 +61,7 @@ pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。
 7. ユーザー環境変数（HKCU\Environment）: `EDITOR`・`VISUAL`=nvim、`FNM_DIR`、`MISE_DISABLE_TOOLS`、`YAZI_FILE_ONE`（Git の `usr\bin\file.exe`。Git の場所は gitbash-lib で探す）。Path の先頭に fnm の既定・`~/.local/bin`・mise の shims・`windows/bin`（`%USERPROFILE%`・`%LOCALAPPDATA%` のままの REG_EXPAND_SZ）。`HOME`・`XDG_CONFIG_HOME` は入れない
 8. mise（`~/.local/bin/mise.exe`、install.sh と同じ版）と `mise install`（ホームで。`gh auth token` をこのプロセスだけの `GITHUB_TOKEN` にする）
 9. fnm で最新の LTS の Node を入れて既定にする
-10. Codex: テンプレートから `~/.codex/config.toml` を作る（`@HOME@` は `/` 区切りのホーム。既存の `[hooks.state…]`・`[projects.…]`・`[tui…]`・`[windows…]` を引き継ぐ。違うときだけ退避して書く）。codex が無ければ公式のインストーラーで入れ、ユーザーの Path を手順 7 の形に戻す。ponytail の marketplace と plugin を入れる。tinymemory があれば `tinymemory init codex`
+10. Codex: テンプレートから `~/.codex/config.toml` を作る（`@HOME@` は `/` 区切りのホーム。既存の設定のうち、テンプレートにあるキーはテンプレートの値にし、ほかのトップレベルのキーと表（Codex デスクトップが書く `notify`・`[desktop]`・プラグインなど）は値ごと引き継ぐ。キーと表の名前は引用符やドットの前後の空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。値の外のコメントと空行は引き継がない。違うときだけ退避して書く）。codex が無ければ公式のインストーラーで入れ、ユーザーの Path を手順 7 の形に戻す。ponytail の marketplace と plugin を入れる。tinymemory があれば `tinymemory init codex`
 11. Neovim のプラグインを `lazy-lock.json` に揃える（`Lazy! restore`。mise の nvim が無ければ失敗）
 12. PSFzf（PSGallery）
 13. geoview（`uv tool install`。uv が無ければ失敗）

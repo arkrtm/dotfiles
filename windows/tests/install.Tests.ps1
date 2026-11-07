@@ -1,7 +1,7 @@
 ﻿#Requires -Version 7.4
 # windows/install.ps1 を一時ホームに -LinksOnly で実行する（本物のホーム・レジストリには触らない）: リンク表のどの行もリポジトリのファイルへのシンボリックリンクになる、
 # 前からあるものは *.bak.（14 桁の時刻） に退避する、2 回目は何も出さない、worktree からは DOTFILES_ALLOW_WORKTREE なしでは拒む、ponytail の band を書く。
-# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、
+# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig（テンプレートに無い設定の引き継ぎ・キーの正規化と重複の検査を含む）・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、
 # Add-UserPath をレジストリの代わりのもので確かめる。install.ps1 の手順の書き方は構文木で見る
 
 BeforeDiscovery {
@@ -286,11 +286,137 @@ Describe 'New-CodexConfig' {
     $Tmpl = Join-Path $Root 'config\codex\config.toml.tmpl'
     $Utf8 = [Text.UTF8Encoding]::new($false)
     $Base = [IO.File]::ReadAllText($Tmpl, $Utf8).Replace('@HOME@', 'C:/Users/test')
-    # 引き継ぐ表（hooks.state・projects.・tui・windows）。表の前に空行を 1 つ、表の中の空行は落とす
-    $Kept = "`n[projects.'C:\x']`ntrust_level = `"trusted`"`n" +
-      "`n[hooks.state.`"abc`"]`nenabled = true`n" +
-      "`n[windows]`nsandbox = `"elevated`"`n" +
-      "`n[tui]`nnotifications = true`n"
+    $Effort = "model_reasoning_effort = `"xhigh`"`n"
+    $Url = "url = `"https://mcp.linear.app/mcp`"`n"
+    # この PC の ~/.codex/config.toml と同じ表とキーの形（値は架空）。Codex デスクトップは notify を最初の表の直前に空行なしで、表をテンプレートの表の間に書く
+    $Notify = 'notify = ["C:\\Users\\test\\AppData\\Local\\OpenAI\\Codex\\bin\\codex-computer-use.exe", "turn-ended"]'
+    $Desktop = @'
+# Codex の設定（古いテンプレートのコメント）
+model = "gpt-old"
+model_reasoning_effort = "high"
+
+notify = ["C:\\Users\\test\\AppData\\Local\\OpenAI\\Codex\\bin\\codex-computer-use.exe", "turn-ended"]
+[plugins."ponytail@ponytail"]
+enabled = true
+
+[plugins."codex-app-tools@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[marketplaces.ponytail]
+source_type = "git"
+source = "https://example.invalid/old-ponytail.git"
+
+[marketplaces.openai-bundled]
+source_type = "local"
+source = 'C:\Users\test\.codex\.tmp\bundled-marketplaces\openai-bundled'
+
+[marketplaces.openai-primary-runtime]
+source_type = "local"
+source = 'C:\Users\test\.cache\codex-runtimes\plugins\openai-primary-runtime'
+
+# tinymemory が承認なしで記憶を保存できるように
+[sandbox_workspace_write]
+writable_roots = ["C:/Users/test/.tinymemory"]
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+
+[mcp_servers.node_repl]
+args = []
+command = 'C:\Users\test\AppData\Local\OpenAI\Codex\node_repl.exe'
+env_vars = ["A", "B", "C", "D"]
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NODE_PATH = 'C:\Users\test\node.exe'
+CODEX_HOME = 'C:\Users\test\.codex'
+BROWSER_USE_TINYSKY_ENABLED = "1"
+
+[tui]
+screen_reader_detection_done = true
+
+[hooks.state]
+
+[hooks.state."ponytail@ponytail:hooks/claude-codex-hooks.json:session_start:0:0"]
+trusted_hash = "sha256:0000"
+trusted_content_hash = "sha256:1111"
+
+[windows]
+sandbox = "elevated"
+
+[desktop]
+conversationDetailMode = "steps"
+ambient-suggestions-enabled = true
+'@
+    # テンプレートの後ろに元の順で残る表（テンプレートのコメントと空行は落ちる）
+    $DesktopKept = @'
+[plugins."codex-app-tools@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[marketplaces.openai-bundled]
+source_type = "local"
+source = 'C:\Users\test\.codex\.tmp\bundled-marketplaces\openai-bundled'
+
+[marketplaces.openai-primary-runtime]
+source_type = "local"
+source = 'C:\Users\test\.cache\codex-runtimes\plugins\openai-primary-runtime'
+
+[mcp_servers.node_repl]
+args = []
+command = 'C:\Users\test\AppData\Local\OpenAI\Codex\node_repl.exe'
+env_vars = ["A", "B", "C", "D"]
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NODE_PATH = 'C:\Users\test\node.exe'
+CODEX_HOME = 'C:\Users\test\.codex'
+BROWSER_USE_TINYSKY_ENABLED = "1"
+
+[tui]
+screen_reader_detection_done = true
+
+[hooks.state]
+
+[hooks.state."ponytail@ponytail:hooks/claude-codex-hooks.json:session_start:0:0"]
+trusted_hash = "sha256:0000"
+trusted_content_hash = "sha256:1111"
+
+[windows]
+sandbox = "elevated"
+
+[desktop]
+conversationDetailMode = "steps"
+ambient-suggestions-enabled = true
+'@
+    # 複数行の値（中の行は見出し・テンプレートのキー・コメント・空行に見える）
+    $MultiRoot = @'
+matrix = [
+[1, 2],
+  # 配列の中のコメント
+
+]
+desc = """
+[not.a.table]
+model = "not a key"
+# not a comment
+
+"""
+lit = '''
+[also.not.a.table]
+'''
+'@
     $Old = @(
       'model = "old-model"'
       'approval_policy = "never"'
@@ -315,7 +441,22 @@ Describe 'New-CodexConfig' {
       'foo = 1'
       '[Windows]'
       'w = 2'
+      '[[a]]'
+      'n = 1'
+      '[[a]]'
+      'n = 2'
     ) -join "`n"
+    # テンプレートに無いトップレベルのキーはテンプレートのトップレベルの後ろ、テンプレートに無い表はテンプレートの後ろに元の順で。見出しの前に空行を 1 つ、値の外の空行は落とす
+    $ExpectedOld = $Base.Replace($Effort, $Effort + "approval_policy = `"never`"`n") +
+      "`n[projects.'C:\x']`ntrust_level = `"trusted`"`n" +
+      "`n[hooks.state.`"abc`"]`nenabled = true`n" +
+      "`n[windows]`nsandbox = `"elevated`"`n" +
+      "`n[other]`nx = 1`n" +
+      "`n[tui]`nnotifications = true`n" +
+      "`n[TUI]`nfoo = 1`n" +
+      "`n[Windows]`nw = 2`n" +
+      "`n[[a]]`nn = 1`n" +
+      "`n[[a]]`nn = 2`n"
     function Get-Baks([string]$Conf) { @(Get-ChildItem -LiteralPath (Split-Path -Parent $Conf) -Force | Where-Object { $_.Name -like "$(Split-Path -Leaf $Conf).bak.*" }) }
   }
   It '無ければ親のディレクトリごと作り、@HOME@ を / 区切りのホームにする' {
@@ -327,13 +468,13 @@ Describe 'New-CodexConfig' {
     $text | Should -Match ([regex]::Escape('writable_roots = ["C:/Users/test/.tinymemory"]'))
     @(Get-Baks $conf).Count | Should -Be 0
   }
-  It '既存の設定から hooks.state・projects.・tui・windows の表だけを引き継ぎ、古いキーと表を落とし、退避する' {
+  It '既存の設定のテンプレートにあるキーはテンプレートの値にし、ほかのキーと表（配列の表、大文字小文字だけ違う表を含む）を残し、退避する' {
     $conf = Join-Path $TestDrive 'old\config.toml'
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
     [IO.File]::WriteAllText($conf, $Old + "`n", $Utf8)
     New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
     $b = [IO.File]::ReadAllBytes($conf)
-    $Utf8.GetString($b) | Should -BeExactly ($Base + $Kept)
+    $Utf8.GetString($b) | Should -BeExactly $ExpectedOld
     ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) | Should -BeFalse -Because 'BOM を付けない'
     [Array]::IndexOf($b, [byte]13) | Should -Be -1 -Because 'LF だけ'
     $baks = Get-Baks $conf
@@ -353,7 +494,57 @@ Describe 'New-CodexConfig' {
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
     [IO.File]::WriteAllText($conf, ($Old -replace "`n", "`r`n") + "`r`n", [Text.UTF8Encoding]::new($true))
     New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test\' 6>$null | Should -BeTrue
-    [IO.File]::ReadAllBytes($conf) | Should -Be ($Utf8.GetBytes($Base + $Kept))
+    [IO.File]::ReadAllBytes($conf) | Should -Be ($Utf8.GetBytes($ExpectedOld))
+  }
+  It 'Codex デスクトップが書いた設定（この PC と同じ形）を値ごと残し、テンプレートにある設定はテンプレートの値にする' {
+    $conf = Join-Path $TestDrive 'desktop\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Desktop + "`n", $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($Effort, $Effort + $Notify + "`n") + "`n" + $DesktopKept + "`n")
+  }
+  It 'Codex デスクトップの設定があっても 2 回目は書き換えず、退避もしない' {
+    $conf = Join-Path $TestDrive 'desktop\config.toml'
+    $before = [IO.File]::ReadAllBytes($conf)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+    [IO.File]::ReadAllBytes($conf) | Should -Be $before
+    (Get-Baks $conf).Count | Should -Be 1
+  }
+  It 'テンプレートの表に足されたキーをその表に、テンプレートの表の子の表をテンプレートの後ろに残す' {
+    $conf = Join-Path $TestDrive 'extra\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $old = "[mcp_servers.linear]`nurl = `"https://old.example/mcp`"`nstartup_timeout_sec = 30`n`n[mcp_servers.linear.env]`nLINEAR_ENV = `"x`"`n`n[plugins.`"ponytail@ponytail`"]`nenabled = false`n"
+    [IO.File]::WriteAllText($conf, $old, $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($Url, $Url + "startup_timeout_sec = 30`n") + "`n[mcp_servers.linear.env]`nLINEAR_ENV = `"x`"`n")
+  }
+  It '複数行の値は、中に見出し・キー・コメント・空行に見える行があっても 1 つの値として行ごと残し、2 回目は書き換えない' {
+    $conf = Join-Path $TestDrive 'multi\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, "model = `"old`"`n" + $MultiRoot + "`n[tui]`nx = 1`n", $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($Effort, $Effort + $MultiRoot + "`n") + "`n[tui]`nx = 1`n")
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeFalse
+  }
+  It 'キーと表の名前は、書き方（引用符・ドットの前後の空白）が違っても同じものとして扱う' {
+    $conf = Join-Path $TestDrive 'quoted\config.toml'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    $old = "`"model`" = `"old`"`n[ plugins . `"ponytail@ponytail`" ]`n'enabled' = false`nx = 1`n[mcp_servers.'linear']`nurl = `"https://old.example/mcp`"`n"
+    [IO.File]::WriteAllText($conf, $old, $Utf8)
+    New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null | Should -BeTrue
+    $p = "[plugins.`"ponytail@ponytail`"]`nenabled = true`n"
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($p, $p + "x = 1`n"))
+  }
+  It '書く前に、正規化したキーの重複（<Case>）を見つけたら、書かず退避もせず失敗する' -ForEach @(
+    @{ Case = 'トップレベルのドット付きのキーとテンプレートの表のキー'; Old = "mcp_servers.linear.url = `"https://x.example/mcp`"`n"; Key = 'mcp_servers.linear.url' }
+    @{ Case = '残す表の中の、書き方だけ違う同じキー'; Old = "[desktop]`na = 1`n`"a`" = 2`n"; Key = 'desktop.a' }
+  ) {
+    $conf = Join-Path $TestDrive ('dup\' + [guid]::NewGuid().ToString('N') + '\config.toml')
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $conf) -Force
+    [IO.File]::WriteAllText($conf, $Old, $Utf8)
+    { New-CodexConfig -Template $Tmpl -ConfigPath $conf -HomeDir 'C:\Users\test' 6>$null } | Should -Throw "*同じキーが 2 回ある*$Key*"
+    [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly $Old
+    (Get-Baks $conf).Count | Should -Be 0
   }
 }
 
