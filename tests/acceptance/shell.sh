@@ -8,9 +8,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 chk() { n="$1"; shift; if "$@"; then ok "$n"; else ng "$n"; fi; }
 # same <名前> <実際> <期待>: 違えば、見えたもの（先頭の 6 行）も出す（端末による違いを CI の記録で追えるように）
-skip() { echo "省いた $1"; }
 same() { if [ "$2" = "$3" ]; then ok "$1"; else ng "$1"; printf '%s\n' "$2" | head -n 6 | sed 's/^/     実際: /'; echo "     期待: $3"; fi; }
 ZSH="$(command -v zsh || true)" # env -i の前に決める。無い端末では zsh の項目を省く（tests/static.sh と同じ）
 
@@ -27,6 +27,7 @@ if [ -n "$ZSH" ]; then
   same "*.local が無くても対話 zsh はエラーを出さない" "$e" ""
   # 落ちたら、端末の zsh が危ないとみなす場所と、標準の関数の場所の持ち主・権限を出す（端末による違いを追うため）
   [ -z "$e" ] || env -i HOME="$H" PATH=/usr/bin:/bin "$ZSH" -fc 'autoload -Uz compaudit; print -r -- "     compaudit: $(compaudit 2>&1 | tr "\n" " ")"; ls -ld / /usr /usr/share /usr/share/zsh /usr/share/zsh/functions /usr/share/zsh/functions/Completion /usr/local /usr/local/share /usr/local/share/zsh 2>&1 | sed "s/^/     /"; id | sed "s/^/     /"' 
+else skip "*.local が無いときの対話 zsh（zsh が無い）"
 fi
 eb="$(env -i HOME="$H" PATH=/usr/bin:/bin NO_ZSH=1 bash -i -c true 2>&1 </dev/null)"
 case "$eb" in *.local*) ng "*.local が無くても対話 bash はその読み込みでエラーを出さない: $eb" ;; *) ok "*.local が無くても対話 bash はその読み込みでエラーを出さない" ;; esac
@@ -37,6 +38,7 @@ if [ -n "$ZSH" ]; then
     test "$(env -i HOME="$H" PATH=/usr/bin:/bin "$ZSH" -c 'print -r -- "$DOTFILES_T_ENV"' 2>&1)" = env
   chk "対話 zsh は ~/.zshenv.local と ~/.zshrc.local を読む" \
     test "$(env -i HOME="$H" PATH=/usr/bin:/bin "$ZSH" -i -c 'print -r -- "$DOTFILES_T_ENV/$DOTFILES_T_RC"' 2>/dev/null </dev/null)" = env/rc
+else skip "zsh が ~/.zshenv.local と ~/.zshrc.local を読む検査（zsh が無い）"
 fi
 chk "対話 bash は ~/.zshenv.local と ~/.bashrc.local を読む" \
   test "$(env -i HOME="$H" PATH=/usr/bin:/bin NO_ZSH=1 bash -i -c 'echo "R=$DOTFILES_T_ENV/$DOTFILES_T_BRC"' 2>/dev/null </dev/null | sed -n 's/^R=//p')" = env/brc
@@ -76,6 +78,7 @@ if [ -n "$ZSH" ]; then
     rm -f "$H2/.zshenv.local"
     if [ -f /usr/share/zsh/vendor-completions/_docker ]; then
       same "対話 zsh はシステムの vendor-completions（docker）を読む" "$(zi 'print -r -- "${_comps[docker]-なし}"')" _docker
+    else skip "システムの vendor-completions（docker）の検査（/usr/share/zsh/vendor-completions/_docker が無い）"
     fi
   else
     same "zsh 自身の関数の場所が危ない端末では、問いの文もエラーも出さず補完の初期化をしない" "$(zi 'print -r -- "C=${+functions[compinit]}"')" C=0
@@ -90,6 +93,7 @@ if [ -n "$ZSH" ]; then
     rm -f "$H2/.zshenv.local"
   else skip "zsh 自身の関数の場所が危ないとき（関数の場所が分かれている。CI の実行環境で確かめる）"
   fi
+else skip "zsh の補完の検査（zsh が無い）"
 fi
 
 [ "$fail" = 0 ] && echo "acceptance shell: ok"

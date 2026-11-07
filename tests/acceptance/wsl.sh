@@ -10,6 +10,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 chk() { n="$1"; shift; if "$@"; then ok "$n"; else ng "$n"; fi; }
 ZSH="$(command -v zsh || true)" # env -i の前に決める。無い端末では zsh の項目を省く（tests/static.sh と同じ）
 
@@ -31,6 +32,7 @@ if [ -n "$ZSH" ]; then
     test "$(mnt "$(printf '%s\n' "$out" | sed -n 2p)")" = "$WANT"
   n="$(env -i HOME="$H" PATH="$IN" "$ZSH" -c 'print -r -- "$PATH"' 2>&1)"
   case "$n" in *":$IN") ok "WSL でない zsh の PATH は変えない" ;; *) ng "WSL でない zsh の PATH は変えない: $n" ;; esac
+else skip "WSL の zsh の PATH の検査（zsh が無い）"
 fi
 b="$(env -i HOME="$H" PATH="$IN" WSL_DISTRO_NAME=Test bash -lc 'echo "P=$PATH"' 2>/dev/null | sed -n 's/^P=//p')"
 chk "WSL の bash（bash_profile → bashrc → zshenv）も同じに絞る" test "$(mnt "$b")" = "$WANT"
