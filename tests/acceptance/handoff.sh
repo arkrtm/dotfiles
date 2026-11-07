@@ -51,7 +51,8 @@ ln -s "$ROOT/bin/handoff" "$ROOT/bin/notify" "$T/bin/"
 export PATH="$T/bin:$ROOT/bin:$PATH"
 nlines() { cat "$NLOG" 2>/dev/null | wc -l | tr -d ' '; }
 # settle: 裏の処理が結果（送った・止めた・何もしない）を handoff.log に書くまで最大 8 秒待つ
-done_lines() { grep -cE '続きを送った|止めた|何もしない' "$XDG_STATE_HOME/handoff.log" 2>/dev/null || true; }
+# ログがまだ無いときも 0 を返す（空だと、裏の処理の「開始」の書き込みで数が変わったと見て、settle が結果を待たずに抜ける）
+done_lines() { cat "$XDG_STATE_HOME/handoff.log" 2>/dev/null | grep -cE '続きを送った|止めた|何もしない'; }
 settle() { i=0; while [ "$(done_lines)" = "$1" ] && [ "$i" -lt 80 ]; do sleep 0.1; i=$((i + 1)); done; sleep 0.2; }
 run() { rm -f "$LOG"; d0="$(done_lines)"; HERDR_ENV=1 HERDR_PANE_ID=w1:p2 handoff "前の作業の続き" >/dev/null 2>&1; rc=$?; settle "$d0"; }
 
