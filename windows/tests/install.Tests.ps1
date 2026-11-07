@@ -555,7 +555,6 @@ lit = '''
     [IO.File]::ReadAllText($conf, $Utf8) | Should -BeExactly ($Base.Replace($p, $p + "x = 1`n"))
   }
   It '書く前に、正規化したキーの重複（<Case>）を見つけたら、書かず退避もせず失敗する' -ForEach @(
-    @{ Case = 'トップレベルのドット付きのキーとテンプレートの表のキー'; Old = "mcp_servers.linear.url = `"https://x.example/mcp`"`n"; Key = 'mcp_servers.linear.url' }
     @{ Case = '残す表の中の、書き方だけ違う同じキー'; Old = "[desktop]`na = 1`n`"a`" = 2`n"; Key = 'desktop.a' }
   ) {
     $conf = Join-Path $TestDrive ('dup\' + [guid]::NewGuid().ToString('N') + '\config.toml')
@@ -578,8 +577,6 @@ lit = '''
     (Get-Baks $conf).Count | Should -Be 0
   }
   It 'ドット付きのキー（<Case>）が表の名前の途中までと同じなら、同じ表を 2 回定義することになるので、書かず退避もせず失敗する' -ForEach @(
-    @{ Case = 'トップレベルのキーとテンプレートの表'; Old = "mcp_servers.linear.command = `"x`"`n"; Key = 'mcp_servers.linear' }
-    @{ Case = '残す表の中のキーとテンプレートの表'; Old = "[mcp_servers]`nlinear.command = `"x`"`n"; Key = 'mcp_servers.linear' }
     @{ Case = '残す表の中のキーと、その途中の名前の子の表'; Old = "[desktop]`na.b.c = 1`n`n[desktop.a.b]`nd = 1`n"; Key = 'desktop.a.b' }
   ) {
     $conf = Join-Path $TestDrive ('dotted\' + [guid]::NewGuid().ToString('N') + '\config.toml')
@@ -695,6 +692,17 @@ lit = '''
     @{ Case = '残す 2 つの表の名前の見かけが同じになる'; Old = '[desktop."x] #"]' + "`ny = 1`n[desktop.x]`ny = 1`n"; Expect = { $Base + "`n" + '[desktop."x] #"]' + "`ny = 1`n`n[desktop.x]`ny = 1`n" } }
     @{ Case = '見出しの後にコメントがある'; Old = '["a]#"] # c' + "`nx = 1`n[a] # d`ny = 2`n"; Expect = { $Base + "`n" + '["a]#"] # c' + "`nx = 1`n`n[a] # d`ny = 2`n" } }
     @{ Case = '配列の表'; Old = '[["x]] #"]]' + "`nn = 1`n"; Expect = { $Base + "`n" + '[["x]] #"]]' + "`nn = 1`n" } }
+  ) {
+    Merge-Config $Old | Should -BeExactly (& $Expect)
+  }
+  It 'ドット付きのキーで書いたテンプレートの表の項目（<Case>）は、その表に結合する（同じキーはテンプレートの値）' -ForEach @(
+    @{ Case = 'トップレベルの新しいキー'; Old = "mcp_servers.linear.extra = 1`n"; Expect = { $Base.Replace($Url, $Url + "extra = 1`n") } }
+    @{ Case = 'トップレベルの同じキー'; Old = "mcp_servers.linear.url = `"https://x.example/mcp`"`n"; Expect = { $Base } }
+    @{ Case = 'トップレベルの新しいキー（空白・引用符・コメント付き）'; Old = "mcp_servers . linear . `"extra`" = 1 # c`n"; Expect = { $Base.Replace($Url, $Url + "`"extra`" = 1 # c`n") } }
+    @{ Case = '複数行の値'; Old = "mcp_servers.linear.args = [`n  `"a`",`n  `"b`",`n]`n"; Expect = { $Base.Replace($Url, $Url + "args = [`n  `"a`",`n  `"b`",`n]`n") } }
+    @{ Case = '残す表の中の新しいキーと同じキー'; Old = "[mcp_servers]`nlinear.env.A = `"1`"`nlinear.url = `"o`"`n"; Expect = { $Base.Replace($Url, $Url + "env.A = `"1`"`n") + "`n[mcp_servers]`n" } }
+    @{ Case = '残す表の中の引用符付きの名前'; Old = "[plugins]`n`"ponytail@ponytail`".enabled = false`n"; Expect = { $Base + "`n[plugins]`n" } }
+    @{ Case = 'トップレベルの表のキー'; Old = "sandbox_workspace_write.network_access = true`n"; Expect = { $Base.Replace('.tinymemory"]' + "`n", '.tinymemory"]' + "`nnetwork_access = true`n") } }
   ) {
     Merge-Config $Old | Should -BeExactly (& $Expect)
   }

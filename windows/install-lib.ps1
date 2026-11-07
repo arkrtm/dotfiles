@@ -269,7 +269,7 @@ function Step-TomlValue {
 }
 
 # TOML を行単位で表と項目に分ける（値の中は解釈しない。複数行の値は 1 項目）。先頭は必ずトップレベル（Name が空）。
-# 空行とコメントの行は捨てる。見出しは Name（正規化したキー）・IsArray・Header（行そのまま）・HeaderIndex、項目は Key（正規化。キーでない行は $null）・Lines・Last（最後の行の番号）を持つ
+# 空行とコメントの行は捨てる。見出しは Name（正規化したキー）・IsArray・Header（行そのまま）・HeaderIndex、項目は Key（正規化。キーでない行は $null）・Parts（キーの各部分の書いたまま）・Value（最初の行の = の後ろ）・Lines・Last（最後の行の番号）を持つ
 function Split-TomlTable {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $part = '(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*'')'
@@ -295,18 +295,22 @@ function Split-TomlTable {
       continue
     }
     $key = $null
+    $parts = $null
+    $value = $null
     $lines = @($l)
     if ($l -match $keyRe) {
       $key = ConvertTo-TomlKeyPath $Matches.k
+      $parts = [string[]]@([regex]::Matches($Matches.k, $part) | ForEach-Object { $_.Value })
+      $value = $Matches.v
       $state = @{ Depth = 0; Quote = '' }
-      Step-TomlValue $Matches.v $state
+      Step-TomlValue $value $state
       while (($state.Depth -gt 0 -or $state.Quote -ne '') -and $i + 1 -lt $Line.Count) {
         $i++
         $lines += $Line[$i]
         Step-TomlValue $Line[$i] $state
       }
     }
-    $cur.Entries.Add([pscustomobject]@{ Key = $key; Lines = [string[]]$lines; Last = $i })
+    $cur.Entries.Add([pscustomobject]@{ Key = $key; Parts = $parts; Value = $value; Lines = [string[]]$lines; Last = $i })
   }
   $tables.ToArray()
 }
@@ -394,7 +398,7 @@ function Assert-TomlUnique {
 
 # Codex の config.toml をテンプレートから作る（@HOME@ は / 区切りのホーム。\ は TOML の文字列でエスケープになる）。
 # テンプレートにあるキー（トップレベルと各表）はテンプレートの値にし、ほかのキーと表（Codex デスクトップが書く notify・[desktop]・プラグインなど）は値ごと引き継ぐ。
-# install.sh は引き継ぐ表を限る。値の外のコメントと空行は引き継がない。キーと表の名前は引用符と空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。
+# ドット付きのキーで書いたテンプレートの表の項目（mcp_servers.linear.x = 1 など）はその表に結合する。install.sh は引き継ぐ表を限る。値の外のコメントと空行は引き継がない。キーと表の名前は引用符と空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。
 # 中身が違うときだけ退避して置き換える。変わったら $true
 function New-CodexConfig {
   param(
@@ -414,6 +418,27 @@ function New-CodexConfig {
     $idx = if ($tt.Entries.Count) { $tt.Entries[$tt.Entries.Count - 1].Last } else { $tt.HeaderIndex }
     $after[$idx] = [Collections.Generic.List[string]]::new()
   }
+  # テンプレートの表ごとの、キーの集合と、行を入れる位置（$after の添字）
+  $tmplKeys = foreach ($tt in $tmplTables) {
+    , [Collections.Generic.HashSet[string]]::new([string[]]@($tt.Entries | Where-Object { $null -ne $_.Key } | ForEach-Object { $_.Key }), [StringComparer]::Ordinal)
+  }
+  $tmplIdx = foreach ($tt in $tmplTables) { if ($tt.Entries.Count) { $tt.Entries[$tt.Entries.Count - 1].Last } else { $tt.HeaderIndex } }
+  # 既存の表（名前の部分 $tp）の項目のキー（部分 $kp）が、ドットでテンプレートの表の下を指すとき、その表の番号と、表の下でのキーを返す（無ければ $null）
+  $route = {
+    param($tp, $kp)
+    for ($k = 1; $k -lt $tmplTables.Count; $k++) {
+      $c = $tmplTables[$k]
+      if ($c.IsArray -or $c.Name.Length -eq 0) { continue }
+      $np = $c.Name.Split([char]0)
+      if ($np.Count -le $tp.Count -or $np.Count -ge $tp.Count + $kp.Count) { continue }
+      $same = $true
+      for ($j = 0; $j -lt $np.Count -and $same; $j++) {
+        $x = if ($j -lt $tp.Count) { $tp[$j] } else { $kp[$j - $tp.Count] }
+        $same = [string]::Equals($x, $np[$j], [StringComparison]::Ordinal)
+      }
+      if ($same) { return [pscustomobject]@{ Index = $k; Skip = $np.Count - $tp.Count; Rest = ($kp[($np.Count - $tp.Count)..($kp.Count - 1)] -join [char]0) } }
+    }
+  }
   $kept = [Collections.Generic.List[object]]::new()
   if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     $oldLines = @([IO.File]::ReadAllText($ConfigPath, $utf8).TrimStart([char]0xFEFF) -split "`n" | ForEach-Object { $_.TrimEnd("`r") })
@@ -424,13 +449,21 @@ function New-CodexConfig {
           if (-not $tmplTables[$k].IsArray -and [string]::Equals($tmplTables[$k].Name, $ot.Name, [StringComparison]::Ordinal)) { $ti = $k; break }
         }
       }
-      if ($ti -lt 0) { $kept.Add($ot); continue }
-      $tt = $tmplTables[$ti]
-      $keys = [Collections.Generic.HashSet[string]]::new([string[]]@($tt.Entries | Where-Object { $null -ne $_.Key } | ForEach-Object { $_.Key }), [StringComparer]::Ordinal)
-      $idx = if ($tt.Entries.Count) { $tt.Entries[$tt.Entries.Count - 1].Last } else { $tt.HeaderIndex }
+      $tp = @(if ($ot.Name.Length -gt 0) { $ot.Name.Split([char]0) })
+      $stay = [Collections.Generic.List[object]]::new()
       foreach ($e in $ot.Entries) {
-        if ($null -eq $e.Key -or -not $keys.Contains($e.Key)) { $after[$idx].AddRange([string[]]$e.Lines) }
+        # ドット付きのキーで書いたテンプレートの表の項目は、その表に結合する（キーが同じならテンプレートの値）
+        $r = if (-not $ot.IsArray -and $null -ne $e.Key) { & $route $tp $e.Key.Split([char]0) }
+        if ($r) {
+          if (-not $tmplKeys[$r.Index].Contains($r.Rest)) {
+            $moved = @(($e.Parts[$r.Skip..($e.Parts.Count - 1)] -join '.') + ' =' + $e.Value) + @($e.Lines | Select-Object -Skip 1)
+            $after[$tmplIdx[$r.Index]].AddRange([string[]]$moved)
+          }
+        }
+        elseif ($ti -lt 0) { $stay.Add($e) }
+        elseif ($null -eq $e.Key -or -not $tmplKeys[$ti].Contains($e.Key)) { $after[$tmplIdx[$ti]].AddRange([string[]]$e.Lines) }
       }
+      if ($ti -lt 0) { $kept.Add([pscustomobject]@{ Header = $ot.Header; Entries = $stay }) }
     }
   }
   $out = [Collections.Generic.List[string]]::new()
