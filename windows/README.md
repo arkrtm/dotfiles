@@ -1,11 +1,93 @@
 # windows
 
-ネイティブの Windows（WSL ではない）で mac / linux と同じ環境を作る。管理者は不要。設定は共通のファイルへのシンボリックリンクなので、開発者モード（設定 → システム → 開発者向け）が要る。シェルは PowerShell 7.4 以上、端末は Windows Terminal、Claude Code（CLI）は herdr の中で動かす。
+ネイティブの Windows（WSL ではない）で mac / linux と同じ環境を作る。設定は共通のファイルへのシンボリックリンクなので、開発者モードが要る。シェルは PowerShell 7.4 以上、端末は Windows Terminal、Claude Code（CLI）は herdr の中で動かす。`install.ps1` は管理者が要らない（変えるのはユーザーの領域と HKCU だけ）。前提の開発者モードと、winget でマシン全体に入れるものは管理者の承認（UAC）が要る。
+
+## 新しい PC での導入
+
+上から順に行う。エージェント（Claude Code・Codex など）が読んで進められるように、各手順に担い手と、そのまま実行するコマンドと、確かめるコマンドを書く。「エージェントが実行」の手順はエージェントが実行し、「人がやる」の手順はエージェントが理由と操作を伝えて人に頼む。確かめるコマンドが期待どおりなら次へ進む。コマンドは PowerShell（手順 4 までは Windows PowerShell 5.1 でよい）。
+
+エージェントはターミナルを開き直す代わりに、PATH を使うコマンドの前でこれを実行する（winget などが書いた PATH は新しいプロセスから効く。同じプロセスの中だけ効く）:
 
 ```powershell
-git clone https://github.com/arkrtm/dotfiles.git $HOME\dotfiles
-pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。既存ファイルは *.bak.<日時> に退避
+$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 ```
+
+1. 開発者モードをオンにする — 人がやる（理由: 設定画面。管理者の承認が要る）。設定 → システム → 開発者向け → 開発者モード。エージェントは `Start-Process ms-settings:developers` で画面を開ける
+   - 確かめる: `Get-ItemPropertyValue HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock AllowDevelopmentWithoutDevLicense` が `1`
+2. Git・PowerShell 7・VC++ ランタイム — 人がやる（理由: 初回は winget の規約への同意を聞かれる。UAC の承認も要る）。エージェントは下のコマンドを人に渡し、人がターミナルで実行して、規約に同意し UAC を承認する（この手順は人がそばにいる）
+   ```powershell
+   winget install -e --id Git.Git --source winget
+   winget install -e --id Microsoft.PowerShell --source winget --installer-type wix
+   winget install -e --id Microsoft.VCRedist.2015+.x64 --source winget
+   ```
+   - PowerShell 7 は MSI 版（`--installer-type wix`）。MSIX 版（Microsoft Store 版。winget が既定で選ぶことがある）は Codex のサンドボックスから動かせない。VC++ ランタイムが無いと mise・nvim・bat・yazi が起動しない。ARM64 の PC は `Microsoft.VCRedist.2015+.arm64`
+   - 入っていれば winget は「既に入っている」と出して 0 以外で終わる。成否は確かめるコマンドで見る
+   - `winget` が無ければ Microsoft Store の「アプリ インストーラー」を入れる（人がやる）。Windows Terminal が無ければ `winget install -e --id Microsoft.WindowsTerminal --source winget`
+   - 確かめる（エージェントが実行。PATH を読み直してから）: `git --version`、`pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'` が 7.4 以上、`Test-Path $env:WINDIR\System32\vcruntime140.dll` が `True`
+3. Hack Nerd Font（Nerd Fonts 3.5.0 以上。Windows Terminal のフォントと、starship・statusline のアイコン）— エージェントが実行（自分用に入れるので管理者は要らない）
+   ```powershell
+   $ProgressPreference = 'SilentlyContinue'
+   $zip = Join-Path $env:TEMP 'HackNerdFont.zip'
+   $src = Join-Path $env:TEMP 'HackNerdFont'
+   Invoke-WebRequest -UseBasicParsing -Uri https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip -OutFile $zip
+   Expand-Archive -LiteralPath $zip -DestinationPath $src -Force
+   $dir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+   $reg = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+   if (-not (Test-Path $reg)) { New-Item -Path $reg | Out-Null }
+   Get-ChildItem -LiteralPath $src -Recurse -Filter 'HackNerdFont*.ttf' | ForEach-Object {
+     $dst = Join-Path $dir $_.Name
+     if (-not (Test-Path -LiteralPath $dst)) { Copy-Item -LiteralPath $_.FullName -Destination $dst }
+     $name = ($_.BaseName -replace '-', ' ' -creplace '(?<=[a-z])(?=[A-Z])', ' ') + ' (TrueType)'
+     New-ItemProperty -Path $reg -Name $name -Value $dst -PropertyType String -Force | Out-Null
+   }
+   ```
+   - 確かめる: `Test-Path "$env:LOCALAPPDATA\Microsoft\Windows\Fonts\HackNerdFontMono-Regular.ttf"` が `True`
+4. ターミナルを開き直す — 人がやる（理由: エージェントは自分が動いているターミナルを開き直せない）。Windows Terminal のウィンドウをすべて閉じて、開き直す（初めてなら一度起動する）。PATH・フォントと、Windows Terminal の PowerShell 7 のプロファイル（起動のときに作られる）が新しくなる。エージェントが Windows Terminal の中で動いていたなら、開き直した後にエージェントを起動し直して手順 5 から続ける
+   - 確かめる: 新しいタブで `git --version` と `pwsh -v` が動く
+5. clone — エージェントが実行。場所は `$HOME\dotfiles` に固定（Claude Code のフック・ステータスライン・`CLAUDE.md` がこの場所を指す）
+   ```powershell
+   git clone https://github.com/arkrtm/dotfiles.git $HOME\dotfiles
+   ```
+   - 確かめる: `git -C $HOME\dotfiles log -1 --oneline`
+6. install.ps1 — エージェントが実行
+   ```powershell
+   pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。既存ファイルは *.bak.<日時> に退避
+   ```
+   - 全部成功すると最後に `done.` を出して終了コード 0。失敗した手順があっても残りは続け、最後に失敗した手順の名前と理由の一覧を出して終了コード 1 で終わる（`done.` は出さない）。理由を直して、もう一度実行する:
+     - `Windows Terminal`（PowerShell 7 のプロファイルが無い・settings.json が無い）: 人が Windows Terminal を開き直して（初めてなら一度起動して）から再実行
+     - `mise install`（GitHub の API の 403）: 手順 7 の後に再実行。gh は mise install が入れるので、`gh --version` が動かなければ、先に人が `winget install -e --id GitHub.cli --source winget` で単独で入れる（理由: UAC の承認。規約への同意を聞かれたら人が同意する）。`fnm`・`nvim`・`geoview` は mise install の失敗に続いて失敗する
+     - `git の改行`: `~/dotfiles` の作業ツリーの変更を片づけてから再実行
+   - 確かめる: `$LASTEXITCODE` が `0`
+7. GitHub のログイン — 人がやる（理由: ログイン）。新しいターミナルで `gh auth login`
+   - 確かめる: `gh auth status`
+8. herdr と Claude Code の CLI — エージェントが実行（winget の規約には手順 2 で同意済み。もし同意を聞かれたら、そのコマンドは人に渡して人が同意する）
+   ```powershell
+   winget install -e --id Herdr.Herdr --source winget
+   irm https://claude.ai/install.ps1 | iex   # ~/.local/bin/claude.exe
+   ```
+   - 確かめる（PATH を読み直してから）: `herdr --version`、`claude --version`
+9. Codex のログイン — 人がやる（理由: ログイン）。`codex login`。Codex の初回に Windows のサンドボックスを選ぶ（`~/.codex/config.toml` の `[windows]` に保存され、install.ps1 が引き継ぐ）
+   - 確かめる: `codex login status`
+10. Claude Code のプラグイン（`config/claude/README.md`）— エージェントが実行
+    ```powershell
+    claude plugin marketplace add anthropics/claude-plugins-official
+    claude plugin install superpowers@claude-plugins-official
+    claude plugin marketplace add arkrtm/tinymemory
+    claude plugin install tinymemory@tinymemory
+    claude plugin marketplace add DietrichGebert/ponytail
+    claude plugin install ponytail@ponytail
+    ```
+    - 確かめる: `claude plugin list` に superpowers・tinymemory・ponytail がある
+11. Claude Code の最初の起動 — 人がやる（理由: ログインとフックの承認）。新しいタブで `herdr` を開き、その中で `claude` を起動してログインし、フックを承認する。Claude desktop を使っているなら再起動する（ユーザー環境変数は新しいプロセスから効く）
+12. 確かめる — 人がやる（理由: 新しいタブを開いて見る）。Windows Terminal で新しいタブを開く（PowerShell 7 で開き、フォントが無いという警告が出ない）。そのタブで:
+    ```powershell
+    $PSVersionTable.PSVersion                                        # 7.4 以上
+    $env:STARSHIP_SHELL                                              # pwsh（プロファイルの starship が効いている）
+    Get-Command nvim, gh, rg, fzf, uv | Format-Table Name, Source    # どれも見つかる
+    ```
+
+任意: Docker Desktop（lazydocker を使うなら）`winget install -e --id Docker.DockerDesktop --source winget`
 
 ## ファイル
 
@@ -45,7 +127,7 @@ pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。
 
 リンクしないもの:
 
-- `config/codex/config.toml.tmpl`: `~/.codex/config.toml` を生成する（下の手順 10）
+- `config/codex/config.toml.tmpl`: `~/.codex/config.toml` を生成する（下の「install.ps1 がやること」の 10）
 - `bin/` のコマンドとフック: `windows/posix/run`・`hook` が Git Bash で動かす
 - `config/git/hooks-nosign/commit-msg`: `windows/git/hooks-nosign/commit-msg` が呼ぶ
 - `bin/geoview`: `windows/geoview` の `geoview.exe` が動かす
@@ -68,22 +150,6 @@ pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。
 14. Windows Terminal の settings.json: profiles.defaults に配色・Hack Nerd Font Mono 12・余白・履歴 50000、PowerShell 7 のプロファイルを既定にする（変わるときだけ退避して書く。ほかのキーとプロファイルはそのまま）。settings.json が無い、または PowerShell 7 のプロファイルが無ければ失敗（ほかは書く。Windows Terminal を開き直してから再実行）
 15. 全部成功なら `done.` と README の残りの手順の案内を出して終了コード 0
 
-## 手で入れるもの
-
-- herdr: `winget install Herdr.Herdr`
-- Claude Code の CLI: `irm https://claude.ai/install.ps1 | iex`（`~/.local/bin/claude.exe`）
-- win32yank（Neovim のクリップボード）: `winget install equalsraf.win32yank`
-- C コンパイラ: `winget install Microsoft.VisualStudio.2022.BuildTools`（C++ のワークロード。管理者が要る）。nvim-treesitter は `cc` という名前の実行ファイルが PATH に無いと読み込まない（Build Tools のコンパイラは `cl.exe`）
-- Docker Desktop（lazydocker を使うなら）: `winget install Docker.DockerDesktop`
-
-## install の後に手でやること
-
-- ターミナルを開き直し、Claude desktop を再起動する（ユーザー環境変数は新しいプロセスから効く）
-- `codex login`。Codex の初回に Windows のサンドボックスを選ぶ（`~/.codex/config.toml` の `[windows]` に保存され、install.ps1 が引き継ぐ）
-- Claude Code のプラグイン（`config/claude/README.md`）:
-  `claude plugin marketplace add anthropics/claude-plugins-official` → `claude plugin install superpowers@claude-plugins-official` → `claude plugin marketplace add arkrtm/tinymemory` → `claude plugin install tinymemory@tinymemory` → `claude plugin marketplace add DietrichGebert/ponytail` → `claude plugin install ponytail@ponytail`
-- Claude Code の最初の起動でフックを承認する
-
 ## 制限
 
 - tmux は無い（Windows 版が無い）。herdr を使う。`agent-status`（tmux の状態表示）は tmux だけなので使わない
@@ -91,7 +157,8 @@ pwsh -File $HOME\dotfiles\windows\install.ps1   # 何度実行しても安全。
 - herdr の中の yazi は画像を表示しない（kitty の画像を切っている）
 - tinymemory は Windows 版のリリースが出るまで入れない（`MISE_DISABLE_TOOLS` で mise から外す。settings.json の tinymemory のフックは無ければ何もしない）
 - `MISE_DISABLE_TOOLS` は `install.ps1` の `$MiseDisable`（tmux・tinymemory）。Windows 版の無い道具で `mise install` が失敗したらここに足す
-- Codex のサンドボックスは Microsoft Store 版の pwsh を動かせず、サンドボックスの中のコマンドは Windows PowerShell 5.1 になる
+- Codex のサンドボックスは MSIX 版（Microsoft Store 版）の pwsh を動かせず、サンドボックスの中のコマンドは Windows PowerShell 5.1 になる（手順 2 は MSI 版を入れる）
+- nvim-treesitter は `cc` という名前の実行ファイルが PATH に無いと読み込まない。Windows には無い（Build Tools のコンパイラは `cl.exe`）ので使わない
 - `windows/bin/*.cmd` を cmd.exe から呼ぶと `"`・`^`・`&`・`|` を含む引数が壊れる（pwsh からは `.ps1` が選ばれるので壊れない）
 
 ## 検査
