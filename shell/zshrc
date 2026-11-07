@@ -11,7 +11,8 @@ typeset -U fpath
 # 誰でも書ける fpath（共有の端末・CI の /usr/local など）は、問わずに fpath から外してから compinit する
 # （zsh 5.8 の compinit -i は外さないので、そこの同じ名前の補完が読まれる）。compaudit が挙げた場所（ファイルならその場所）と、
 # その下にある fpath を外す（危ない親の下には .zwc を置ける）
-autoload -Uz compaudit compinit
+# zsh 自身の関数の場所まで危ない端末（GitHub の実行環境は /usr/share が 777）では compinit も外れるので、補完の初期化をせずに進む（危ない場所のコードは動かさない）
+autoload -Uz compaudit
 () {
   local x d; local -a bad keep
   for x in ${(f)"$(compaudit 2>/dev/null)"}; do [[ -f $x ]] && x=${x:h}; [[ -d $x ]] && bad+=($x); done
@@ -19,7 +20,7 @@ autoload -Uz compaudit compinit
   for d in $fpath; do for x in $bad; do [[ $d == $x || $d == $x/* ]] && continue 2; done; keep+=($d); done
   fpath=($keep)
 }
-compinit -i
+() { (( $# )) } ${^fpath}/compinit(N) && autoload -Uz compinit && compinit -i
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}' # 大文字小文字を区別しない
 zstyle ':completion:*' menu select
 
