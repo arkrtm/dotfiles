@@ -30,6 +30,12 @@ esac
 exit 0
 SH
 chmod +x "$T/bin/gh"
+# 偽の codex: -o <file> を受けたら、そのファイルに VERDICT: PASS を書く（codex-review branch が結果を保存する）
+cat > "$T/bin/codex" <<'SH'
+#!/bin/sh
+while [ $# -gt 0 ]; do [ "$1" = -o ] && printf '指摘なし\nVERDICT: PASS\n' > "$2"; shift; done
+SH
+chmod +x "$T/bin/codex"
 export PATH="$ROOT/bin:$T/bin:$PATH"
 exec </dev/null
 
@@ -152,8 +158,14 @@ setup "$T/r.git"; review PASS
 integrate --foo >/dev/null 2>"$T/err"; rc=$?
 [ "$rc" = 2 ] && grep -q usage "$T/err" && ok "未知の引数は 2 で使い方を出す" || ng "未知の引数: rc=$rc $(cat "$T/err")"
 
+# ---- codex-review branch（引数なし）は origin/<base> と比べ、integrate はその結果を見つける（ローカルの main は見ない）
+setup "$T/r.git"; git branch -f main HEAD; codex-review branch >/dev/null 2>&1
+accepted "ローカルの main が origin/main と違っても、codex-review branch（引数なし）の結果で統合する"
+setup "$T/d.git" bare develop; codex-review branch >/dev/null 2>&1
+accepted "base=develop（ローカルに main が無い）でも、codex-review branch（引数なし）の結果で統合する"
+
 # ---- すべて満たせば bare の base（main）へ push する。worktree の中でも（レビューは共通ディレクトリ）
-accepted "すべて満たす（bare）"
+setup "$T/r.git"; review PASS; accepted "すべて満たす（bare）"
 # 差分を取れなければ、無効化の記述が無いとは言えないので通さない（diff --no-color だけ失敗する git）
 setup "$T/r.git"; review PASS; mkdir -p "$T/failbin"
 printf '#!/bin/sh\ncase " $* " in *" diff --no-color "*) exit 128 ;; esac\nexec %s "$@"\n' "$(command -v git)" > "$T/failbin/git"; chmod +x "$T/failbin/git"
