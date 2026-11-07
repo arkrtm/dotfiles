@@ -93,9 +93,10 @@ HO="$ROOT/config/agents/skills/handoff/SKILL.md"
 # rule <説明> <ファイル> <語>…: ファイルのどれか 1 行に、語がすべてある
 rule() {
   rd="$1" rf="$2"; shift 2
-  check "$rd（$(printf '「%s」' "$@") が 1 行に）" awk 'BEGIN { for (i = 1; i < ARGC; i++) w[i] = ARGV[i]; n = ARGC - 1; ARGC = 1 }
-    { for (i = 1; i <= n; i++) if (index($0, w[i]) == 0) next; found = 1; exit }
-    END { exit !found }' "$@" < "$rf"
+  # ファイルは awk の引数で読む（開けなければ awk が失敗し、検査も落ちる）
+  check "$rd（$(printf '「%s」' "$@") が 1 行に）" awk 'BEGIN { for (i = 2; i < ARGC; i++) w[i] = ARGV[i]; n = ARGC - 1; ARGC = 2 }
+    { for (i = 2; i <= n; i++) if (index($0, w[i]) == 0) next; found = 1; exit }
+    END { exit !found }' "$rf" "$@"
 }
 # absent <説明> <ファイル> <語>: 消した規則や古い記述が戻っていない
 absent() { check "$1" sh -c '! grep -qF -- "$2" "$1"' _ "$2" "$3"; }
@@ -119,7 +120,7 @@ rule "グローバル指示: 2 往復で通らなければ notify" "$C" '2 往�
 # モデルの割り当て
 rule "グローバル指示: 設計・計画のモデル" "$C" '| 設計・計画 |' '`opus`・`xhigh`'
 rule "グローバル指示: 実装のモデル" "$C" '| 実装（plan のタスクごと） |' '`sonnet`・`high`'
-rule "グローバル指示: 検証のモデル" "$C" '| 検証（受け入れ条件' '`opus`・`high`'
+rule "グローバル指示: 検証のモデル（実装と別の担当）" "$C" '| 検証（受け入れ条件' '実装と別のサブエージェント' '`opus`・`high`'
 rule "グローバル指示: 広い検索のモデル" "$C" '| 広い検索 |' '`model: haiku`'
 rule "グローバル指示: Agent の description は役割名" "$C" 'Agent の description は役割名' '`plan`' '`impl`' '`verify`' '`explore`'
 # Git
@@ -163,9 +164,9 @@ rule "wrap-up: pr の統合の確認" "$WU" 'MERGED' 'baseRefName' 'headRefOid'
 rule "wrap-up: Done にする" "$WU" 'Linear にコメントして Done'
 rule "wrap-up: relay を archive する" "$WU" 'index("relay")' 'tinymemory archive'
 rule "wrap-up: kind と base は integrate setup --show から" "$WU" '`<kind>`・`<base>`' 'integrate setup --show'
-rule "wrap-up: worktree とブランチの片づけ" "$WU" 'git pull --ff-only' 'git worktree remove' 'git branch -D feature/<作業内容>'
-rule "wrap-up: 次の作業の決め方（示された作業 → 同じリポジトリの Todo → 尋ねて待つ）" "$WU" 'ユーザーが示した作業' '同じリポジトリ' 'Todo' '優先度の高い順' '選択肢で示して尋ね' '答えを待つ'
-rule "wrap-up: 次の作業の始め方" "$WU" 'handoff skill' '`/clear`' '`/new`' '`/issue ARK-nn`' '新しいセッション'
+rule "wrap-up: worktree とブランチの片づけ（pull は元のブランチが base のときだけ）" "$WU" 'ブランチが `<base>` なら' 'git pull --ff-only' 'git worktree remove' 'git branch -D feature/<作業内容>'
+rule "wrap-up: 次の作業の決め方（示された作業 → 同じリポジトリの Todo → 尋ねて待つ）" "$WU" 'ユーザーが示した作業' '同じリポジトリ' 'Todo' '優先度の高い順' '番号の小さい順' 'ほかのリポジトリの Todo' '選択肢で示して尋ね' '答えを待つ'
+rule "wrap-up: 次の作業の始め方" "$WU" 'handoff skill' '`/clear`' '`/new`' '`/issue ARK-nn`' 'herdr の中なら' 'そのリポジトリで新しいセッション'
 absent "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" "$WU" 'git branch -d'
 rule "handoff: description に統合の後の次の issue" "$HO" 'description:' '統合の後に次の issue を始める'
 rule "handoff: 次の issue は /issue から" "$HO" '次の issue の番号' '`/issue ARK-nn` から始める'
