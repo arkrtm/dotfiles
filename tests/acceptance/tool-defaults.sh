@@ -43,5 +43,12 @@ done
 R="$ROOT/config/git/README.md"
 chk "config/git/README.md の業務の例に SSH 署名がある" sh -c 'grep -q "format = ssh" "$1" && grep -q "gpgSign = true" "$1" && grep -q signingKey "$1"' sh "$R"
 
+# tmux と herdr
+C="$ROOT/config/tmux/tmux.conf"
+BS="bind '\\' split-window -h -c \"#{pane_current_path}\"" # 設定の行: bind '\' split-window -h -c "#{pane_current_path}"
+chk "左右分割は tmux も herdr も prefix \\" sh -c 'grep -qxF "$1" "$2" && ! grep -q "^bind |" "$2" && grep -qx "split_vertical = \"prefix+backslash\".*" "$3"' sh "$BS" "$C" "$ROOT/config/herdr/config.toml"
+chk "tmux の新しいウィンドウは今の場所で開く" grep -qxF 'bind c new-window -c "#{pane_current_path}"' "$C"
+chk "tmux のコピーモードは EDITOR に依らず vi" grep -qx 'set -g mode-keys vi' "$C"
+
 [ "$fail" = 0 ] && echo "acceptance tool-defaults: ok"
 [ "$fail" = 0 ]
