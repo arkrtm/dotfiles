@@ -166,41 +166,48 @@ J="$T/v.jsonl"
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"調べます"}]}}' \
   '{"type":"user","message":{"content":[{"type":"tool_result","content":"x"}]}}' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls -la"}}]}}' > "$J"
+# view <待つ行> <記録> [VAR=値…]: view は tail -F で終わらないので後ろで動かし、出力に <待つ行> が 1 行として出たら（上限 5 秒）止めて、出力を $out に入れる
+view() {
+  w="$1" r="$2"; shift 2; : > "$T/vout"
+  env "$@" timeout 5 agent-pane view "$r" > "$T/vout" 2>/dev/null & vp=$!
+  i=0; until grep -qxF -- "$w" "$T/vout" || [ "$i" -ge 50 ]; do sleep 0.1; i=$((i + 1)); done
+  kill "$vp" 2>/dev/null; wait "$vp" 2>/dev/null; out="$(cat "$T/vout")" # wait の 2> は Terminated の知らせを消す
+}
 if command -v timeout >/dev/null 2>&1; then # macOS には無い
-  out="$(timeout 2 agent-pane view "$J" 2>/dev/null)"
+  view "→ Bash ls -la" "$J"
   [ "$out" = "調べます
 → Bash ls -la" ] && ok "view は文とツールの呼び出しを 1 行ずつ出す" || ng "view: $out"
   # herdr の外では、モデルのある記録でも名前を付けない（herdr の中の検査と同じ形の記録で比べる）
   reset
-  printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}' > "$T/n0.jsonl"
+  printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"調べます"}]}}' > "$T/n0.jsonl"
   printf '{"agentType":"general-purpose","description":"plan: 計画を書く","model":"opus","effort":"xhigh"}' > "$T/n0.meta.json"
-  timeout 2 agent-pane view "$T/n0.jsonl" >/dev/null 2>&1
+  view 調べます "$T/n0.jsonl"
   ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "herdr の外では pane に名前を付けない" || ng "外で名前を付けた: $(grep '^pane rename' "$LOG")"
   # herdr の中では、最初の応答を待って名前を付ける: 役割（description の先頭の「名前:」）· モデルの正式な名前 effort
   reset
-  printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}' > "$T/n1.jsonl"
+  printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"調べます"}]}}' > "$T/n1.jsonl"
   printf '{"agentType":"general-purpose","description":"plan: 計画を書く","model":"opus","effort":"xhigh"}' > "$T/n1.meta.json"
-  HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n1.jsonl" >/dev/null 2>&1
+  view 調べます "$T/n1.jsonl" HERDR_ENV=1 HERDR_PANE_ID=w1:p10
   [ "$(grep '^pane rename' "$LOG" 2>/dev/null)" = "pane rename w1:p10 plan · claude-opus-5-5 xhigh" ] \
     && ok "pane の名前は役割名 · 応答のモデルの正式な名前 effort" || ng "名前: $(grep '^pane rename' "$LOG" 2>/dev/null)"
   # 役割名が無ければ agentType、effort が記録に無ければ出さない
   reset
-  printf '%s\n' '{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[]}}' > "$T/n2.jsonl"
+  printf '%s\n' '{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[{"type":"text","text":"調べます"}]}}' > "$T/n2.jsonl"
   printf '{"agentType":"Explore","description":"Find hook inputs"}' > "$T/n2.meta.json"
-  HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n2.jsonl" >/dev/null 2>&1
+  view 調べます "$T/n2.jsonl" HERDR_ENV=1 HERDR_PANE_ID=w1:p10
   [ "$(grep '^pane rename' "$LOG" 2>/dev/null)" = "pane rename w1:p10 Explore · claude-haiku-5-5" ] \
     && ok "役割名が無ければ agentType、effort が無ければ出さない" || ng "役割名・effort が無いときの名前: $(grep '^pane rename' "$LOG" 2>/dev/null)"
   # 最初の応答が API のエラー（model が <synthetic>）なら名前を付けず、その文は出す
   reset
   printf '%s\n' '{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"API Error: 401"}]}}' > "$T/n3.jsonl"
   printf '{"agentType":"general-purpose","description":"impl: x","model":"sonnet","effort":"high"}' > "$T/n3.meta.json"
-  out="$(HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n3.jsonl" 2>/dev/null)"
+  view "API Error: 401" "$T/n3.jsonl" HERDR_ENV=1 HERDR_PANE_ID=w1:p10
   [ "$out" = "API Error: 401" ] && ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "最初の応答が API のエラーなら名前を付けず、文は出す" || ng "API のエラー: out=$out $(cat "$LOG" 2>/dev/null)"
   # 最初の応答の記録にモデルが無くても待ち続けず、名前を付けずに文を出す
   reset
   printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"調べます"}]}}' > "$T/n4.jsonl"
   printf '{"agentType":"general-purpose","description":"verify: x","model":"opus","effort":"high"}' > "$T/n4.meta.json"
-  out="$(HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n4.jsonl" 2>/dev/null)"
+  view 調べます "$T/n4.jsonl" HERDR_ENV=1 HERDR_PANE_ID=w1:p10
   [ "$out" = "調べます" ] && ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "最初の応答にモデルが無ければ名前を付けず、文は出す" || ng "モデルが無い応答: out=$out $(cat "$LOG" 2>/dev/null)"
 else skip "view の検査（timeout が無い）"
 fi
