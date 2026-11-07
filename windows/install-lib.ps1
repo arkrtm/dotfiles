@@ -312,7 +312,7 @@ function Split-TomlTable {
 }
 
 # 同じキーが 2 回ある TOML は Codex が読めない。表の名前・キーの完全なパスの重複（書き方の違いは正規化して比べる）があれば throw する。ドット付きのキーの途中までの名前が表の見出しと同じ場合も throw する。
-# 配列の表（[[…]]）は何回あってもよく、その中のキーの重複だけ見る。値で定義したキー（インライン表など）の下に表の見出しがある場合も throw する
+# 配列の表（[[…]]）は何回あってもよく、その中のキーの重複だけ見る（同じ名前のキー・表・暗黙の表があれば throw する）。値で定義したキー（インライン表など）の下に表の見出しやドット付きのキーがある場合も throw する
 function Assert-TomlUnique {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $nul = [string][char]0
@@ -336,6 +336,7 @@ function Assert-TomlUnique {
     , $out.ToArray()
   }
   $tableNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  $arrayNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   $allNames = [Collections.Generic.List[object]]::new()
   $dotted = [Collections.Generic.List[object]]::new()
@@ -343,32 +344,38 @@ function Assert-TomlUnique {
     if ($t.IsArray) { $arrayCount[$t.Name] = 1 + $(if ($arrayCount.ContainsKey($t.Name)) { $arrayCount[$t.Name] } else { 0 }) }
     # 名前の比較は Length で見る（-ne '' は U+00AD のような無視される文字だけの名前を空とみなす）
     $q = if ($t.Name.Length -gt 0) { & $qualify $t.Name } else { @('') }
-    $qName = $q[$q.Count - 1]
+    # 表そのものの名前。自分が配列の表でも要素の番号は付けず、親にだけ付ける（キー・表・配列の表の同じ名前をぶつけて調べるため）
+    $own = if ($t.Name.Length -eq 0) { '' } elseif ($q.Count -ge 2) { $q[$q.Count - 2] + $nul + $t.Name.Split([char]0)[-1] } else { $t.Name }
     if ($t.Name.Length -gt 0) { $allNames.Add($q) }
     if ($t.IsArray) {
+      $null = $arrayNames.Add($own)
       $local = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
       foreach ($e in $t.Entries) {
         if ($null -ne $e.Key -and -not $local.Add($e.Key)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show ($t.Name + $nul + $e.Key))" }
       }
       continue
     }
-    if ($t.Name.Length -gt 0 -and -not $tableNames.Add($qName)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $qName)" }
+    if ($t.Name.Length -gt 0 -and -not $tableNames.Add($own)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $own)" }
     foreach ($e in $t.Entries) {
       if ($null -eq $e.Key) { continue }
-      $path = if ($t.Name.Length -eq 0) { $e.Key } else { $qName + $nul + $e.Key }
+      $path = if ($t.Name.Length -eq 0) { $e.Key } else { $own + $nul + $e.Key }
       if (-not $paths.Add($path)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $path)" }
-      if ($e.Key.Contains($nul)) { $dotted.Add(@{ Table = $qName; Key = $e.Key }) }
+      if ($e.Key.Contains($nul)) { $dotted.Add(@{ Table = $own; Key = $e.Key }) }
     }
   }
   foreach ($name in $tableNames) {
     if ($paths.Contains($name)) { throw "config.toml に同じキーが 2 回ある（書かない）: $(& $show $name)" }
   }
-  # ドット付きのキーは、その途中までの名前の表を作る。同じ名前の表の見出しがあると、同じ表を 2 回定義することになる
+  # 暗黙に作られる表の名前（ドット付きのキーの途中までと、表の見出しの親）。値のキー・配列の表と同じ名前だと、定義が食い違う
+  $implicit = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  # ドット付きのキーは、その途中までの名前の表を作る。同じ名前の表の見出しがあると、同じ表を 2 回定義することになる。値のキーの下には作れない
   foreach ($d in $dotted) {
     $parts = $d.Key.Split([char]0)
     for ($n = 1; $n -lt $parts.Count; $n++) {
       $name = (@($d.Table | Where-Object { $_ }) + $parts[0..($n - 1)]) -join $nul
       if ($tableNames.Contains($name)) { throw "config.toml にドット付きのキーと同じ名前の表がある（書かない）: $(& $show $name)" }
+      if ($paths.Contains($name)) { throw "config.toml に値で定義した名前の下にドット付きのキーがある（書かない）: $(& $show $name)" }
+      $null = $implicit.Add($name)
     }
   }
   # 値（インライン表・配列など）で定義した名前の下には表を作れない（親のキーのパスが、表の名前の先頭になっている）
@@ -376,7 +383,12 @@ function Assert-TomlUnique {
     for ($n = 0; $n -lt $prefixes.Count - 1; $n++) {
       $parent = $prefixes[$n]
       if ($paths.Contains($parent)) { throw "config.toml に値で定義した名前の下に表がある（書かない）: $(& $show $parent)" }
+      $null = $implicit.Add($parent)
     }
+  }
+  # 配列の表は、同じ名前のキー・表・暗黙の表とは両立しない
+  foreach ($name in $arrayNames) {
+    if ($tableNames.Contains($name) -or $paths.Contains($name) -or $implicit.Contains($name)) { throw "config.toml に配列の表と同じ名前がある（書かない）: $(& $show $name)" }
   }
 }
 

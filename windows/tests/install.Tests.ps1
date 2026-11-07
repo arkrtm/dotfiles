@@ -698,6 +698,30 @@ lit = '''
   ) {
     Merge-Config $Old | Should -BeExactly (& $Expect)
   }
+  It 'テンプレートの表の下の配列の表は、テンプレートの表と衝突しないので残す' {
+    Merge-Config "[[mcp_servers.linear.extra]]`nx = 1`n" | Should -BeExactly ($Base + "`n[[mcp_servers.linear.extra]]`nx = 1`n")
+  }
+  It 'テンプレートのキー・表と同じ名前の配列の表（<Old>）は、表せないので書かず退避もせず失敗する' -ForEach @(
+    @{ Old = "[[model]]`nx = 1`n" }
+    @{ Old = "[[plugins]]`nx = 1`n" }
+    @{ Old = "[[sandbox_workspace_write]]`nx = 1`n" }
+    @{ Old = "[[mcp_servers]]`nx = 1`n" }
+    @{ Old = "[[mcp_servers.linear]]`nurl = `"x`"`n" }
+    @{ Old = "[[mcp_servers.linear.url]]`nx = 1`n" }
+    @{ Old = "[[sandbox_workspace_write.writable_roots]]`nx = 1`n" }
+    @{ Old = "[[plugins.`"ponytail@ponytail`"]]`nx = 1`n" }
+  ) {
+    Assert-Refused $Old '*config.toml*配列の表*'
+  }
+  It 'テンプレートのキー（値）の下にドット付きのキーで表を作る設定（<Old>）は、表せないので書かず退避もせず失敗する' -ForEach @(
+    @{ Old = "model.x = 1`n" }
+    @{ Old = "`"model`" . x = 1`n" }
+    @{ Old = "[mcp_servers.linear]`nurl.x = 1`n" }
+    @{ Old = "[sandbox_workspace_write]`nwritable_roots.x = 1`n" }
+    @{ Old = "[marketplaces.ponytail]`nsource.x = 1`n" }
+  ) {
+    Assert-Refused $Old '*config.toml*'
+  }
 }
 
 Describe 'Get-CrlfCheckout' {
