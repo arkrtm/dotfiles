@@ -9,6 +9,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
 trap 'exit 1' HUP INT TERM
 T="$(trap '' HUP INT TERM; mktemp -d)"
@@ -68,6 +69,7 @@ LINUX_SCRIPT=""
 if [ -n "$LINUX_SCRIPT" ]; then
   script -qec 'integrate setup --force --kind pr --base main --test true' /dev/null </dev/null >/dev/null 2>&1; rc=$?
   [ "$rc" = 0 ] && [ "$(cfg | sed -n 1p)" = kind=pr ] && ok "--force は端末からなら上書きする" || ng "端末の --force: rc=$rc 中身=$(cfg)"
+else skip "--force は端末からなら上書きする（script -c が無い）"
 fi
 
 # ---- 不正な値は書かない
@@ -115,6 +117,7 @@ if [ "$(id -u)" != 0 ]; then
   chmod 755 "$D"
   [ "$rc" = 1 ] && [ "$(nfiles)" = 0 ] && ! grep -q 設定しました "$T/out" && grep -q 書けない "$T/err" \
     && ok "設定を書けなければ 1（成功と言わない）" || ng "書けないとき: rc=$rc out=$(cat "$T/out") err=$(cat "$T/err")"
+else skip "設定を書けなければ 1（root は権限で書けなくならない）"
 fi
 
 # ---- 推測（引数なし・端末でない）
@@ -138,6 +141,7 @@ if [ -n "$LINUX_SCRIPT" ]; then
   [ "$rc" = 0 ] && [ "$(cfg | sed -n 1,3p)" = "kind=bare
 base=develop
 test=uv run pytest" ] && ok "端末では推測を既定値に尋ねて書く" || ng "端末: rc=$rc 中身=$(cfg)"
+else skip "端末では推測を既定値に尋ねて書く（script -c が無い）"
 fi
 
 [ "$fail" = 0 ] && echo "acceptance integrate-setup: ok"

@@ -1,5 +1,5 @@
 #!/bin/sh
-# 静的な検査（ネットワーク無し・数秒）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
+# 静的な検査（ネットワーク無し・数秒。道具が無くて省いた節は 省いた … を出す）: #!/bin/sh のファイルの構文（dash があれば dash）、#!/usr/bin/env bash のファイルの構文、zsh・bash の起動ファイルの構文、
 # tmux.conf の読み込み、ssh/config の構文、SKILL.md の frontmatter、settings.json（JSON として読める、hooks の event 名が既知、
 # hooks が呼ぶ ~/.local/bin/<名前> が install.sh の LINKS にある）、mise の config.toml が読める、受け入れ検査が使う jq が mise にある、herdr の config.toml にエラーが無い、一時ファイルを作る検査の trap の形、追跡するファイルに Linear の issue 番号が無い
 #   sh tests/static.sh
@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
 ok() { echo "ok   $1"; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 
 # ---- 構文: #!/bin/sh のファイルは dash（Debian の /bin/sh。無ければ sh）、#!/usr/bin/env bash のファイルと zsh・bash の起動ファイルはそれぞれのシェル
 SH="$(command -v dash || echo sh)"
@@ -26,6 +27,7 @@ if command -v zsh >/dev/null 2>&1; then
     [ -f "$ROOT/$f" ] || continue
     zsh -n "$ROOT/$f" 2>/dev/null && ok "構文（zsh -n）: $f" || ng "構文エラー: $f"
   done
+else skip "zsh の起動ファイルの構文（zsh が無い）"
 fi
 for f in shell/bashrc shell/bash_profile; do
   bash -n "$ROOT/$f" 2>/dev/null && ok "構文（bash -n）: $f" || ng "構文エラー: $f"
@@ -55,6 +57,7 @@ if command -v tmux >/dev/null 2>&1; then
   else
     ng "tmux.conf でサーバを起こせない"
   fi
+else skip "tmux.conf の読み込みと prefix r（tmux が無い）"
 fi
 
 # ---- ssh/config: 構文
@@ -64,6 +67,7 @@ grep -q '^Include config.local$' "$ROOT/ssh/config" && ok "ssh/config は端末�
 # ---- wezterm.lua: Lua の構文（luac が無い端末では省く）
 if command -v luac >/dev/null 2>&1; then
   luac -p "$ROOT/config/wezterm/wezterm.lua" && ok "wezterm.lua の構文" || ng "wezterm.lua の構文"
+else skip "wezterm.lua の構文（luac が無い）"
 fi
 
 # ---- Claude Code の skill: frontmatter（---、name がディレクトリ名、description）
@@ -92,12 +96,14 @@ done
 # ---- mise: config.toml が読める。受け入れ検査が使う jq を mise が入れる（Ubuntu / WSL には既定で無い）
 if command -v mise >/dev/null 2>&1; then
   MISE_GLOBAL_CONFIG_FILE="$ROOT/config/mise/config.toml" mise config ls >/dev/null 2>&1 && ok "mise の config.toml が読める" || ng "mise の config.toml が読めない"
+else skip "mise の config.toml の読み込み（mise が無い）"
 fi
 grep -q '^jq = ' "$ROOT/config/mise/config.toml" && ok "jq は mise で入る（tests/acceptance が使う）" || ng "config/mise/config.toml に jq が無い"
 
 # ---- herdr: config.toml にエラーが無い（無効なキー・未知の項目・構文。同じキーへの二重の割り当ては見ない）
 if command -v herdr >/dev/null 2>&1; then
   r="$(HERDR_CONFIG_PATH="$ROOT/config/herdr/config.toml" herdr config check 2>&1)" && ok "herdr の config.toml にエラーが無い" || ng "herdr の config.toml にエラーがある: $r"
+else skip "herdr の config.toml の検査（herdr が無い）"
 fi
 
 # ---- 検査の後片づけ: 一時ファイルを作る検査は、作る前に 2 つの trap を置く。後片づけの trap は始めに信号を無視して最後まで走り、

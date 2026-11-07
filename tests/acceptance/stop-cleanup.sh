@@ -11,7 +11,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
-skip() { [ -n "${V:-}" ] && echo "省いた $1"; return 0; }
+skip() { echo "省いた $1"; }
 # 環境の 1 項目が TMPDIR=$1 か TMUX_TMPDIR=$1 と完全に同じプロセスの pid（部分一致で別のものに当てない）
 envpids() { [ -n "$1" ] || return 0; for e in /proc/[0-9]*/environ; do
     cat "$e" 2>/dev/null | tr '\0' '\n' | grep -qxF -e "TMPDIR=$1" -e "TMUX_TMPDIR=$1" && { p="${e#/proc/}"; echo "${p%/environ}"; }

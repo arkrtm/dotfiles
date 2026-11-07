@@ -11,6 +11,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID # herdr の中で走らせても本物の pane を触らない
 T=""; trap 'trap "" HUP INT TERM; wait; rm -rf ${T:+"$T"}' EXIT # 後ろで走らせた子（SIGINT を無視する）が終わってから消す（子が後から $T を作り直さないように）
@@ -112,6 +113,7 @@ if command -v flock >/dev/null 2>&1; then
   ( exec 9>>"$D1.lock"; flock 9; sleep 1; echo released >> "$LOG" ) & h=$!; sleep 0.3; stop l1; wait $h
   [ "$(grep 'released\|^pane close' "$LOG" | tr '\n' '|')" = "released|pane close w1:p10|" ] \
     && ok "終了はロックが外れるのを待ってから閉じる" || ng "終了のロック: $(cat "$LOG")"
+else skip "終了はロックが外れるのを待つ（flock が無い）"
 fi
 
 # ---- 記録のパスに ' があっても view のコマンドが壊れない（シェルが解釈した結果がそのパス）
@@ -200,6 +202,7 @@ if command -v timeout >/dev/null 2>&1; then # macOS には無い
   printf '{"agentType":"general-purpose","description":"verify: x","model":"opus","effort":"high"}' > "$T/n4.meta.json"
   out="$(HERDR_ENV=1 HERDR_PANE_ID=w1:p10 timeout 2 agent-pane view "$T/n4.jsonl" 2>/dev/null)"
   [ "$out" = "調べます" ] && ! grep -q '^pane rename' "$LOG" 2>/dev/null && ok "最初の応答にモデルが無ければ名前を付けず、文は出す" || ng "モデルが無い応答: out=$out $(cat "$LOG" 2>/dev/null)"
+else skip "view の検査（timeout が無い）"
 fi
 
 [ "$fail" = 0 ] && echo "acceptance agent-pane: ok"

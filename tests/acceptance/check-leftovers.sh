@@ -15,6 +15,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 # 起こしたプロセスの後片づけ: 記録した pid のうち、コマンドラインがこの検査の sleep のものだけを止める（pid の使い回しで別のものに当てない）
 cleanup() {
   [ -n "$T" ] || return 0
@@ -41,6 +42,7 @@ first=1; [ -e "$MARK" ] && first=""; echo ran >> "$MARK"
 [ -n "$first" ] || exit 0 # 残すのは最初の 1 本だけ（pid の記録を 1 つにする）
 case "${MODE:-}" in
   file) echo x > "$TMPDIR/left" ;;
+  skip) echo "省いた 偽の検査" ;;
   proc) sleep 599.7 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF" ;;
   tmuxonly) env -u TMPDIR sleep 599.9 >/dev/null 2>&1 </dev/null & echo $! >> "$PIDF" ;;
   pipe) sleep 599.6 </dev/null & echo $! >> "$PIDF" ;; # 出力をつないだまま子を残す
@@ -86,6 +88,9 @@ if [ "$rc" = 1 ] && [ ! -e "$MARK" ]; then ok "絶対パスでなくても、検
 run none
 if [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(wc -l < "$MARK" | tr -d ' ')" = 3 ]; then ok "何も残さなければ、3 本とも走って出力なしで通る"; else ng "何も残さない: rc=$rc 印=$(cat "$MARK" 2>/dev/null | wc -l) 出力=$out"; fi
 
+run skip
+if [ "$rc" = 0 ] && [ "$out" = "省いた 偽の検査" ]; then ok "通っても、省いた検査の行は出す"; else ng "省いた検査の行: rc=$rc 出力=$out"; fi
+
 # 出力のファイルは mktemp が作ったディレクトリの中に置く（共有の /tmp に予測できる名前で作ると、先に置かれたシンボリックリンクの先を切り詰める）
 mkdir "$T/w"; echo keep > "$T/victim"; ln -s "$T/victim" "$T/w.out"; run none "$T/w"
 if [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(cat "$T/victim")" = keep ]; then ok "出力のファイルは一時ディレクトリの中にあり、外のシンボリックリンクの先を触らない"; else ng "シンボリックリンク: rc=$rc 先=$(cat "$T/victim") 出力=$out"; fi
@@ -117,7 +122,8 @@ if [ -d /proc/self ]; then
   # 長い TMPDIR（100 バイト程度）でも stop-cleanup.sh は ok になる（一時ディレクトリを TMPDIR の下に重ねると、ソケットのパスが長すぎて tmux が失敗する）
   L="$T"; while [ "${#L}" -lt 100 ]; do L="$L/long-directory-name"; done; mkdir -p "$L"
   out="$(TMPDIR="$L" sh "$ROOT/tests/acceptance/stop-cleanup.sh" 2>&1)"; rc=$?
-  if [ "$rc" = 0 ]; then ok "TMPDIR が ${#L} バイトでも stop-cleanup.sh は通る"; else ng "長い TMPDIR（${#L} バイト）で stop-cleanup.sh が失敗する: $out"; fi
+  if [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^省いた '; then skip "TMPDIR が ${#L} バイトでの stop-cleanup.sh（stop-cleanup.sh が省いた）"
+  elif [ "$rc" = 0 ]; then ok "TMPDIR が ${#L} バイトでも stop-cleanup.sh は通る"; else ng "長い TMPDIR（${#L} バイト）で stop-cleanup.sh が失敗する: $out"; fi
   # static.sh（tmux.conf の節）と agent-status.sh も、単独で長い TMPDIR で通り、/tmp に作る <名前>-<pid>.* を自分の trap で消す
   # （scripts/check の確かめは /tmp の下を見ない。pid で絞るので、同時に走るほかの実行に影響されない）
   for t in static:tests/static.sh agent:tests/acceptance/agent-status.sh; do
@@ -127,16 +133,19 @@ if [ -d /proc/self ]; then
     if [ "$rc" = 0 ] && [ -z "$rest" ]; then ok "TMPDIR が ${#L} バイトでも $f は通り、/tmp の一時ディレクトリを残さない"
     else ng "長い TMPDIR（${#L} バイト）で $f: rc=$rc 残り=[$rest] 出力=$(printf '%s\n' "$out" | grep -v '^ok ' | head -3)"; [ -z "$rest" ] || rm -rf $rest; fi
   done
+else skip "残ったプロセスと長い TMPDIR の検査（/proc が無い）"
 fi
 
 # tests/acceptance.sh は、受け入れ検査が子に出力（パイプ）をつないだまま残しても戻る（上限 20 秒）。本物の acceptance.sh を一時的な木に写し、偽の検査を置く
 A="$T/a"; mkdir -p "$A/tests/acceptance"; cp "$ROOT/tests/acceptance.sh" "$A/tests/acceptance.sh"
 printf '%s\n' 'sleep 599.5 </dev/null & echo $! >> "$PIDF"' > "$A/tests/acceptance/a-pipe.sh"
 printf '%s\n' 'echo boom-output; exit 1' > "$A/tests/acceptance/b-fail.sh"
+printf '%s\n' 'echo "省いた 偽の省略"' > "$A/tests/acceptance/c-skip.sh"
 n=$((n + 1)); PF="$T/pid.acc.$n"
 ( PIDF="$PF" sh "$A/tests/acceptance.sh" > "$T/out.acc" 2>&1; echo $? > "$T/rc.acc" ) &
 aw=$!; i=0; while [ ! -e "$T/rc.acc" ] && [ "$i" -lt 200 ]; do i=$((i + 1)); sleep 0.1; done
-if [ "$(cat "$T/rc.acc" 2>/dev/null)" = 1 ] && grep -q '^FAIL b-fail.sh' "$T/out.acc" && grep -q 'boom-output' "$T/out.acc" && grep -q 'acceptance: ok 1, FAIL 1' "$T/out.acc"; then
+if [ "$(cat "$T/rc.acc" 2>/dev/null)" = 1 ] && grep -q '^FAIL b-fail.sh' "$T/out.acc" && grep -q 'boom-output' "$T/out.acc" \
+  && grep -qx '省いた c-skip.sh: 偽の省略' "$T/out.acc" && grep -qx 'acceptance: ok 2, FAIL 1, 省いた 1' "$T/out.acc"; then
   ok "子が出力をつないだまま残っても、acceptance.sh は戻り、失敗した検査の出力を出す"; else ng "acceptance.sh: rc=$(cat "$T/rc.acc" 2>/dev/null) 出力=$(cat "$T/out.acc")"; fi
 for p in $(cat "$PF" 2>/dev/null); do case "$(ps -o args= -p "$p" 2>/dev/null)" in *"sleep 599."*) kill "$p" 2>/dev/null ;; esac; done # 残した子は自分の pid で止める
 wait "$aw"
@@ -144,6 +153,7 @@ wait "$aw"
 if [ "$(id -u)" != 0 ]; then
   run locked; d="$(cat "$PF.dir" 2>/dev/null)"; chmod -R u+rwx "$d" 2>/dev/null; rm -rf "$d"
   if [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q '^FAIL 一時ディレクトリを調べられない'; then ok "一時ディレクトリを読めなくされたら、調べられないので失敗する"; else ng "読めない一時ディレクトリ: rc=$rc 出力=$out"; fi
+else skip "読めない一時ディレクトリの検査（root は権限で止まらない）"
 fi
 
 [ "$fail" = 0 ] && echo "acceptance check-leftovers: ok"

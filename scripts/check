@@ -1,6 +1,6 @@
 #!/bin/sh
 # dotfiles の検査: 静的な検査・install.sh・受け入れ検査。呼び出し元は integrate（setup の test）・GitHub Actions（.github/workflows/check.yml）・コミットの前の人とエージェント（CLAUDE.md）
-# 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1
+# 失敗したら、その検査の出力から通った項目（ok の行）を除いて出し、終了コード 1。通ったら、省いた検査の行（省いた …）だけを出す
 # 検査の一時ファイル（TMPDIR・TMUX_TMPDIR）はここの一時ディレクトリ（TMPDIR の下に重ねず、短い /tmp に作る）に集め、全部が普通に終わった後に何も残っていない
 # （ファイル・ソケット・そこを環境に持つプロセス。プロセスは /proc がある Linux だけ）ことも確かめる。
 # ただし static.sh と agent-status.sh の tmux のソケットは、パスが 104 バイトを超えないよう、ここの外の /tmp/<名前>-<pid>.* に作るので見ない（残った tmux のサーバは環境で見つかる）。
@@ -17,6 +17,7 @@ D="$W/t"; mkdir "$D" || nodir
 # 出力はファイルに書く（子が残って出力のパイプを持ったままだと、$(…) で受ける形は戻らない）。$D の外に置き、残りに数えない
 for t in static install acceptance; do
   TMPDIR="$D" TMUX_TMPDIR="$D" sh "tests/$t.sh" > "$W/out" 2>&1 || { grep -v '^ok ' "$W/out"; exit 1; }
+  grep '^省いた ' "$W/out" # 通っても、省いた検査は出す
 done
 i=0
 while :; do # 終わりかけの子を少し待つ。環境の 1 項目が TMPDIR=$D と完全に同じプロセスだけ（部分一致で別のものに当たらない）

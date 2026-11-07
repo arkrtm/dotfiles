@@ -9,6 +9,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq が無い（mise で入る）"; exit 1; }
 # HOME を替えると mise の shim が設定を読めないので、替える前に本物の jq の場所を PATH の先頭に入れる
 PATH="$(dirname "$(mise which jq 2>/dev/null || command -v jq)"):$PATH"
@@ -85,6 +86,7 @@ if command -v flock >/dev/null 2>&1; then
   ! grep -q 'agent prompt' "$LOG" 2>/dev/null && ok "ほかの handoff がロックを持っている間は送らない" || ng "ロック中: $(cat "$LOG")"
   touch "$T/unhold"; wait "$holder" 2>/dev/null; run
   grep -q '前の作業の続き' "$LOG" && ok "持ち主が消えたらロックは外れ、次の handoff は進む" || ng "持ち主が消えた後: $(cat "$LOG" 2>/dev/null)"
+else skip "ロックの検査（flock が無い）"
 fi
 # 同時に 2 つ呼んでも /clear は 1 回だけ（1 本目が待っている間に 2 本目が来る）
 touch "$T/wait_sleep"; rm -f "$LOG"; d0="$(done_lines)"

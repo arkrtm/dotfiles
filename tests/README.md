@@ -3,6 +3,7 @@
 - `scripts/check`: リンクしない。dotfiles のテスト（`tests/static.sh`・`install.sh`・`acceptance.sh`。dotfiles の `integrate setup` の test と CI が呼ぶ。ほかのリポジトリに同じ名前を求める決まりではない）
 - `.github/workflows/check.yml`: リンクしない。GitHub の CI。PR と main への push で `scripts/check` を ubuntu で実行する（push の後の知らせ。main の保護の必須チェックではない）
 - `tests/`: リンクしない。コミット前の検査（何を通すかは `CLAUDE.md`）。`static.sh` は構文と設定、`install.sh` はリンク、`acceptance/*.sh` は受け入れ、`install-nosudo.sh` はコンテナでのフル install、`nvim.sh` は Neovim
+- 受け入れ検査は `tests/acceptance.sh` がまとめて走らせる。環境の都合で走らせない検査は、`V` に関係なく `省いた <何を>（<理由>）` の 1 行を出す（`acceptance.sh` が数えて要約に出し、`scripts/check` は通っても出す）
 
 ## GitHub の main の保護
 
