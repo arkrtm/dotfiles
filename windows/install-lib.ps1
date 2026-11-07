@@ -274,6 +274,9 @@ function Split-TomlTable {
   param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line)
   $part = '(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*'')'
   $keyRe = "^\s*(?<k>$part(?:\s*\.\s*$part)*)\s*=(?<v>.*)`$"
+  # 見出しの名前もキーと同じく引用符の中を見る（"a]#" の ] や # を見出しの終わりやコメントと読まない）
+  $arrayRe = "^\s*\[\[\s*(?<n>$part(?:\s*\.\s*$part)*)\s*\]\]\s*(#.*)?`$"
+  $tableRe = "^\s*\[\s*(?<n>$part(?:\s*\.\s*$part)*)\s*\]\s*(#.*)?`$"
   $new = { param($name, $isArray, $header, $index) [pscustomobject]@{ Name = $name; IsArray = $isArray; Header = $header; HeaderIndex = $index; Entries = [Collections.Generic.List[object]]::new() } }
   $tables = [Collections.Generic.List[object]]::new()
   $cur = & $new '' $false $null -1
@@ -281,12 +284,12 @@ function Split-TomlTable {
   for ($i = 0; $i -lt $Line.Count; $i++) {
     $l = $Line[$i]
     if ($l -match '^\s*(#.*)?$') { continue }
-    if ($l -match '^\s*\[\[\s*(?<n>.+?)\s*\]\]\s*(#.*)?$') {
+    if ($l -match $arrayRe) {
       $cur = & $new (ConvertTo-TomlKeyPath $Matches.n) $true $l $i
       $tables.Add($cur)
       continue
     }
-    if ($l -match '^\s*\[\s*(?<n>.+?)\s*\]\s*(#.*)?$') {
+    if ($l -match $tableRe) {
       $cur = & $new (ConvertTo-TomlKeyPath $Matches.n) $false $l $i
       $tables.Add($cur)
       continue

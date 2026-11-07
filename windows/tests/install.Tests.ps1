@@ -689,6 +689,15 @@ lit = '''
   ) {
     Merge-Config $Old | Should -BeExactly (& $Expect)
   }
+  It '引用符の中の ] や # は見出しの終わりやコメントではなく、名前の一部として扱う（<Case>）' -ForEach @(
+    @{ Case = 'テンプレートの表に似た名前'; Old = '[mcp_servers."linear] #"]' + "`nurl = `"keep`"`n"; Expect = { $Base + "`n" + '[mcp_servers."linear] #"]' + "`nurl = `"keep`"`n" } }
+    @{ Case = '1 つのキーがテンプレートの表の名前に似ている'; Old = '["mcp_servers.linear]#"]' + "`nx = 1`n"; Expect = { $Base + "`n" + '["mcp_servers.linear]#"]' + "`nx = 1`n" } }
+    @{ Case = '残す 2 つの表の名前の見かけが同じになる'; Old = '[desktop."x] #"]' + "`ny = 1`n[desktop.x]`ny = 1`n"; Expect = { $Base + "`n" + '[desktop."x] #"]' + "`ny = 1`n`n[desktop.x]`ny = 1`n" } }
+    @{ Case = '見出しの後にコメントがある'; Old = '["a]#"] # c' + "`nx = 1`n[a] # d`ny = 2`n"; Expect = { $Base + "`n" + '["a]#"] # c' + "`nx = 1`n`n[a] # d`ny = 2`n" } }
+    @{ Case = '配列の表'; Old = '[["x]] #"]]' + "`nn = 1`n"; Expect = { $Base + "`n" + '[["x]] #"]]' + "`nn = 1`n" } }
+  ) {
+    Merge-Config $Old | Should -BeExactly (& $Expect)
+  }
 }
 
 Describe 'Get-CrlfCheckout' {
