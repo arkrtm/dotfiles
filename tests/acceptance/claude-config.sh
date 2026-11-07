@@ -85,43 +85,96 @@ check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
 git -C "$ROOT" grep -q -I -E '\b[P]i\b|\.p[i]/|bigpower[s]|/skil[l]:|pi-tinymemor[y]|yamlfi[x]|ask_user_questio[n]'; rc=$? # 1 = 一致なし、0 = 記述がある、ほかは実行の失敗
 check "pi 向けの記述が無い（git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
 
-# ---- 指示と skill の規則が残っている。規則ごとに、消えれば規則が無くなる語（コマンド・オプション・名前）を 1〜3 つ見る。
-#      文の言い回しは見ない（言い換えでは落ちず、規則ごと消えたら落ちる）。規則を変えたら、ここの語も変える
+# ---- 指示と skill の規則が残っている。規則 1 つごとに、その規則の行だけにある語（コマンド・オプション・名前）を 2〜4 つ選び、
+#      どれか 1 行にすべてがそろうかを見る（ほかの行の語で通らない）。文の言い回しは見ない（言い換えでは落ちず、規則の行ごと消えたら落ちる）。
+#      規則を変えたら、ここの語も変える
 C="$ROOT/config/agents/AGENTS.md"; WU="$ROOT/config/agents/skills/wrap-up/SKILL.md"; IS="$ROOT/config/agents/skills/issue/SKILL.md"
 HO="$ROOT/config/agents/skills/handoff/SKILL.md"
-# words <説明> <ファイル> <節の見出しの正規表現（空なら全体）> <語>…
-words() {
-  wd="$1" f="$2" sec="$3"; shift 3
-  if [ -n "$sec" ]; then txt="$(sed -n "/^$sec/,/^## /p" "$f")"; else txt="$(cat "$f")"; fi
-  check "$wd を読めた" [ -n "$txt" ]
-  for w in "$@"; do check "$wd に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$txt" "$w"; done
+# rule <説明> <ファイル> <語>…: ファイルのどれか 1 行に、語がすべてある
+rule() {
+  rd="$1" rf="$2"; shift 2
+  check "$rd（$(printf '「%s」' "$@") が 1 行に）" awk 'BEGIN { for (i = 1; i < ARGC; i++) w[i] = ARGV[i]; n = ARGC - 1; ARGC = 1 }
+    { for (i = 1; i <= n; i++) if (index($0, w[i]) == 0) next; found = 1; exit }
+    END { exit !found }' "$@" < "$rf"
 }
 # absent <説明> <ファイル> <語>: 消した規則や古い記述が戻っていない
 absent() { check "$1" sh -c '! grep -qF -- "$2" "$1"' _ "$2" "$3"; }
 for h in 作業の哲学 規約 レビュー モデルの割り当て Git Linear スクリーンショット; do check "グローバル指示に「$h」の節がある" grep -Eq "^#+ .*$h" "$C"; done
-words "グローバル指示の「作業の哲学」" "$C" '## 作業の哲学' '正しさと堅牢さ' superpowers 'テストは superpowers の TDD'
-words "グローバル指示の読み替え（Codex）" "$C" '' '`$issue`' AskUserQuestion '`/new`'
-words "グローバル指示の「規約」" "$C" '## 規約' '`uv`' '--tags relay' remember
-words "グローバル指示の「レビュー」" "$C" '## レビュー' 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' '2 往復' notify '「直す」' '「参考」'
-words "グローバル指示の「モデルの割り当て」" "$C" '## モデルの割り当て' '`opus`' '`sonnet`' '`model: haiku`' '`plan`' '`impl`' '`verify`' '`explore`'
-words "グローバル指示の「Git」" "$C" '## Git' integrate 'integrate setup' 'integrate --human-approved' 'git rebase origin/<最上位>' \
-  'codex-review branch origin/<最上位>' '--no-track' '.worktrees/' 'feature/' 'refactor:' '強制 push' 'PR を出す前だけ' 'Linear と superpowers の情報'
-words "グローバル指示の「Linear」" "$C" '## Linear' '`/issue' 'In Progress' Done Backlog '.superpowers/plans/' '.superpowers/tasks/' 'docs/superpowers/' '作業ブランチの上で `/wrap-up`'
-words "グローバル指示の「スクリーンショット」" "$C" '## スクリーンショット' 'ls -t /mnt/c/Users/*/Pictures/Screenshots/*.png' 'WSL 以外'
+# 作業の哲学・規約・読み替え
+rule "グローバル指示: 優先順位" "$C" '正しさと堅牢さ' '読みやすさ' 'コードの少なさ'
+rule "グローバル指示: 開発の手順は superpowers の skill" "$C" '開発の手順' 'superpowers の skill に従う'
+rule "グローバル指示: 検証はテストを TDD で" "$C" '**検証**' 'superpowers の TDD'
+rule "グローバル指示の読み替え: skill の呼び出し" "$C" 'skill の呼び出し' '`/issue`' '`$issue`'
+rule "グローバル指示の読み替え: 選択肢での質問" "$C" '選択肢での質問' AskUserQuestion '番号'
+rule "グローバル指示の読み替え: 会話の区切り" "$C" '会話の区切り' '`/clear`' 'handoff skill' '`/new`'
+rule "グローバル指示: Python は uv" "$C" 'Python' '`uv`' '`uv run`'
+rule "グローバル指示: 作業中の保存は relay" "$C" 'remember skill' '--tags relay' '`ARK-nn` で始める'
+# レビュー
+rule "グローバル指示: 指摘は「直す」と「参考」に分け、FAIL は「直す」だけ" "$C" 'codex-review' '「直す」と「参考」に分ける' 'FAIL の理由になるのは「直す」だけ'
+rule "グローバル指示: 起こりにくい入力は「参考」" "$C" '実際には起こりにくい' '「参考」'
+rule "グローバル指示: 計画のレビュー" "$C" 'codex-review plan <計画書>' '反映してから実装'
+rule "グローバル指示: ブランチのレビューは PASS まで、2 回目からは前回の指摘と差分" "$C" 'codex-review branch [ベース]' 'VERDICT: PASS' '前回の「直す」が直ったか' 'その後の修正の差分だけ'
+rule "グローバル指示: 「参考」は issue の本文に" "$C" '「参考」の指摘は直さず' 'issue の本文に書く'
+rule "グローバル指示: 2 往復で通らなければ notify" "$C" '2 往復で PASS にならなければ' 'notify'
+# モデルの割り当て
+rule "グローバル指示: 設計・計画のモデル" "$C" '| 設計・計画 |' '`opus`・`xhigh`'
+rule "グローバル指示: 実装のモデル" "$C" '| 実装（plan のタスクごと） |' '`sonnet`・`high`'
+rule "グローバル指示: 検証のモデル" "$C" '| 検証（受け入れ条件' '`opus`・`high`'
+rule "グローバル指示: 広い検索のモデル" "$C" '| 広い検索 |' '`model: haiku`'
+rule "グローバル指示: Agent の description は役割名" "$C" 'Agent の description は役割名' '`plan`' '`impl`' '`verify`' '`explore`'
+# Git
+rule "グローバル指示: integrate setup" "$C" '`integrate setup`' '`integrate setup --show`' '`--force`'
+rule "グローバル指示: kind=pr は PR を出した後 rebase しない" "$C" '`pr`' 'PR を出した後は rebase せず'
+rule "グローバル指示: ブランチと worktree の作り方" "$C" 'feature/<作業内容>' 'worktree add --no-track' '.worktrees/' 'origin/<最上位>'
+rule "グローバル指示: コミットは構造と振る舞いを分ける" "$C" '`refactor:`' '`feat:`' 'テストと実装は同じコミット'
+rule "グローバル指示: Linear と superpowers の情報はリポジトリに書かない" "$C" 'Linear と superpowers の情報は' 'リポジトリに入るもの' 'ブランチ名' '書かない'
+rule "グローバル指示: 理由は番号やパスで指さず文を書く" "$C" '番号や spec・plan のパスで指さずに'
+rule "グローバル指示: Linear の情報（すべて）" "$C" '- Linear:' 'issue 番号' '受け入れ条件の番号' 'すべて'
+rule "グローバル指示: superpowers の情報（すべて）" "$C" '- superpowers:' 'spec・plan' 'skill の名前' 'すべて'
+rule "グローバル指示: .superpowers/ の中は対象外" "$C" '対象外' '`.superpowers/`'
+rule "グローバル指示: dotfiles の例外" "$C" 'dotfiles の例外' '実際の情報は dotfiles にも書かない'
+rule "グローバル指示: 統合の前の順番" "$C" '統合の前の順番' 'git rebase origin/<最上位>' 'PR を出す前だけ' 'codex-review branch origin/<最上位>'
+rule "グローバル指示: 統合は integrate だけ" "$C" '統合は `integrate` だけ' '`gh pr merge`' 'integrate --human-approved'
+rule "グローバル指示: 強制 push はしない" "$C" '強制 push はしない'
+# Linear
+rule "グローバル指示: issue は /issue で始める" "$C" '`/issue ARK-nn` で始める'
+rule "グローバル指示: 本文が正本、plan は .superpowers/plans/" "$C" '本文が正本' '.superpowers/plans/' 'docs/superpowers/' '作らない'
+rule "グローバル指示: 状態" "$C" 'In Progress' '未マージ' 'Done'
+rule "グローバル指示: wrap-up は統合の前に作業ブランチの上で" "$C" '統合の前に、作業ブランチの上で `/wrap-up`'
+rule "グローバル指示: 将来やること・見送ったことは Backlog" "$C" '見送った' 'Backlog'
+rule "グローバル指示: Linear が使えないときは .superpowers/tasks/" "$C" 'Linear が使えない' '.superpowers/tasks/<短い名前>.md'
+# スクリーンショット
+rule "グローバル指示: スクショは Windows の Screenshots の最新" "$C" 'ls -t /mnt/c/Users/*/Pictures/Screenshots/*.png | head'
+rule "グローバル指示: WSL 以外ではスクショを見られない" "$C" 'WSL 以外' 'そう伝える'
 absent "グローバル指示に経緯（harness）が無い" "$C" harness
 absent "グローバル指示に Karpathy の全文が無い" "$C" 'Karpathy guidelines'
 # shellcheck disable=SC2088 # 文字の ~ を探す（展開しない）
 absent "グローバル指示に古いスクショの転送が無い" "$C" '~/screenshots'
-words "issue の SKILL.md" "$IS" '' '.worktrees/' 'git worktree list' 'ブランチ: feature/' 'origin/<最上位>' 'グローバル指示の Linear の節'
-words "wrap-up の SKILL.md" "$WU" '' '参考' Backlog 'git merge-base --is-ancestor' headRefOid baseRefName '--ff-only' 'git worktree remove' \
-  'integrate setup --show' 'git branch -D' 'Linear・superpowers の情報を書かない'
-# 統合の後の片づけ（Done・relay の記憶の archive）と、次の作業の決め方（示された作業 → Todo → 尋ねて答えを待つ）
-words "wrap-up の SKILL.md の「統合の後」" "$WU" '## 5\. 統合の後' Done 'index("relay")' 'tinymemory archive' 'ユーザーが示した作業' Todo '答えを待つ' handoff
+# skill
+rule "issue: worktree は .worktrees/ に origin/<最上位> から" "$IS" '.worktrees/<作業内容>' 'origin/<最上位>' '--no-track' 'ブランチ: feature/<作業内容>'
+rule "issue: 登録済みの worktree へ移る" "$IS" 'git worktree list' '登録済み'
+rule "issue: コメントの節目はグローバル指示に従う" "$IS" 'コメントの節目' 'グローバル指示の Linear の節'
+rule "wrap-up: 「参考」を Backlog に起こすか決める" "$WU" '「参考」' 'Backlog の issue に起こすか'
+rule "wrap-up: リポジトリには Linear・superpowers の情報を書かない" "$WU" 'Linear・superpowers の情報を書かない' 'グローバル指示の Git の節'
+rule "wrap-up: README に理由や経緯は書かない" "$WU" '**README・設計メモ**' '理由や経緯は書かない'
+rule "wrap-up: 5 は統合の後に" "$WU" '## 5. 統合の後'
+rule "wrap-up: bare・github の統合の確認" "$WU" 'git merge-base --is-ancestor' 'origin/<base>'
+rule "wrap-up: pr の統合の確認" "$WU" 'MERGED' 'baseRefName' 'headRefOid'
+rule "wrap-up: Done にする" "$WU" 'Linear にコメントして Done'
+rule "wrap-up: relay を archive する" "$WU" 'index("relay")' 'tinymemory archive'
+rule "wrap-up: kind と base は integrate setup --show から" "$WU" '`<kind>`・`<base>`' 'integrate setup --show'
+rule "wrap-up: worktree とブランチの片づけ" "$WU" 'git pull --ff-only' 'git worktree remove' 'git branch -D feature/<作業内容>'
+rule "wrap-up: 次の作業の決め方（示された作業 → 同じリポジトリの Todo → 尋ねて待つ）" "$WU" 'ユーザーが示した作業' '同じリポジトリ' 'Todo' '優先度の高い順' '選択肢で示して尋ね' '答えを待つ'
+rule "wrap-up: 次の作業の始め方" "$WU" 'handoff skill' '`/clear`' '`/new`' '`/issue ARK-nn`' '新しいセッション'
 absent "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" "$WU" 'git branch -d'
-words "handoff の SKILL.md" "$HO" '' '統合の後に次の issue を始める' '`/issue ARK-nn`' relay
-words "dotfiles の CLAUDE.md" "$ROOT/CLAUDE.md" '' superpowers 'sh tests/static.sh' 'sh tests/install.sh' 'sh tests/acceptance.sh'
-words "config/codex/README.md" "$ROOT/config/codex/README.md" '' '「直す」' '「参考」' '<その HEAD>...<HEAD>'
-words "config/claude/README.md" "$ROOT/config/claude/README.md" '' 'claude plugin install superpowers@claude-plugins-official'
+rule "handoff: description に統合の後の次の issue" "$HO" 'description:' '統合の後に次の issue を始める'
+rule "handoff: 次の issue は /issue から" "$HO" '次の issue の番号' '`/issue ARK-nn` から始める'
+rule "handoff: 保存は relay" "$HO" 'remember skill' '--tags relay'
+# 文書
+rule "dotfiles の CLAUDE.md: 開発の手順は superpowers" "$ROOT/CLAUDE.md" '開発の手順はプラグイン superpowers'
+rule "dotfiles の CLAUDE.md: コミットの前の検査" "$ROOT/CLAUDE.md" 'sh tests/static.sh' 'sh tests/install.sh' 'sh tests/acceptance.sh'
+rule "config/codex/README.md: codex-review の仕分けと再レビュー" "$ROOT/config/codex/README.md" '「直す」' '「参考」' '<その HEAD>...<HEAD>'
+rule "config/claude/README.md: superpowers の入れ方" "$ROOT/config/claude/README.md" 'claude plugin install superpowers@claude-plugins-official'
 
 # ---- config/claude/README.md の新しい端末の手順（LIVE が実行する）
 # config/claude/README.md の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
