@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code の構成の受け入れ検査: settings.json（プラグインの宣言と hook の配線）、skill（issue・wrap-up のリンク）、
-# config/claude/README.md の新しい端末の手順。指示や文書の文そのものは見ない（振る舞いの検査が別にある）。
+# config/claude/README.md の新しい端末の手順、指示と skill に残る安全な手順の要（コマンド・オプション・確かめの名前の語。文の言い回しは見ない）。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・sh tests/install-nosudo.sh）は別に実行する。
 # LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で config/claude/README.md の
 # 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
@@ -84,6 +84,22 @@ check "config/git/ignore は .superpowers/ を除外する" grep -qx '\.superpow
 check "config/pi が無い" [ ! -e "$ROOT/config/pi" ]
 git -C "$ROOT" grep -q -I -E '\b[P]i\b|\.p[i]/|bigpower[s]|/skil[l]:|pi-tinymemor[y]|yamlfi[x]|ask_user_questio[n]'; rc=$? # 1 = 一致なし、0 = 記述がある、ほかは実行の失敗
 check "pi 向けの記述が無い（git grep が一致なしの 1 を返す。rc=$rc）" [ "$rc" = 1 ]
+
+# ---- 指示と skill に、安全な手順の要が残っている。消えると統合の関門や片づけが壊れる語（コマンド・オプション・確かめの名前）だけを見る。
+#      文の言い回しは見ない（言い換えでは落ちず、語が消えたら落ちる）。振る舞いは integrate.sh・codex.sh・integrate-setup.sh・git-workflow.sh が確かめる
+C="$ROOT/config/agents/AGENTS.md"; WU="$ROOT/config/agents/skills/wrap-up/SKILL.md"; IS="$ROOT/config/agents/skills/issue/SKILL.md"
+# words <説明> <ファイル> <節の見出しの正規表現（空なら全体）> <語>…
+words() {
+  wd="$1" f="$2" sec="$3"; shift 3
+  if [ -n "$sec" ]; then txt="$(sed -n "/^$sec/,/^## /p" "$f")"; else txt="$(cat "$f")"; fi
+  for w in "$@"; do check "$wd に「$w」" sh -c 'printf "%s\n" "$1" | grep -qF -- "$2"' _ "$txt" "$w"; done
+}
+words "グローバル指示の「レビュー」" "$C" '## レビュー' 'codex-review plan' 'codex-review branch' 'VERDICT: PASS' notify
+words "グローバル指示の「Git」" "$C" '## Git' integrate 'integrate setup' 'integrate --human-approved' 'git rebase origin/<最上位>' \
+  'codex-review branch origin/<最上位>' '--no-track' '.worktrees/' 'origin/<最上位>'
+words "issue の SKILL.md" "$IS" '' '.worktrees/' 'git worktree list'
+words "wrap-up の SKILL.md" "$WU" '' 'git merge-base --is-ancestor' headRefOid baseRefName '--ff-only' 'git worktree remove' 'integrate setup --show' 'git branch -D'
+check "wrap-up は git branch -d を使わない（base と元のブランチが違うと拒むため）" sh -c "! grep -qF 'git branch -d' '$WU'"
 
 # ---- config/claude/README.md の新しい端末の手順（LIVE が実行する）
 # config/claude/README.md の新しい端末の手順（superpowers を install する行）の `claude plugin …` を順に（LIVE でも使う）
