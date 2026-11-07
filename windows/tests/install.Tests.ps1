@@ -679,6 +679,16 @@ lit = '''
   ) {
     Merge-Config $Old | Should -BeExactly (& $Expect)
   }
+  It 'キーの中の文字（<Case>）がキーの区切りと混ざらず、別のキー・表のまま残す' -ForEach @(
+    @{ Case = 'エスケープの NUL を含む名前の表とテンプレートの表'; Old = '["mcp_servers\u0000linear"]' + "`nurl = `"keep`"`n"; Expect = { $Base + "`n" + '["mcp_servers\u0000linear"]' + "`nurl = `"keep`"`n" } }
+    @{ Case = 'エスケープの NUL を含むキーとドット付きのキー'; Old = '[desktop]' + "`n" + '"a\u0000b" = 1' + "`na.b = 2`n"; Expect = { $Base + "`n[desktop]`n" + '"a\u0000b" = 1' + "`na.b = 2`n" } }
+    @{ Case = 'エスケープの NUL を含む名前の表とドットで区切った名前の表'; Old = '["a\u0000b"]' + "`nx = 1`n[a.b]`ny = 2`n"; Expect = { $Base + "`n" + '["a\u0000b"]' + "`nx = 1`n`n[a.b]`ny = 2`n" } }
+    @{ Case = '空の名前の表'; Old = "[`"`"]`nx = 1`n"; Expect = { $Base + "`n[`"`"]`nx = 1`n" } }
+    @{ Case = '空の名前の表の中のテンプレートのトップレベルと同じキー'; Old = "['']`nmodel = `"keep`"`n"; Expect = { $Base + "`n['']`nmodel = `"keep`"`n" } }
+    @{ Case = '空のキー'; Old = "`"`" = 1`n"; Expect = { $Base.Replace($Effort, $Effort + "`"`" = 1`n") } }
+  ) {
+    Merge-Config $Old | Should -BeExactly (& $Expect)
+  }
 }
 
 Describe 'Get-CrlfCheckout' {

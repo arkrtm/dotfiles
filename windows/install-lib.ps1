@@ -216,14 +216,17 @@ function ConvertFrom-TomlEscape {
     })
 }
 
-# TOML のキー（a."b.c".'d'。ドットの前後の空白可）を部分に分けて正規化し、NUL でつなぐ。引用符と空白の書き方が違っても同じキーなら同じ文字列になる
+# TOML のキー（a."b.c".'d'。ドットの前後の空白可）を部分に分けて正規化し、NUL でつなぐ。引用符と空白の書き方が違っても同じキーなら同じ文字列になり、違うキーなら違う文字列になる
 function ConvertTo-TomlKeyPath {
   param([Parameter(Mandatory)][string]$Text)
   $parts = foreach ($m in [regex]::Matches($Text, '[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|''[^'']*''')) {
     $v = $m.Value
-    if ($v[0] -ceq [char]'"') { ConvertFrom-TomlEscape $v.Substring(1, $v.Length - 2) }
+    $p = if ($v[0] -ceq [char]'"') { ConvertFrom-TomlEscape $v.Substring(1, $v.Length - 2) }
     elseif ($v[0] -ceq [char]"'") { $v.Substring(1, $v.Length - 2) }
     else { $v }
+    # つなぎ目の NUL・Assert-TomlUnique の印（U+0001）と混ざらないよう部分の中の \ NUL U+0001 をエスケープし、空の部分は \e にする（空の名前はトップレベルを表す）
+    $p = $p.Replace('\', '\\').Replace([string][char]0, '\0').Replace([string][char]1, '\1')
+    if ($p.Length -eq 0) { '\e' } else { $p }
   }
   @($parts) -join [char]0
 }
