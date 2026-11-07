@@ -81,6 +81,13 @@ early() {
   refused "$@" </dev/null
   [ ! -e "$T/ran" ] && ok "テストより先に止める: $1" || ng "テストを実行してから止めた: $1"
 }
+# blocked_line <ファイル> <行>: origin/<base> に戻した上で、ファイル（親のディレクトリも作る）に行を書いてコミットし、レビューを PASS にして、テストより先に止まることを確かめる
+blocked_line() {
+  git reset -q --hard "origin/$B"; mkdir -p "$(dirname "$1")"; printf '%s\n' "$2" > "$1"; git add "$1"; git commit -qm blocked
+  review PASS; early "無効にする記述: $2"
+}
+# github-pat の形の秘密（このファイルが秘密に見えないよう、引用を分けて組み立てる）
+secret="gh""p_k3Jv9QxZ2mW7pL4tR8nB6cY1dF5hS0aEAbCd"
 # accepted <名前> [integrate の引数]: 終了コード 0、bare の <base> が HEAD になる
 accepted() {
   name="$1"; shift
@@ -114,6 +121,43 @@ for f in test_app.py src/app_test.py src/conftest.py src/app_test.go web/a.test.
   git push -q origin HEAD:main; git fetch -q; git checkout -q -B feature/x origin/main; add a 1
   git rm -q "$f"; git commit -qm rm; review PASS; refused "テストを削除した: $f"
 done
+
+# ---- 無効にする記述の各パターン（ほかの言語も）。テストのファイルでなくても止めるものと、テストのファイルだけで止めるもの
+setup "$T/r.git"
+blocked_line tests/test_x.py '@pytest.mark.xfai''l'
+blocked_line tests/test_x.py '@unittest.ski''p("x")'
+blocked_line x.py 'x = f()  # type: ignor''e[attr]'
+blocked_line x.py 'x = f()  # pyright: ignor''e'
+blocked_line x.py '# pylint: disabl''e=C0114'
+blocked_line a.rb '# rubocop:disabl''e Style/X'
+blocked_line src/a.ts '// @ts-ignor''e'
+blocked_line src/a.ts '// @ts-expect-erro''r'
+blocked_line src/a.ts '// @ts-nochec''k'
+blocked_line src/a.js '// eslint-disabl''e-next-line no-x'
+blocked_line main.go 'x() //nolin''t'
+blocked_line s.sh '# shellcheck disabl''e=SC2086'
+blocked_line src/lib.rs '#[ignor''e]'
+blocked_line src/test/java/ATest.java '@Disable''d'
+blocked_line src/test/java/ATest.java '@Ignor''e'
+blocked_line src/a_test.go '	t.Ski''p("x")'
+blocked_line web/a.test.js 'xi''t("a", f)'
+blocked_line web/a.test.js 'xdescrib''e("a", f)'
+blocked_line web/a.test.js 'xtes''t("a", f)'
+blocked_line web/a.test.js 'it.onl''y("a", f)'
+blocked_line web/a.test.js 'describe.ski''p("a", f)'
+blocked_line web/a.spec.ts 'test.describe.ski''p("a", f)'
+blocked_line web/a.test.js 'it.ski''p.each([1])("a", f)'
+blocked_line tests/test_y.py 'pytest.ski''p("x")'
+# 止めた理由には場所と当たった記述だけを出し、同じ行の秘密は出さない
+git reset -q --hard "origin/$B"; printf 'KEY = "%s"  # no''qa\n' "$secret" > x.py; git add x.py; git commit -qm key; review PASS; early "秘密と同じ行の無効にする記述"
+! grep -qF "$secret" "$T/err" && grep -qF 'x.py: no''qa' "$T/err" && ok "止めた理由は「ファイル: 記述」だけで、同じ行の秘密を出さない" || ng "止めた理由の出力: $(sed "s/$secret/<秘密>/g" "$T/err")"
+# ふつうの行は止めない（テストでないファイル: ふつうの語の skip、Django の only・Mongo の skip・C# の Skip の呼び出し、exit。
+# テストのファイルの中でも、テストの道具でないふつうの API の呼び出し）
+git reset -q --hard "origin/$B"; mkdir -p src tests
+echo 'skip this step' > notes.txt; echo 'rows = Model.objects.onl''y("id")' > src/db.py; echo 'cursor.ski''p(10)' > src/q.js
+echo 'sys.exit(1)' > src/run.py; echo 'items.Skip(5)' > src/Q.cs
+printf 'rows = Model.objects.onl''y("id")\ncursor.ski''p(10)\n' > tests/test_db.py; git add -A; git commit -qm plain; review PASS
+accepted "ふつうの行（skip の語、Django・Mongo・C# の only・skip の呼び出し、exit。テストのファイルの中のふつうの API も）では止めない"
 
 # ---- main が進んでいたら通さない
 setup "$T/r.git"; review PASS

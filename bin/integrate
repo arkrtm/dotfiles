@@ -197,10 +197,25 @@ review="$(ls "$(git rev-parse --path-format=absolute --git-common-dir)/codex-rev
 [ "$(tail -n 1 "$review" | tr -d '[:space:]')" = "VERDICT:PASS" ] || fail "Codex のレビューが PASS でない: $review"
 
 # 2. テストや検査を弱めていない（移動も削除として数える。Markdown の文書の説明は数えない）
+# 正規表現の [x] は x の 1 文字に当たる。このファイル自身の差分で止まらないように崩して書く（コメントにも記述をそのまま書かない）。
+# weak はどのファイルでも、weak_test はテストのファイルの中のテストの道具の only・skip だけ（テストの中でもふつうの API を呼ぶ）。
+# 前後の区切りはふつうの語に当てないため。足した行は先頭の + を残して当てるので、行頭の + も区切りになる
+weak='pytest\.mark\.(ski[p]|xfai[l])|unittest\.ski[p]|(type|pyright): *ignor[e]|no[q]a|pylint: *disabl[e]|rubocop:disabl[e]|@ts-(ignor[e]|expect-erro[r]|nochec[k])|eslint-disabl[e]|nolin[t]|shellcheck +disabl[e]|#\[ignor[e]|@(Disable[d]|Ignor[e])([^A-Za-z0-9_]|$)|[^A-Za-z0-9_.][tb]\.Ski[p](f|Now)?\(|[^A-Za-z0-9_.](xi[t]|xdescrib[e]|xtes[t])\('
+weak_test='[^A-Za-z0-9_](it|test|describe|context|suite|specify|pytest)\.(onl[y]|ski[p])[(.]'
+tab="$(printf '\t')"
+# git diff の出力を「ファイル<TAB>足した行（先頭の + を残す）」にする。diff --git の後の最初の +++ だけを見出しと読む（内容が ++ で始まる行と取り違えない）
+added() { awk '/^diff --git /{ h = 1 } h && /^\+\+\+ /{ f = substr($0, 7); h = 0; next } /^@@/{ h = 0 } /^\+/{ print f "\t" $0 }'; }
+# found <正規表現> [-i]: 標準入力の「場所<TAB>行」のうち行が当たるものを「場所: 最初に当たった記述」で標準エラーに出す。
+# 出すのは場所と当たった記述だけ（同じ行の秘密を見せない）。終了コードは grep のもの（0 当たる・1 当たらない・2 失敗）
+found() {
+  hits="$(grep ${2:+"$2"} -E "$tab.*($1)")" || return
+  printf '%s\n' "$hits" | while IFS="$tab" read -r w l; do printf '%s: %s\n' "$w" "$(printf '%s\n' "$l" | grep ${2:+"$2"} -oE "$1" | head -n 1)"; done >&2
+}
 if [ -z "$approved" ]; then
-  diff="$(git diff --no-color --no-ext-diff --text --no-textconv "$from...$head" -- . ':(exclude)*.md')" || fail "差分を取れない"
-  if printf '%s\n' "$diff" | grep -qE '^\+.*(pytest\.mark\.(skip|xfail)|unittest\.skip|type: *ignore|noqa)'; then
-    fail "テストや検査を無効にする記述（skip・xfail・type: ignore・noqa）が追加されている。必要なら理由を書いて人が integrate --human-approved で通す"
+  diff="$(git diff --no-color --no-ext-diff --text --no-textconv --no-renames "$from...$head" -- . ':(exclude)*.md')" || fail "差分を取れない"
+  tests="$(tdiff --no-color --no-ext-diff --text --no-textconv --no-renames "$from...$head")" || fail "差分を取れない"
+  if printf '%s\n' "$diff" | added | found "$weak" || printf '%s\n' "$tests" | added | found "$weak_test"; then
+    fail "テストや検査を無効にする記述が追加されている（上の行）。必要なら理由を書いて人が integrate --human-approved で通す"
   fi
   tdiff --quiet --no-renames --diff-filter=D "$from...$head" \
     || fail "テストのファイルが削除・移動されている。必要なら理由を書いて人が integrate --human-approved で通す"
