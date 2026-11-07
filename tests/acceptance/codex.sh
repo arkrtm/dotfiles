@@ -31,7 +31,7 @@ while [ \$# -gt 0 ]; do [ "\$1" = -o ] && printf '指摘なし\nVERDICT: PASS\n'
 SH
 chmod +x "$T/bin/codex"
 export PATH="$T/bin:$PATH"
-cd "$T"
+cd "$T" || exit 1
 # branch は git のリポジトリの中で使う: main と、そこから 1 コミット進めた作業ブランチ（dev は別のベース）
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com

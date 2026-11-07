@@ -31,7 +31,7 @@ sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -vE '^(LINKS="|")$' | wh
 done | grep MISSING && ng "リンクされていない項目がある" || ok "LINKS 表の全項目がリンクされている"
 
 [ "$(cat "$HOME/.config/tmux/"tmux.conf.bak.* 2>/dev/null)" = old ] && ok "既存ファイルは *.bak.<日時> に中身ごと退避される" || ng "既存ファイルが退避されていない"
-[ -L "$HOME"/.zshrc.bak.* ] && ok "既存のシンボリックリンク（ぶら下がりでも）も退避される" || ng "既存のリンクが退避されていない"
+find "$HOME" -maxdepth 1 -type l -name '.zshrc.bak.*' | grep -q . && ok "既存のシンボリックリンク（ぶら下がりでも）も退避される" || ng "既存のリンクが退避されていない"
 
 # 各リンク元が実在するか（表の書き間違いを検出）
 sed -n '/^LINKS="/,/^"/p' "$DOTFILES/install.sh" | grep -vE '^(LINKS="|")$' | while read -r src dst; do

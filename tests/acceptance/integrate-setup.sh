@@ -32,7 +32,7 @@ nfiles() { ls "$D" 2>/dev/null | wc -l | tr -d ' '; }
 repo() {
   cd "$T" && rm -rf "$1" "$T/w" "$HOME/.config"
   git init -q --bare -b develop "$1"
-  git clone -q "$1" "$T/w" 2>/dev/null && cd "$T/w"
+  git clone -q "$1" "$T/w" 2>/dev/null && cd "$T/w" || exit 1
   git commit -q --allow-empty -m base && git push -q origin HEAD:develop
   git -C "$1" symbolic-ref HEAD "refs/heads/$2"
 }
@@ -85,13 +85,13 @@ XDG_CONFIG_HOME="$T/xdg" integrate setup --kind bare --base develop --test true 
 # ---- 記号だけ違う URL（/team/project と /team_project）でも設定は別のファイル
 mkdir -p "$T/team"; repo "$T/team/project.git" develop
 integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>&1; a=$?
-cd "$T" && rm -rf "$T/w2" && git init -q --bare -b develop "$T/team_project.git" && git clone -q "$T/team_project.git" "$T/w2" 2>/dev/null && cd "$T/w2"
+cd "$T" && rm -rf "$T/w2" && git init -q --bare -b develop "$T/team_project.git" && git clone -q "$T/team_project.git" "$T/w2" 2>/dev/null && cd "$T/w2" || exit 1
 integrate setup --kind pr --base main --test true </dev/null >/dev/null 2>&1; b=$?
 [ "$a" = 0 ] && [ "$b" = 0 ] && [ "$(nfiles)" = 2 ] && ok "記号だけ違う URL の設定は衝突しない" || ng "設定の衝突: rc=$a,$b files=$(nfiles)"
 
 # ---- 相対パスの origin（../repo.git）は解決した場所で見分ける。別のリポジトリの設定を使わない
 for x in a b; do
-  cd "$T" && rm -rf "$T/$x" && mkdir -p "$T/$x" && git init -q --bare -b develop "$T/$x/repo.git"
+  cd "$T" && rm -rf "${T:?}/$x" && mkdir -p "$T/$x" && git init -q --bare -b develop "$T/$x/repo.git"
   git init -q -b develop "$T/$x/work" && git -C "$T/$x/work" remote add origin ../repo.git
 done
 rm -rf "$HOME/.config"; cd "$T/a/work" && integrate setup --kind bare --base develop --test true </dev/null >/dev/null 2>&1

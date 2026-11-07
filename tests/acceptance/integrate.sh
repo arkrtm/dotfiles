@@ -41,7 +41,7 @@ setup() {
   cd "$T" && rm -rf "$T/w" "$T/wt" "$T/o" "$BARE" "$T/pr" "$T/gh.log" "$HOME/.config"
   git init -q --bare -b "$B" "$BARE"
   git clone -q "$BARE" "$T/w" 2>/dev/null
-  cd "$T/w"
+  cd "$T/w" || exit 1
   mkdir -p scripts tests
   printf '#!/bin/sh\nexit 0\n' > scripts/check; chmod +x scripts/check
   echo t > tests/t.sh; echo j > tests/日本語.sh
@@ -158,7 +158,7 @@ accepted "すべて満たす（bare）"
 setup "$T/r.git"; review PASS; mkdir -p "$T/failbin"
 printf '#!/bin/sh\ncase " $* " in *" diff --no-color "*) exit 128 ;; esac\nexec %s "$@"\n' "$(command -v git)" > "$T/failbin/git"; chmod +x "$T/failbin/git"
 PATH="$T/failbin:$PATH" refused "差分を取れない"
-setup "$T/r.git"; git worktree add -q -b feature/wt "$T/wt" && cd "$T/wt"; add c 1; review PASS
+setup "$T/r.git"; git worktree add -q -b feature/wt "$T/wt" && cd "$T/wt" || exit 1; add c 1; review PASS
 accepted "worktree の中ですべて満たす"
 
 # ---- kind=pr はブランチを push して base に向けた PR を作るだけ（マージしない）。開いた PR があれば作らない
