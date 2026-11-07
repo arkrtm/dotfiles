@@ -176,6 +176,7 @@ accepted "ふつうの行（skip の語、Django・Mongo・C# の only・skip �
 # ---- Linear の issue 番号（チームのキーと数字）は、ブランチ名・コミットメッセージ・各コミットの差分（文書も）にあれば止める。人の承認でも通さない
 setup "$T/r.git"; add notes.md 'AR''K-12 の続き'; review PASS; early "文書の差分に issue 番号"
 setup "$T/r.git"; echo 2 >> a; git commit -qam "fix: AR""K-7 の続き"; review PASS; early "コミットメッセージに issue 番号"
+setup "$T/r.git"; echo 2 >> a; git commit -qam "fix: update" -m "AR""K-7"; review PASS; early "コミットメッセージの行頭に issue 番号"
 setup "$T/r.git"; add n.txt 'AR''K-9'; git rm -q n.txt; git commit -qm rm; review PASS; early "issue 番号を足して後で消した（履歴ごと push される）"
 setup "$T/r.git"; git branch -m "feature/ar""k-3-x"; review PASS; early "ブランチ名に issue 番号（Linear の小文字のブランチ名）"
 setup "$T/r.git"; add notes.txt 'AR''K-12'; review PASS; refused "issue 番号は --human-approved でも通さない" --human-approved
@@ -191,7 +192,7 @@ PATH="${nogl%:}" early "gitleaks が無い"
 grep -q gitleaks "$T/err" && ok "gitleaks が無ければ、それを理由に止まる" || ng "gitleaks が無いときの理由: $(cat "$T/err")"
 setup "$T/r.git"; review PASS; f0="$(git rev-parse origin/main)"; integrate >/dev/null 2>&1 # push で origin/main が動くので先に取る
 gl_args() { tail -n 1 "$T/gitleaks.log"; } # 最後の呼び出しの引数
-gl_args | grep -qF -- "--log-opts=$f0..$(git rev-parse HEAD)" && ok "gitleaks に origin/<base>..HEAD の範囲を渡す" || ng "gitleaks の引数: $(gl_args)"
+gl_args | grep -qF -- "--log-opts=--no-color $f0..$(git rev-parse HEAD)" && ok "gitleaks に色なしで origin/<base>..HEAD の範囲を渡す" || ng "gitleaks の引数: $(gl_args)"
 gl_args | grep -qF -- --ignore-gitleaks-allow && ok "承認が無ければ gitleaks の行の例外指定を効かせない（--ignore-gitleaks-allow）" || ng "gitleaks の引数: $(gl_args)"
 setup "$T/r.git"; review PASS; integrate --human-approved >/dev/null 2>&1
 ! gl_args | grep -qF -- --ignore-gitleaks-allow && ok "--human-approved なら gitleaks の行の例外指定を効かせる" || ng "gitleaks の引数: $(gl_args)"
@@ -199,6 +200,7 @@ setup "$T/r.git"; blocked_line .gitleaksignore '0000:cfg.txt:github-pat:1'; bloc
 if [ -n "$GL" ]; then
   allow='# gitleaks:allo''w'
   setup "$T/r.git"; add cfg.txt "TOKEN=$secret"; review PASS; PATH="$T/realgl:$PATH" early "gitleaks が見つける秘密を足した"
+  setup "$T/r.git"; git config color.ui always; add cfg.txt "TOKEN=$secret"; review PASS; PATH="$T/realgl:$PATH" early "色付きの log の設定でも gitleaks が秘密を見つける"
   setup "$T/r.git"; add cfg.txt "TOKEN=$secret"; git rm -q cfg.txt; git commit -qm rm; review PASS; PATH="$T/realgl:$PATH" early "秘密を足して後で消した（履歴ごと push される）"
   # 行の例外指定（gitleaks:allow）は、承認が無ければ効かない: 後のコミットで消しても、Markdown でも
   setup "$T/r.git"; add cfg.txt "TOKEN=$secret $allow"; git rm -q cfg.txt; git commit -qm rm; review PASS

@@ -207,9 +207,12 @@ tab="$(printf '\t')"
 added() { awk '/^diff --git /{ h = 1 } h && /^\+\+\+ /{ f = substr($0, 7); h = 0; next } /^@@/{ h = 0 } /^\+/{ print f "\t" $0 }'; }
 # found <正規表現> [-i]: 標準入力の「場所<TAB>行」のうち行が当たるものを「場所: 最初に当たった記述」で標準エラーに出す。
 # 出すのは場所と当たった記述だけ（同じ行の秘密を見せない）。終了コードは grep のもの（0 当たる・1 当たらない・2 失敗）
+# 正規表現は行の列だけに当てる（^ が行の頭に当たり、場所の列には当たらない）
 found() {
-  hits="$(grep ${2:+"$2"} -E "$tab.*($1)")" || return
-  printf '%s\n' "$hits" | while IFS="$tab" read -r w l; do printf '%s: %s\n' "$w" "$(printf '%s\n' "$l" | grep ${2:+"$2"} -oE "$1" | head -n 1)"; done >&2
+  in="$(cat)"
+  nums="$(printf '%s\n' "$in" | cut -f 2- | grep ${2:+"$2"} -nE "$1")" || return
+  printf '%s\n' "$in" | awk -v n="$(printf '%s\n' "$nums" | cut -d : -f 1 | tr '\n' ' ')" 'BEGIN { split(n, a, " "); for (i in a) h[a[i]] = 1 } h[NR]' \
+  | while IFS="$tab" read -r w l; do printf '%s: %s\n' "$w" "$(printf '%s\n' "$l" | grep ${2:+"$2"} -oE "$1" | head -n 1)"; done >&2
 }
 if [ -z "$approved" ]; then
   diff="$(git diff --no-color --no-ext-diff --text --no-textconv --no-renames "$from...$head" -- . ':(exclude)*.md')" || fail "差分を取れない"
@@ -240,12 +243,12 @@ case "$rc" in
 esac
 
 # 4. 秘密（gitleaks）: このブランチのコミットだけを見る（main に前からある秘密では止めない）。後のコミットで消しても履歴ごと push されるので止める。
-# --redact で秘密を見せない。行の例外指定（gitleaks:allow）は承認が無ければ効かせない（ファイルの形式も、後で消したかも問わない）。
+# --redact で秘密を見せない。--no-color は中の git log に渡す（色の設定があると 0 件の走査で通る）。行の例外指定（gitleaks:allow）は承認が無ければ効かせない（ファイルの形式も、後で消したかも問わない）。
 # gitleaks の設定の変更は弱める変更で、人の承認が要る
 command -v gitleaks >/dev/null 2>&1 || fail "gitleaks が無い（mise で入る: mise install）"
 allow=--ignore-gitleaks-allow
 [ -z "$approved" ] || allow=""
-if ! out="$(gitleaks git --no-banner --no-color --redact -v --log-level warn ${allow:+"$allow"} --log-opts="$from..$head" . 2>&1)"; then
+if ! out="$(gitleaks git --no-banner --no-color --redact -v --log-level warn ${allow:+"$allow"} --log-opts="--no-color $from..$head" . 2>&1)"; then
   printf '%s\n' "$out" | tail -n 40 >&2
   fail "gitleaks が秘密を見つけた（または失敗した）。含むコミットを作り直して秘密を消す"
 fi
