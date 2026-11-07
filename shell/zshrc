@@ -37,6 +37,9 @@ alias lzd='lazydocker'
 # tmux の新しいウィンドウ（C-g c）で実行すると、状態表示もウィンドウごとに出る
 cw() { claude -w "$@"; }
 
+# 端末ごとの設定と秘密（リポジトリの外）。プラグインの設定（ZSH_AUTOSUGGEST_* など）は読み込みの前に書ける
+if [[ -f ~/.zshrc.local ]]; then source ~/.zshrc.local; fi
+
 # ===== プラグイン（install.sh が clone）=====
 ZPLUGINS="$HOME/.local/share/zsh/plugins"
 [ -f "$ZPLUGINS/zsh-autosuggestions/zsh-autosuggestions.zsh" ] &&

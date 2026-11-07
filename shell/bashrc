@@ -12,3 +12,6 @@ esac
 command -v mise >/dev/null 2>&1 && eval "$(mise activate bash)"
 command -v fnm >/dev/null 2>&1 && eval "$(fnm env --shell bash)" # fnm use を使えるようにする
 command -v starship >/dev/null 2>&1 && eval "$(starship init bash)"
+
+# 端末ごとの設定と秘密（リポジトリの外）
+if [ -f "$HOME/.bashrc.local" ]; then . "$HOME/.bashrc.local"; fi

@@ -30,3 +30,5 @@ export PATH="$FNM_DIR/aliases/default/bin:$PATH"
 [ -n "${ZSH_VERSION:-}" ] && typeset -U path
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export EDITOR=nvim VISUAL=nvim
+# 端末ごとの設定と秘密（リポジトリの外）。bash も読むので POSIX sh で書く
+if [ -f "$HOME/.zshenv.local" ]; then . "$HOME/.zshenv.local"; fi
