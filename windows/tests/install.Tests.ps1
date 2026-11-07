@@ -1,7 +1,7 @@
 ﻿#Requires -Version 7.4
 # windows/install.ps1 を一時ホームに -LinksOnly で実行する（本物のホーム・レジストリには触らない）: リンク表のどの行もリポジトリのファイルへのシンボリックリンクになる、
 # 前からあるものは *.bak.（14 桁の時刻） に退避する、2 回目は何も出さない、worktree からは DOTFILES_ALLOW_WORKTREE なしでは拒む、ponytail の band を書く。
-# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig（テンプレートに無い設定の引き継ぎ・キーの正規化と重複の検査を含む）・Get-CrlfCheckout・Update-TerminalSettings を一時ファイルで、
+# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig（テンプレートに無い設定の引き継ぎ・キーの正規化と重複の検査を含む）・Get-CrlfCheckout・Repair-LfCheckout・Update-TerminalSettings を一時ファイルで、
 # Add-UserPath をレジストリの代わりのもので確かめる。install.ps1 の手順の書き方は構文木で見る
 
 BeforeDiscovery {
@@ -829,6 +829,22 @@ Describe 'Repair-LfCheckout' {
     [IO.File]::ReadAllText((Join-Path $Clone 'windows\bin\x.cmd')) | Should -BeExactly "@echo off`r`n"
     git -C $Clone status --porcelain --untracked-files=all | Should -BeNullOrEmpty
     @(Get-CrlfCheckout $Clone).Count | Should -Be 0
+  }
+  It '書き直しに失敗しても索引は空にならず、もう一度呼べば直る' {
+    $c2 = Join-Path $TestDrive 'lf-clone-locked'
+    Invoke-Git -c core.autocrlf=true clone -q $Src $c2
+    Invoke-Git -C $c2 config core.autocrlf input
+    $env:GIT_CONFIG_GLOBAL = $EmptyConfig; $env:GIT_CONFIG_NOSYSTEM = '1'
+    $before = @(git -C $c2 ls-files).Count
+    $before | Should -BeGreaterThan 0
+    # 別のプロセスがファイルを掴んでいる状態（Windows では書き換えも削除もできない）
+    $lock = [IO.File]::Open((Join-Path $c2 'a.txt'), 'Open', 'Read', 'None')
+    try { { Repair-LfCheckout -Root $c2 } | Should -Throw }
+    finally { $lock.Dispose() }
+    @(git -C $c2 ls-files).Count | Should -Be $before
+    @(Get-CrlfCheckout $c2) | Should -Contain 'a.txt'
+    { Repair-LfCheckout -Root $c2 } | Should -Not -Throw
+    @(Get-CrlfCheckout $c2).Count | Should -Be 0
   }
 }
 

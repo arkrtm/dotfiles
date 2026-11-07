@@ -189,14 +189,17 @@ function Get-CrlfCheckout {
     })
 }
 
-# 追跡ファイルを LF で書き直す。ファイルは消さない（git の設定のリンク先も追跡ファイルで、消すと git が動かなくなる）:
-# 索引を空にして reset --hard で作り直すと、作業ツリーのファイルが上書きされるだけ
+# 追跡ファイルを LF で書き直す。ファイルは消さない（git の設定のリンク先も追跡ファイルで、消すと git が動かなくなる）。
+# 索引は空にしない（途中で失敗しても追跡の一覧が残り、再実行で直る）: 索引を今の木で読み直して stat を無効にし、
+# checkout-index で全部書き直す（stat が合うファイルは書き直されないため。-u で stat も更新する）
 function Repair-LfCheckout {
   param([Parameter(Mandatory)][string]$Root)
-  git -C $Root rm -r --cached -q .
-  if ($LASTEXITCODE) { throw 'git rm --cached に失敗' }
-  git -C $Root reset --hard -q
-  if ($LASTEXITCODE) { throw 'git reset に失敗' }
+  $tree = git -C $Root write-tree
+  if ($LASTEXITCODE) { throw 'git write-tree に失敗' }
+  git -C $Root read-tree $tree
+  if ($LASTEXITCODE) { throw 'git read-tree に失敗' }
+  git -C $Root checkout-index --force --all -u
+  if ($LASTEXITCODE) { throw 'git checkout-index に失敗' }
 }
 
 # 自分・SYSTEM・Administrators 以外で書き込める主体の SID（OpenSSH は他人が書ける設定ファイルを拒否する）
