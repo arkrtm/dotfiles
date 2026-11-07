@@ -61,7 +61,7 @@ ssh/config               .ssh/config
 "
 
 link() {
-  src="$DOTFILES/$1"
+  case "$1" in /*) src="$1" ;; *) src="$DOTFILES/$1" ;; esac
   dst="$HOME/$2"
   mkdir -p "$(dirname "$dst")"
   if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
