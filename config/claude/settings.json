@@ -14,11 +14,22 @@
       "Bash(gh pr merge:*)",
       "Bash(integrate --human-approved:*)",
       "Bash(integrate setup --force:*)",
-      "Read(./.env)",
-      "Read(./.env.*)",
+      "Read(//**/.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Read(!.env.sample)",
+      "Read(!.env.template)",
+      "Read(//**/*.pem)",
+      "Read(//**/*.key)",
+      "Read(//**/*.p12)",
+      "Read(//**/*.pfx)",
       "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.kube/**)",
       "Read(~/.codex/auth.json)",
-      "Edit(~/.config/integrate/**)"
+      "Edit(~/.config/integrate/**)",
+      "Edit(//**/.git/codex-review/**)"
     ]
   },
   "hooks": {

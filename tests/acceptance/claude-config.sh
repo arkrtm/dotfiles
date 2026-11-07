@@ -3,7 +3,8 @@
 # config/claude/README.md の新しい端末の手順、指示と skill に残る安全な手順の要（コマンド・オプション・確かめの名前の語。文の言い回しは見ない）。
 # 検証一式（sh tests/static.sh・sh tests/install.sh・sh tests/install-nosudo.sh）は別に実行する。
 # LIVE=1 のときだけ、本物の claude -p の新しいセッションでプラグインと skill の見え方を確かめ、空の設定の置き場で config/claude/README.md の
-# 新しい端末の手順が通ることも確かめる（haiku を 1 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
+# 新しい端末の手順が通ることも確かめる。permissions の deny が効くこと（haiku をもう 1 回）と、claude doctor が settings.json を読めることも
+# 確かめる（haiku を 2 回呼ぶ。課金あり。marketplace の取得にネットワークが要る。
 # 本物の設定で claude を動かすので、tmux の中では hook がウィンドウ名と通知に副作用を出す）
 #   sh tests/acceptance/claude-config.sh        失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/claude-config.sh    通った項目も
@@ -33,10 +34,17 @@ check "extraKnownMarketplaces.ponytail は github の DietrichGebert/ponytail" \
 for r in 'Bash(tinymemory:*)' 'Bash(git diff:*)' 'Bash(codex-review:*)'; do
   check "permissions.allow に $r" jq -e --arg r "$r" '.permissions.allow | index($r)' "$S"
 done
-for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(./.env)' 'Read(./.env.*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)' \
-  'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)' 'Bash(integrate setup --force:*)' 'Edit(~/.config/integrate/**)'; do
+for r in 'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' 'Read(~/.ssh/**)' 'Read(~/.codex/auth.json)' \
+  'Bash(git push:*)' 'Bash(gh pr merge:*)' 'Bash(integrate --human-approved:*)' 'Bash(integrate setup --force:*)' 'Edit(~/.config/integrate/**)' \
+  'Read(//**/.env)' 'Read(.env.*)' 'Read(!.env.example)' 'Read(!.env.sample)' 'Read(!.env.template)' \
+  'Read(//**/*.pem)' 'Read(//**/*.key)' 'Read(//**/*.p12)' 'Read(//**/*.pfx)' \
+  'Read(~/.aws/**)' 'Read(~/.config/gh/**)' 'Read(~/.kube/**)' 'Edit(//**/.git/codex-review/**)'; do
   check "permissions.deny に $r" jq -e --arg r "$r" '.permissions.deny | index($r)' "$S"
 done
+# 除外の !規則は、除く側の Read(.env.*) より後に置かないと効かない
+check "permissions.deny で、見本の除外（.env.example・.env.sample・.env.template）は Read(.env.*) より後" \
+  jq -e '.permissions.deny as $d | ($d | index("Read(.env.*)")) as $a
+    | ["Read(!.env.example)", "Read(!.env.sample)", "Read(!.env.template)"] | all(. as $x | ($d | index($x)) > $a)' "$S"
 # 既定のモデルは Opus 5.5 high（Opus 5.5 では最上位の effortLevel は無視されるので modelSettings に書く）
 check "settings.json の model が opus[1m]（claude plugin が書き換える形。Opus 5.5 では opus と同じ）" [ "$(jq -r '.model' "$S")" = 'opus[1m]' ]
 check "settings.json の modelSettings の claude-opus-5-5 の effortLevel が high" [ "$(jq -r '.modelSettings["claude-opus-5-5"].effortLevel' "$S")" = high ]
@@ -217,6 +225,40 @@ if [ -n "${LIVE:-}" ]; then
   lcheck "（LIVE）新しい端末の手順で superpowers・tinymemory・ponytail が入る" \
     jq -e '.plugins | has("superpowers@claude-plugins-official") and has("tinymemory@tinymemory") and has("ponytail@ponytail")' "$N/plugins/installed_plugins.json"
   lcheck "（LIVE）新しい端末の手順で settings.json は変わらない" [ "$(jq -S . "$D/settings.before.json")" = "$(jq -S . "$N/settings.json")" ]
+  # claude doctor: settings.json の規則を読めること。壊れた規則を入れた写しで Invalid settings が出る（見分けられる）ことも確かめる
+  mkdir -p "$D/doc" "$D/bad"; cp "$S" "$D/doc/settings.json"
+  jq '.permissions.deny += ["Foo(bar"]' "$S" > "$D/bad/settings.json"
+  doctor() { (cd "$D" && CLAUDE_CONFIG_DIR="$D/$1" claude doctor </dev/null 2>&1); }
+  doctor bad > "$D/doctor.bad.txt"; doctor doc > "$D/doctor.doc.txt"
+  lcheck "（LIVE）claude doctor は壊れた規則を Invalid settings に出す（見分けられる）" grep -q 'Invalid settings' "$D/doctor.bad.txt"
+  lcheck "（LIVE）claude doctor は settings.json に Invalid settings を出さない" \
+    sh -c "! grep -q 'Invalid settings' '$D/doctor.doc.txt' && grep -q 'Claude Code doctor' '$D/doctor.doc.txt'"
+  # permissions が効く: cwd を worktree の形（.worktrees/x）にして、cwd の外（--add-dir）のレビューの結果と .env 類を試す。
+  # 対照の ctrl.md の Edit が通るのは、acceptEdits と --add-dir で cwd の外を書けること（拒否がモードのせいでないこと）の確かめ。
+  # .git/ は保護されたパスで規則が無くても acceptEdits では書けない（文言は Claude requested permissions to edit …）ので、
+  # 規則による拒否は文言（denied by your permission settings）で見分ける（Claude Code が文言を変えたら落ちて分かる）。
+  # モデルがツールを呼ばなければ行が無く落ちる（記録が残る）。
+  P="$(cd "$D" && pwd -P)/perm"; R="$P/.git/codex-review"; X="$P/.worktrees/x"
+  mkdir -p "$R" "$X/a"; git init -q "$P"
+  printf 'VERDICT: FAIL\n' > "$R/z.md"; printf 'VERDICT: FAIL\n' > "$P/ctrl.md"
+  for f in ok.txt .env a/.env .env.local .env.example a/.env.example; do echo "x=1" > "$X/$f"; done
+  jq '{permissions: {deny: .permissions.deny}}' "$S" > "$D/perm.json"
+  (cd "$X" && claude -p "Do exactly these tool calls in order, one call each, and keep going even if a call fails: Read ok.txt; Read .env; Read a/.env; Read .env.local; Read .env.example; Read a/.env.example; Read $P/ctrl.md; Edit $P/ctrl.md replacing FAIL with PASS; Read $R/z.md; Edit $R/z.md replacing FAIL with PASS; Write $R/y.md with the text hello. Use no other tools. Then answer DONE." \
+    --model haiku --settings "$D/perm.json" --setting-sources local --permission-mode acceptEdits --add-dir "$P" --tools Read,Edit,Write \
+    --strict-mcp-config --no-session-persistence --output-format stream-json --verbose > "$D/perm.jsonl" 2> "$D/perm.err" </dev/null)
+  # 「<ツール> <パス> ok|denied:rule|denied:other」の行（パスは cwd と $P を前から外す。モデルは相対パスも絶対パスも使う）
+  jq -rs --arg cwd "$X/" --arg top "$P/" '([.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use")
+    | {key: .id, value: "\(.name) \(.input.file_path | ltrimstr($cwd) | ltrimstr($top))"}] | from_entries) as $p
+    | .[] | select(.type == "user") | .message.content[]? | select(.type == "tool_result")
+    | "\($p[.tool_use_id]) \(if .is_error | not then "ok" elif (.content | tostring | test("denied by your permission settings")) then "denied:rule" else "denied:other" end)"' \
+    "$D/perm.jsonl" > "$D/perm.txt" 2>/dev/null
+  for l in 'Read ok.txt ok' 'Read .env denied:rule' 'Read a/.env denied:rule' 'Read .env.local denied:rule' 'Read .env.example ok' 'Read a/.env.example ok' \
+    'Edit ctrl.md ok' 'Edit .git/codex-review/z.md denied:rule' 'Write .git/codex-review/y.md denied:rule'; do
+    lcheck "（LIVE）permissions: $l" grep -qx "$l" "$D/perm.txt"
+  done
+  lcheck "（LIVE）permissions: ctrl.md が PASS になった" grep -qx 'VERDICT: PASS' "$P/ctrl.md"
+  lcheck "（LIVE）permissions: z.md は FAIL のまま" grep -qx 'VERDICT: FAIL' "$R/z.md"
+  lcheck "（LIVE）permissions: y.md は作られない" [ ! -e "$R/y.md" ]
   # LIVE が落ちたら、原因（未ログイン・プラグイン未導入など）を見られるように記録を残す
   if [ "$live_fail" != 0 ]; then trap - EXIT; echo "（LIVE）記録を残した: $L・$D/stderr.txt・$N/steps.log"; fi
 fi
