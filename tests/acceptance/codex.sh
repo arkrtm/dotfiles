@@ -105,11 +105,22 @@ again '前回の指摘 A' "$h0" "$h1" && ok "同じ HEAD でやり直しても�
 git commit -q --allow-empty -m fix2; h2="$(git rev-parse HEAD)"
 rm -f "$T/args"; sh "$CR" branch
 again '指摘なし' "$h1" "$h2" && ok "3 回目は、保存された再レビューの結果（祖先で最新）を前回にする" || ng "3 回目: $(cat "$T/args" 2>/dev/null)"
-# 前回の結果を読めない（空）なら、codex を呼ばず、保存もせずに失敗する
-: > "$d/20991231-235958-branch-$from-$h1.md"; n0="$(ls -A "$d" | wc -l)"
+# 最後の行が VERDICT: PASS/FAIL でない結果（空・途中で終わった本文）は前回にしない: より古い VERDICT 付きの祖先の結果で再レビューする
+printf 'レビューを完了できませんでした\n' > "$d/20991231-235957-branch-$from-$h1.md"; : > "$d/20991231-235958-branch-$from-$h1.md"
+rm -f "$T/args"; sh "$CR" branch
+again '指摘なし' "$h1" "$h2" && ok "最後の行に VERDICT が無い（空を含む）結果は前回にせず、古い VERDICT 付きの結果で再レビューする" || ng "VERDICT 無しの前回: $(cat "$T/args" 2>/dev/null)"
+rm -f "$d/20991231-235957-branch-$from-$h1.md" "$d/20991231-235958-branch-$from-$h1.md"
+# VERDICT 付きの祖先の結果が無ければ全体のレビュー
+mkdir -p "$d.keep"; mv "$d"/*-branch-"$from"-"$h0".md "$d"/*-branch-"$from"-"$h1".md "$d.keep/"
+printf '本文だけ\n' > "$d/20991231-235957-branch-$from-$h1.md"
+rm -f "$T/args"; sh "$CR" branch
+full && grep -qF "$from...$h2" "$T/args" && ok "VERDICT 付きの祖先の結果が無ければ全体のレビュー" || ng "VERDICT 付きが無い: $(cat "$T/args" 2>/dev/null)"
+rm -f "$d/20991231-235957-branch-$from-$h1.md"; mv "$d".keep/* "$d/"; rmdir "$d.keep"
+# 前回の結果を読めない（ここではディレクトリ）なら、codex を呼ばず、保存もせずに失敗する
+mkdir "$d/20991231-235958-branch-$from-$h1.md"; n0="$(ls -A "$d" | wc -l)"
 rm -f "$T/args"; sh "$CR" branch 2>"$T/err"; rc=$?
 [ "$rc" != 0 ] && [ ! -e "$T/args" ] && [ "$(ls -A "$d" | wc -l)" = "$n0" ] && ok "前回の結果を読めなければ、codex を呼ばず保存もしない" || ng "前回を読めない: rc=$rc $(cat "$T/err") $(ls -A "$d")"
-rm -f "$d/20991231-235958-branch-$from-$h1.md"
+rmdir "$d/20991231-235958-branch-$from-$h1.md"
 # 比較元（merge-base）が変われば、前回の結果があっても全体のレビュー
 rm -f "$T/args"; sh "$CR" branch "$h0"
 full && grep -qF "$h0...$h2" "$T/args" && ok "比較元が変われば全体のレビュー" || ng "比較元が変わった: $(cat "$T/args" 2>/dev/null)"

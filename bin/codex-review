@@ -4,7 +4,7 @@
 # 指摘は「直す」と「参考」に分けさせ（規則は rule）、branch の最後の行は、「直す」がなければ「VERDICT: PASS」、あれば「VERDICT: FAIL」。
 # branch の結果は <git の共通ディレクトリ>/codex-review/<日時>-branch-<merge-base>-<HEAD>.md にも保存する（integrate が読む。
 # 比較元を名前に入れるのは、別の差分へのレビューで統合させないため）。
-# 同じ merge-base への結果が今の HEAD の祖先にあれば、2 回目からはその本文と <その HEAD>...<HEAD> で再レビューを依頼し、無ければ全体。前回を読めなければ止まる
+# 同じ merge-base への結果（最後の行が VERDICT: PASS/FAIL のもの）が今の HEAD の祖先にあれば、2 回目からはその本文と <その HEAD>...<HEAD> で再レビューを依頼し、無ければ全体。前回を読めなければ止まる
 set -eu
 skip=""
 out=""
@@ -30,17 +30,20 @@ case "${1:-}" in
     # Codex には一時ファイルに書かせ、正常に終わって作業ツリーも確かめた後でだけ正式な名前にする
     tmp="$out.partial"
     trap 'rm -f "$tmp"' EXIT
-    # 2 回目からは、同じ比較元への結果のうち HEAD が今の HEAD の祖先（今の HEAD は除く）で最新のものを前回とする。
+    # 2 回目からは、同じ比較元への結果のうち HEAD が今の HEAD の祖先（今の HEAD は除く）で、最後の行が VERDICT: PASS/FAIL の最新のものを前回とする。
     # 共通ディレクトリはほかの worktree のブランチと共有するので、祖先かどうかで自分の履歴の結果を選ぶ
     prev=""; phead=""
     for f in "$dir"/*-branch-"$from"-*.md; do
       [ -e "$f" ] || continue
       h="${f##*-}"; h="${h%.md}"
-      if [ "$h" != "$head" ] && git merge-base --is-ancestor "$h" "$head" 2>/dev/null; then prev="$f"; phead="$h"; fi
+      [ "$h" != "$head" ] && git merge-base --is-ancestor "$h" "$head" 2>/dev/null || continue
+      # 最後の行が VERDICT でない結果（空・途中で終わった本文）は前回にしない。読めない結果は止まる
+      last="$(tail -n 1 -- "$f")" || { echo "前回のレビューの結果（$f）を読めないので、レビューしません" >&2; exit 1; }
+      case "$last" in "VERDICT: PASS"|"VERDICT: FAIL") prev="$f"; phead="$h" ;; esac
     done
     if [ -n "$prev" ]; then
       # 前回の本文はここで読んで渡す（Codex に読みに行かせると、読めなかった結果が次の回の前回になり、直っていない指摘が消える）
-      pbody="$(cat -- "$prev")" && [ -n "$pbody" ] || { echo "前回のレビューの結果（$prev）を読めないので、レビューしません" >&2; exit 1; }
+      pbody="$(cat -- "$prev")" || { echo "前回のレビューの結果（$prev）を読めないので、レビューしません" >&2; exit 1; }
       prompt="レビュアーとして、再レビューをしてください。前回のレビュー（コミット $phead の時点）の結果を、次の「前回の結果（ここから）」と「前回の結果（ここまで）」の行の間に示します。
 前回の結果（ここから）
 $pbody
