@@ -2,7 +2,8 @@
 # integrate の受け入れ検査: 一時ディレクトリの bare とクローン、integrate setup の設定（一時 HOME）で、
 # 関門を 1 つでも満たさなければ統合しない（終了コード 1、notify のログに理由、bare の最上位のブランチは変わらない）こと、
 # 設定が無い・壊れている・remote が違えば統合しないこと、すべて満たせば kind=bare・github は base へ push、
-# kind=pr（偽の gh）はブランチを push して base に向けた PR を作るだけでマージしないこと
+# kind=pr（偽の gh）はブランチを push して base に向けた PR を作るだけでマージしないこと、
+# gitleaks（偽で関門の配線を、本物で検出を見る。本物が無ければ省いた）が秘密を見つけたら統合しないこと
 #   sh tests/acceptance/integrate.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/integrate.sh  通った項目も
 set -u
@@ -10,9 +11,12 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 ok() { [ -n "${V:-}" ] && echo "ok   $1"; return 0; }
 ng() { echo "FAIL $1"; fail=1; }
+skip() { echo "省いた $1"; }
 T=""; trap 'trap "" HUP INT TERM; rm -rf ${T:+"$T"}' EXIT
 trap 'exit 1' HUP INT TERM
 T="$(trap '' HUP INT TERM; mktemp -d)"
+# 本物の gitleaks の実体（mise の shim は一時 HOME では動かないので実体）。HOME と PATH を変える前に取る。無ければ空
+GL="$(mise which gitleaks 2>/dev/null || command -v gitleaks 2>/dev/null || true)"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 export XDG_STATE_HOME="$T/state" HOME="$T/home"
@@ -36,6 +40,15 @@ cat > "$T/bin/codex" <<'SH'
 while [ $# -gt 0 ]; do [ "$1" = -o ] && printf '指摘なし\nVERDICT: PASS\n' > "$2"; shift; done
 SH
 chmod +x "$T/bin/codex"
+# 偽の gitleaks: 引数を gitleaks.log に足して 0（関門の配線を見る）。本物は $T/realgl の包み（検出を見る 4 つだけ。無ければ作らない）
+cat > "$T/bin/gitleaks" <<SH
+#!/bin/sh
+echo "\$*" >> "$T/gitleaks.log"
+SH
+chmod +x "$T/bin/gitleaks"
+if [ -n "$GL" ]; then
+  mkdir -p "$T/realgl"; printf '#!/bin/sh\nexec "%s" "$@"\n' "$GL" > "$T/realgl/gitleaks"; chmod +x "$T/realgl/gitleaks"
+fi
 export PATH="$ROOT/bin:$T/bin:$PATH"
 exec </dev/null
 
@@ -169,6 +182,34 @@ setup "$T/r.git"; add notes.md "AR""K-12 TOKEN=$secret"; review PASS; early "秘
 ! grep -qF "$secret" "$T/err" && grep -qF 'notes.md:' "$T/err" && grep -qiF 'AR''K-12' "$T/err" && ok "止めた理由は「場所: 番号」だけで、同じ行の秘密を出さない" || ng "止めた理由の出力: $(sed "s/$secret/<秘密>/g" "$T/err")"
 setup "$T/r.git"; add notes.md 'SHA-256 と UTF-8 と ISO-8601、ARK-nn、MAR''K-1'; review PASS
 accepted "ふつうの語（SHA-256・UTF-8・ISO-8601・ARK-nn・語の一部）では止めない"
+
+# ---- 秘密（gitleaks）: このブランチのコミットだけを見る。足した秘密・後で消した秘密（履歴ごと push される）は止め、main に前からある秘密では止めない
+setup "$T/r.git"; review PASS
+nogl="$(printf '%s\n' "$PATH" | tr ':' '\n' | while IFS= read -r d; do [ -x "$d/gitleaks" ] || printf '%s:' "$d"; done)"
+PATH="${nogl%:}" early "gitleaks が無い"
+grep -q gitleaks "$T/err" && ok "gitleaks が無ければ、それを理由に止まる" || ng "gitleaks が無いときの理由: $(cat "$T/err")"
+setup "$T/r.git"; review PASS; f0="$(git rev-parse origin/main)"; integrate >/dev/null 2>&1 # push で origin/main が動くので先に取る
+gl_args() { tail -n 1 "$T/gitleaks.log"; } # 最後の呼び出しの引数
+gl_args | grep -qF -- "--log-opts=$f0..$(git rev-parse HEAD)" && ok "gitleaks に origin/<base>..HEAD の範囲を渡す" || ng "gitleaks の引数: $(gl_args)"
+gl_args | grep -qF -- --ignore-gitleaks-allow && ok "承認が無ければ gitleaks の行の例外指定を効かせない（--ignore-gitleaks-allow）" || ng "gitleaks の引数: $(gl_args)"
+setup "$T/r.git"; review PASS; integrate --human-approved >/dev/null 2>&1
+! gl_args | grep -qF -- --ignore-gitleaks-allow && ok "--human-approved なら gitleaks の行の例外指定を効かせる" || ng "gitleaks の引数: $(gl_args)"
+setup "$T/r.git"; blocked_line .gitleaksignore '0000:cfg.txt:github-pat:1'; blocked_line sub/.gitleaks.toml '[allowlist]'
+if [ -n "$GL" ]; then
+  allow='# gitleaks:allo''w'
+  setup "$T/r.git"; add cfg.txt "TOKEN=$secret"; review PASS; PATH="$T/realgl:$PATH" early "gitleaks が見つける秘密を足した"
+  setup "$T/r.git"; add cfg.txt "TOKEN=$secret"; git rm -q cfg.txt; git commit -qm rm; review PASS; PATH="$T/realgl:$PATH" early "秘密を足して後で消した（履歴ごと push される）"
+  # 行の例外指定（gitleaks:allow）は、承認が無ければ効かない: 後のコミットで消しても、Markdown でも
+  setup "$T/r.git"; add cfg.txt "TOKEN=$secret $allow"; git rm -q cfg.txt; git commit -qm rm; review PASS
+  PATH="$T/realgl:$PATH" early "秘密と例外指定を同じ行に足して後で消した"
+  setup "$T/r.git"; add notes.md "TOKEN=$secret $allow"; review PASS; PATH="$T/realgl:$PATH" early "Markdown に秘密と例外指定を足した"
+  ! grep -qF "$secret" "$T/err" && ok "gitleaks で止めた理由に秘密を出さない（--redact）" || ng "gitleaks の出力に秘密がある"
+  PATH="$T/realgl:$PATH" accepted "--human-approved なら行の例外指定を認める" --human-approved
+  setup "$T/r.git"; git checkout -q main; add old.txt "TOKEN=$secret"; git push -q origin HEAD:main; git checkout -q -B feature/x origin/main; add a 1; review PASS
+  PATH="$T/realgl:$PATH" accepted "main に前からある秘密では止めない"
+else
+  skip "gitleaks が秘密を見つけたら統合しない（gitleaks が無い）"
+fi
 
 # ---- main が進んでいたら通さない
 setup "$T/r.git"; review PASS

@@ -1,9 +1,9 @@
 #!/bin/sh
 # 関門をすべて満たしたときだけ統合する。1 つでも欠けたら統合せず、notify で知らせて止まる（終了コード 1）
 #   usage: integrate [--human-approved] | integrate setup [--force] [--kind K] [--base B] [--test CMD] | integrate setup --show
-#   --human-approved  テストや検査を無効にする記述の追加・テストの削除を、人が確認したうえで通す（人用。Claude には settings.json で禁止）
+#   --human-approved  テストや検査を弱める変更（無効にする記述・テストの削除・gitleaks の設定）を、人が確認したうえで通す（issue 番号と秘密は通さない。人用。Claude には settings.json で禁止）
 # 関門（安い順。テストは最後）: setup の設定がある・最上位のブランチ（base）の上でない・未コミットの変更が無い・origin/<base> を含む・
-#       今のコミットの origin/<base> との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない・Linear の issue 番号を書いていない・設定の test が通る
+#       今のコミットの origin/<base> との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない・Linear の issue 番号を書いていない・gitleaks が秘密を見つけない・設定の test が通る
 # 統合: kind=bare・github は base へ push（早送りだけ）。kind=pr はブランチを push して base に向けた PR を作るだけ（マージはチーム）
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
 # setup: リポジトリの種類（kind: bare・github・pr）・最上位のブランチ（base）・テストのコマンド（test）を
@@ -219,6 +219,9 @@ if [ -z "$approved" ]; then
   fi
   tdiff --quiet --no-renames --diff-filter=D "$from...$head" \
     || fail "テストのファイルが削除・移動されている。必要なら理由を書いて人が integrate --human-approved で通す"
+  # 秘密の検査の抜け道になる gitleaks の設定（どの深さでも）の変更も弱める変更に数える。gitleaks は今の作業ツリーの設定を読むので最後の差分で足りる
+  git diff --quiet "$from...$head" -- ':(glob)**/.gitleaksignore' ':(glob)**/.gitleaks.toml' \
+    || fail "gitleaks の設定（.gitleaksignore・.gitleaks.toml）が変わっている。必要なら理由を書いて人が integrate --human-approved で通す"
 fi
 
 # 3. Linear の issue 番号（キー + 数字）を、ブランチ名・コミットメッセージ・各コミットの差分（文書も）に書いていない。
@@ -236,7 +239,18 @@ case "$rc" in
   *) fail "issue 番号の検査が失敗した（rc=$rc）" ;;
 esac
 
-# 4. テスト（設定の test）。安い関門を先に、遅いテストは最後に（テストの前に止まれば、待たずに理由が分かる）
+# 4. 秘密（gitleaks）: このブランチのコミットだけを見る（main に前からある秘密では止めない）。後のコミットで消しても履歴ごと push されるので止める。
+# --redact で秘密を見せない。行の例外指定（gitleaks:allow）は承認が無ければ効かせない（ファイルの形式も、後で消したかも問わない）。
+# gitleaks の設定の変更は弱める変更で、人の承認が要る
+command -v gitleaks >/dev/null 2>&1 || fail "gitleaks が無い（mise で入る: mise install）"
+allow=--ignore-gitleaks-allow
+[ -z "$approved" ] || allow=""
+if ! out="$(gitleaks git --no-banner --no-color --redact -v --log-level warn ${allow:+"$allow"} --log-opts="$from..$head" . 2>&1)"; then
+  printf '%s\n' "$out" | tail -n 40 >&2
+  fail "gitleaks が秘密を見つけた（または失敗した）。含むコミットを作り直して秘密を消す"
+fi
+
+# 5. テスト（設定の test）。安い関門を先に、遅いテストは最後に（テストの前に止まれば、待たずに理由が分かる）
 if ! out="$(sh -c "$conf_test" 2>&1)"; then
   printf '%s\n' "$out" | tail -n 40 >&2
   fail "テスト（$conf_test）が通らない"
