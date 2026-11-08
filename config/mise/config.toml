@@ -3,7 +3,9 @@
 ripgrep = "latest"
 fd = "latest"
 bat = "latest"
-eza = "latest"
+# eza: linux・windows は aqua。mac は Brewfile（eza は mac の配布物を出しておらず、lock に URL と checksum を書けない）。
+# backend を書くのは、mise の登録が Windows では別の backend（vfox）を選び、lock とずれるため
+"aqua:eza-community/eza" = { version = "latest", os = ["linux", "windows"] }
 fzf = "latest"
 starship = "latest"
 gh = "latest"
@@ -19,8 +21,8 @@ node = "lts"
 # 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
 "github:arkrtm/tinymemory" = "0.2.0"
 
-# tmux: 公式の静的ビルド（sudo・Homebrew 不要、mac / linux 共通）
-"aqua:tmux/tmux-builds" = "latest"
+# tmux: 公式の静的ビルド（sudo・Homebrew 不要、mac / linux 共通。Windows 版は無い）
+"aqua:tmux/tmux-builds" = { version = "latest", os = ["linux", "macos"] }
 
 # git / docker の TUI
 lazygit = "latest"

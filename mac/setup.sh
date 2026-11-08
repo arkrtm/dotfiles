@@ -7,7 +7,7 @@ DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
 if command -v brew >/dev/null 2>&1; then
   brew bundle --file="$DOTFILES/Brewfile" || echo "warning: brew bundle に失敗（以降の設定は続行）"
 else
-  echo "Homebrew が無いので Brewfile（ghostty）は省略"
+  echo "Homebrew が無いので Brewfile（ghostty・eza）は省略（ll・la は ls になる）"
 fi
 
 # スクリーンショット: ~/Screenshots に保存、撮影後のサムネイル（保存が約 5 秒遅れる）を無効化
