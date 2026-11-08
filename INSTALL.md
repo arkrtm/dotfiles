@@ -4,13 +4,13 @@
 
 1. `install.sh` の LINKS のファイル（説明は各ディレクトリの README）をシンボリックリンクで配置し、ponytail の band（プロンプトの上の行）を既定で隠す（`~/.claude/.ponytail-band` が無ければ `off` を書く。出し続ける端末は中身を `on` にする）。WSL では Windows の powershell.exe・win32yank.exe を `~/.local/bin` にリンクする。zsh の補完の置き場 `~/.local/share/zsh/site-functions` を作り、その親とともに他人が書けないようにする（compinit が拒まないように）
 2. `~/.ssh` を 700、`ssh/config`・`ssh/config.mux` を 600 にする（ssh は他ユーザーが書ける設定ファイルを拒むため）
-3. zsh プラグイン 2 つを install.sh に書いたコミットで取得（プラグインマネージャなし。上げるときは install.sh の SHA を直す）
+3. zsh プラグイン 2 つを install.sh に書いたコミットで取得（プラグインマネージャなし。上げ方は README の「版の固定と更新」）
 4. zsh が無ければ [zsh-bin](https://github.com/romkatv/zsh-bin)（静的ビルド、zsh 5.8）を `~/.local` に入れる
-5. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ（インストーラは取得してから版を固定して実行）、`config/mise/config.toml` のツール（tmux と、Node の最新の LTS を含む。Node の版の決め方は config/mise/README.md）を全部入れる
+5. [mise](https://mise.jdx.dev) を `~/.local/bin/mise` に入れ（インストーラは取得してから `MISE_VERSION` の版で実行。違う版が入っていれば `mise self-update` でその版にする）、`config/mise/mise.lock` を `~/.config/mise/mise.lock` に写して lock の版を `mise install --locked` で入れる（配布物を lock の checksum で確かめる。tmux と Node の LTS を含む。Node の版の決め方は config/mise/README.md）
 6. zsh の補完（gh・mise・uv・uvx・rg・fd）を `~/.local/share/zsh/site-functions` に書き出す（再実行で道具の版に追随。zshrc が fpath に入れ、システムの vendor-completions も読む）
 7. Codex: `~/.codex/config.toml` を `config/codex/config.toml.tmpl` と既存から作る（テンプレートのキーはテンプレートの値、ほかは値ごと残す。意味が変わるときだけ既存を `*.bak.<日時>` に退避。説明は `config/codex/README.md`）。codex が無ければ[公式のインストーラー](https://github.com/openai/codex)で `~/.local/bin` に入れ、ponytail のプラグインと `tinymemory init codex` の hook を入れる
 8. Neovim プラグインを `lazy-lock.json` の版に揃える
-9. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile、スクリーンショット設定）
+9. mac のみ: `mac/setup.sh`（Homebrew があれば Brewfile（ghostty・eza）、スクリーンショット設定）
 
 install.sh の対象外（GUI 端末・管理者権限が要るもの。サーバーでは不要）:
 
