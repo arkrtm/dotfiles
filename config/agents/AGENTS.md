@@ -39,7 +39,7 @@
 レビューは Codex に任せる（`codex-review`。読み取り専用で、ファイルは変えない）。Codex は指摘を「直す」と「参考」に分ける。「直す」は、実際の使い方で起こる不具合、テストや検査や手順を弱める変更（テストが実際には確かめていない場合を含む）、設計の誤り（もっと単純で壊れにくい方法があるのに壊れやすい作りを選んでいる場合を含む）だけ。仕様の上ではありうるが実際には起こりにくい入力や環境は「参考」。FAIL の理由になるのは「直す」だけ（計画のレビューも同じ）:
 
 - 計画書ができたら `codex-review plan <計画書>` を 1 回だけ実行し、「直す」の指摘を計画書に反映して実装に入る（計画のレビューはやり直さない）
-- 実装が終わったら、ブランチ全体を `codex-review branch` でレビューする（ベースの既定は `origin/<integrate setup の base>`）。最後の行が `VERDICT: PASS` になるまで「直す」の指摘を直して実行し直す。2 回目からは、codex-review が前回の「直す」が直ったかと、その後の修正の差分だけを見させる（新しい粗探しはしない。rebase で履歴が変わったら全体を見直す）。2 往復で PASS にならなければ、統合せず `notify "<理由>"` で知らせて人を待つ
+- 実装が終わったら、ブランチ全体を `codex-review branch` でレビューする（ベースの既定は `origin/<integrate setup の base>`）。最後の行が `VERDICT: PASS` になるまで「直す」の指摘を直して実行し直す。2 回目からは、codex-review が前回の「直す」が直ったかと、その後の修正の差分だけを見させる（新しい粗探しはしない。rebase や取り込み（merge）で履歴か比較元が変わったら全体を見直す）。2 往復で PASS にならなければ、統合せず `notify "<理由>"` で知らせて人を待つ
 - 「参考」の指摘は直さず、作業中の issue の本文に書く（Backlog の issue に起こすかは `/wrap-up` で決める）
 
 ## モデルの割り当て
@@ -66,11 +66,11 @@ Claude Code だけ（Codex には適用しない）。メインのセッショ�
 - リポジトリごとに一度 `integrate setup` で種類（kind）・`<最上位>`（base）・テストのコマンド（test）を決める（設定は `~/.config/integrate/repos/`。リポジトリの外）。`integrate setup --show` で今の設定を見る。無ければ `integrate setup` を引数なしで実行して推測を見て、ユーザーに選択肢で確かめてから `--kind`・`--base`・`--test` で渡す。既にある設定の上書き（`--force`）は人が端末で行う。設定が無いと Claude Code では編集をフック（`integrate-hook`）が止める
 - kind:
   - `bare`（サーバーの bare）・`github`（自分の GitHub）: 一人の開発。integrate が関門の後に `<最上位>` へ直接 push する（PR は作らない）
-  - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず、修正はコミットを足して integrate をやり直す（`<最上位>` が進んで止まったら人に聞く）
+  - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず（push が早送りでなくなる）、`<最上位>` が進んだら `git merge origin/<最上位>` で取り込む（衝突は解決してコミットする）。修正はコミットを足して integrate をやり直す
 - ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/<最上位>`。作るのは `/issue`
 - コミット: 構造の変更（`refactor:`）と振る舞いの変更（`feat:`・`fix:`）を別にする。テストと実装は同じコミットにし、どのコミットでもテストが通る状態にする。メッセージは英語で最大 3 行（1 行目は型付きの件名、命令形、50 文字以内。必要なら空行の後に理由を 1 行）
 - Linear と superpowers の情報（issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前、spec・plan の中身やパス、Task の番号、skill の名前）は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない（個人の作業の道具で、プロジェクトに関係ないため）。理由が要る所には理由の文を書く（仕組みや設計の判断を、コードから分かる形で README などに書くのは構わない）。issue 番号は integrate が止める。dotfiles だけは Linear・superpowers の使い方の説明と設定を書いてよい（実際の番号は書かない）
-- 統合の前の順番: `git fetch` → `git rebase origin/<最上位>`（`bare`・`github` は毎回、`pr` は PR を出す前だけ）→ `codex-review branch` → `integrate`（setup の test は integrate が実行する。前に同じテストを実行しない）。レビューの後に変えたら、レビューからやり直す
+- 統合の前の順番: `git fetch` → `git rebase origin/<最上位>`（`bare`・`github` は毎回、`pr` は PR を出す前だけ。出した後は `git merge origin/<最上位>`）→ `codex-review branch` → `integrate`（setup の test は integrate が実行する。前に同じテストを実行しない）。レビューの後に変えたら、レビューからやり直す
 - 統合は `integrate` だけで行う（`git push`・`gh pr merge` を直接使わない。Claude Code では禁止）。integrate は関門（一覧は dotfiles の `bin/integrate` の先頭のコメント。安いものから確かめ、テストは最後）を確かめ、1 つでも欠けたら統合せず `notify` して止まる。直せる理由だけ直してレビューからやり直し、直せなければ人を待つ。秘密か issue 番号で止まったら、含むコミットを作り直す（後のコミットで消しても履歴ごと push される）。テストや検査を弱める必要があれば、理由を書いて人に `integrate --human-approved` を頼む
 - `<最上位>` への push が早送りでなく拒否されたら（`<最上位>` が進んだ）、fetch・rebase・テスト・レビューからやり直す。bare は早送りでない push とブランチの削除を拒む（`config/git/config`）ので、feature ブランチは bare に push しない
 - 強制 push はしない

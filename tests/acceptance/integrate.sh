@@ -4,7 +4,8 @@
 # 設定が無い・壊れている・remote が違えば統合しないこと、すべて満たせば kind=bare・github は base へ push、
 # kind=pr（偽の gh）はブランチを push して base に向けた PR を作るだけでマージしないこと、
 # gitleaks（偽で関門の配線を、本物で検出を見る。本物が無ければ省いた）が秘密を見つけたら統合しないこと、
-# 取り込み（merge）の衝突の解決で入れた issue 番号・秘密でも統合しないこと
+# 取り込み（merge）の衝突の解決で入れた issue 番号・秘密でも統合しないこと、
+# kind=pr で PR を出した後に base が進んだら取り込み（git merge）を案内し、取り込んでレビューし直せば PR を作り直さずに push すること、rebase したブランチは強制 push しないこと
 #   sh tests/acceptance/integrate.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/integrate.sh  通った項目も
 set -u
@@ -235,6 +236,7 @@ fi
 setup "$T/r.git"; review PASS
 git clone -q "$BARE" "$T/o" 2>/dev/null && (cd "$T/o" && add b 1 && git push -q origin HEAD:main)
 refused "main が進んでいる"
+grep -qF 'rebase して' "$T/err" && ! grep -qF 'git merge' "$T/err" && ok "kind=bare: main が進んだら rebase を案内し、取り込みは案内しない" || ng "kind=bare: main が進んだときの案内: $(cat "$T/err")"
 
 # ---- 未コミットの変更・main の上・scripts/check が無い／失敗する／追跡ファイルを書き換える
 setup "$T/r.git"; review PASS
@@ -316,6 +318,24 @@ setup "$T/github.com/o/d.git" pr develop; review PASS; integrate >/dev/null 2>"$
 add a 2; review PASS; integrate >/dev/null 2>>"$T/err"
 [ "$rc" = 0 ] && [ "$(grep -c '^pr create' "$T/gh.log")" = 1 ] && [ "$(grep -c -- '--base develop' "$T/gh.log")" = "$(grep -c '^pr ' "$T/gh.log")" ] \
   && ok "GitHub: base=develop の PR は検索も作成も develop、2 回目は作らない" || ng "GitHub: base=develop: rc=$rc $(cat "$T/err") $(cat "$T/gh.log")"
+# ---- kind=pr で PR を出した後に main が進んだら、git merge origin/main での取り込みを案内して止まる。取り込んで（衝突の解決も）
+#      レビューし直せば、PR を作り直さずにブランチを早送りで push する。PR の後に rebase したブランチは強制 push しないので止まる
+# pushed <名前>: 終了コード 0、bare の feature/x が HEAD、<base> は変わらない、PR は作り直さない（pr create は 1 回）
+pushed() {
+  m0="$(git -C "$BARE" rev-parse "$B")"
+  integrate >/dev/null 2>"$T/err"; rc=$?
+  [ "$rc" = 0 ] && [ "$(git -C "$BARE" rev-parse feature/x)" = "$(git rev-parse HEAD)" ] && [ "$(git -C "$BARE" rev-parse "$B")" = "$m0" ] \
+    && [ "$(grep -c '^pr create' "$T/gh.log")" = 1 ] && ok "GitHub: $1" || ng "GitHub: $1: rc=$rc $(cat "$T/err") $(cat "$T/gh.log")"
+}
+setup "$T/github.com/o/r.git"; review PASS; integrate >/dev/null 2>&1
+advance b; refused "kind=pr: PR を出した後に main が進んだ"
+grep -qF 'git merge origin/main' "$T/err" && ok "kind=pr: main が進んだら git merge origin/main を案内する" || ng "kind=pr: main が進んだときの案内: $(cat "$T/err")"
+git merge -q --no-edit origin/main; refused "kind=pr: 取り込んだ後のレビューが無い"
+codex-review branch >/dev/null 2>&1; pushed "取り込んでレビューし直せば push し、PR は作り直さない"
+advance a; merged c; codex-review branch >/dev/null 2>&1; pushed "衝突を解決した取り込みも push する"
+setup "$T/github.com/o/r.git"; review PASS; integrate >/dev/null 2>&1; f0="$(git -C "$BARE" rev-parse feature/x)"
+advance b; git fetch -q; git rebase -q origin/main; review PASS; refused "kind=pr: PR を出した後に rebase した"
+[ "$(git -C "$BARE" rev-parse feature/x)" = "$f0" ] && ok "kind=pr: rebase したブランチを強制 push しない" || ng "kind=pr: rebase したブランチで feature/x が変わった"
 # ポート付きの ssh の URL（ssh://git@ssh.github.com:443/o/r.git の形）でも、PR の対象は o/r
 setup "$T/ssh.github.com:443/o/r.git"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && grep -q -- '^pr create --repo github.com/o/r ' "$T/gh.log" && ok "GitHub: ポート付きの URL でも PR の対象は o/r" || ng "GitHub: ポート付きの URL: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
