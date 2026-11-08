@@ -46,8 +46,10 @@ for args in "" foo plan "plan missing.md" branch; do
 done
 
 has() { grep -qx -- "$1" "$T/args"; }
-# 仕分けの規則（「直す」と「参考」）を依頼文に含む
-triage() { grep -qF '「直す」と「参考」に分けて' "$T/args" && grep -qF '実際には起こりにくい入力や環境は「参考」' "$T/args"; }
+# 仕分けの規則（「直す」と「参考」。既存の振る舞いの退行は入力が珍しくても「直す」、要件で変えた振る舞いと対象にしない環境は「参考」）を依頼文に含む
+triage() { grep -qF '「直す」と「参考」に分けて' "$T/args" && grep -qF '実際には起こりにくい入力や環境は「参考」' "$T/args" \
+  && grep -qF '既存の振る舞いの退行' "$T/args" && grep -qF '入力が珍しくても「直す」' "$T/args" \
+  && grep -qF '要件で変えると決めた振る舞い' "$T/args" && grep -qF '対象にしない環境' "$T/args"; }
 # 全体のレビュー: 再レビューの語が無く、仕分けの規則と「直す」が無ければ PASS
 full() { ! grep -qF '前回の「直す」' "$T/args" && triage && grep -qF '「直す」の指摘がなければ「VERDICT: PASS」' "$T/args"; }
 # フックを止める（tinymemory の記憶を入れず、差分と計画書だけでレビューさせる）
