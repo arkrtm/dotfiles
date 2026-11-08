@@ -144,6 +144,7 @@ rule "グローバル指示: Agent の description は役割名" "$C" 'Agent の
 rule "グローバル指示: integrate setup" "$C" '`integrate setup`' '`integrate setup --show`' '`--force`'
 rule "グローバル指示: kind=pr は PR を出した後 rebase せず、git merge で取り込む" "$C" '`pr`' 'PR を出した後は rebase せず' '`git merge origin/<最上位>` で取り込む'
 absent "グローバル指示: kind=pr で最上位が進んでも人に聞かない（取り込む）" "$C" '進んで止まったら人に聞く'
+rule "グローバル指示: kind=pr で PR のブランチをチームが進めたら git merge で取り込む" "$C" '`pr`' 'PR のブランチを進めたら' 'Update branch・直接のコミット' '`git merge origin/feature/<作業内容>` で取り込む'
 rule "グローバル指示: PR の人の指摘と CI を読み、コミットを足して直す" "$C" '`pr`' '`gh pr view --comments`' '`gh pr checks`' 'コミットを足して integrate をやり直す'
 rule "グローバル指示: ブランチと worktree の作り方" "$C" 'feature/<作業内容>' 'worktree add --no-track' '.worktrees/' 'origin/<最上位>'
 rule "グローバル指示: コミットは構造と振る舞いを分ける" "$C" '`refactor:`' '`feat:`' 'テストと実装は同じコミット'
