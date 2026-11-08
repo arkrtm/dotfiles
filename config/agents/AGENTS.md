@@ -66,7 +66,7 @@ Claude Code だけ（Codex には適用しない）。メインのセッショ�
 - リポジトリごとに一度 `integrate setup` で種類（kind）・`<最上位>`（base）・テストのコマンド（test）を決める（設定は `~/.config/integrate/repos/`。リポジトリの外）。`integrate setup --show` で今の設定を見る。無ければ `integrate setup` を引数なしで実行して推測を見て、ユーザーに選択肢で確かめてから `--kind`・`--base`・`--test` で渡す。既にある設定の上書き（`--force`）は人が端末で行う。設定が無いと Claude Code では編集をフック（`integrate-hook`）が止める
 - kind:
   - `bare`（サーバーの bare）・`github`（自分の GitHub）: 一人の開発。integrate が関門の後に `<最上位>` へ直接 push する（PR は作らない）
-  - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず（push が早送りでなくなる）、`<最上位>` が進んだら `git merge origin/<最上位>` で取り込む（衝突は解決してコミットする）。修正はコミットを足して integrate をやり直す
+  - `pr`（書き込み権限のあるチームの GitHub）: integrate はブランチを push して `<最上位>` に向けた PR を作るところまで。マージはチーム。PR を出した後は rebase せず（push が早送りでなくなる）、`<最上位>` が進んだら `git merge origin/<最上位>` で取り込む（衝突は解決してコミットする）。修正（人のレビューの指摘・落ちた CI。`gh pr view --comments`・`gh pr checks` で読む）はコミットを足して integrate をやり直す
 - ブランチは `feature/<作業内容>`（英小文字とハイフン）。worktree は元のチェックアウト（`git worktree list --porcelain` の先頭。以下 `<元>`）の下に作る: `git -C <元> fetch` の後、`git -C <元> worktree add --no-track -b feature/<作業内容> <元>/.worktrees/<作業内容> origin/<最上位>`。作るのは `/issue`
 - コミット: 構造の変更（`refactor:`）と振る舞いの変更（`feat:`・`fix:`）を別にする。テストと実装は同じコミットにし、どのコミットでもテストが通る状態にする。メッセージは英語で最大 3 行（1 行目は型付きの件名、命令形、50 文字以内。必要なら空行の後に理由を 1 行）
 - Linear と superpowers の情報（issue 番号・題・URL、受け入れ条件の番号、プロジェクトや文書の名前、spec・plan の中身やパス、Task の番号、skill の名前）は、リポジトリに入るもの（コード・コメント・テスト・文書・指示ファイル・コミット・PR・ブランチ名）に書かない（個人の作業の道具で、プロジェクトに関係ないため）。理由が要る所には理由の文を書く（仕組みや設計の判断を、コードから分かる形で README などに書くのは構わない）。issue 番号は integrate が止める。dotfiles だけは Linear・superpowers の使い方の説明と設定を書いてよい（実際の番号は書かない）
@@ -81,7 +81,7 @@ Claude Code だけ（Codex には適用しない）。メインのセッショ�
 
 - 作業の起点に issue が無ければ作る（数分で終わる小さな修正だけは任意。issue が無ければコミットメッセージが記録）。issue があれば `/issue ARK-nn` で始める（「ARK-nn をやって」と言われたときも）
 - 要件と受け入れ条件、設計の決定は、コメントではなく issue の**本文**に書く（最新が 1 か所で分かるように。本文が正本）。計画（plan）の全文はファイルにして、元のチェックアウトの `<元>/.superpowers/plans/<ARK-nn>-<名前>.md` に置き（worktree の中に置くと worktree の削除で消える。`.superpowers/` は dotfiles のグローバル gitignore で全リポジトリから除外）、本文にはそのパスを書く。リポジトリに `docs/superpowers/` のファイルは作らない
-- 状態: 着手で In Progress。コミット済み・未マージの間はそのまま（コメントに「未マージ」と書く）。マージした、または統合しないと決めた後に Done（統合の判断と一緒に確認してよい）。手を止める理由があれば Blocked や Backlog に戻す
+- 状態: 着手で In Progress。コミット済み・未マージの間はそのまま（コメントに「未マージ」と書く）。kind が `pr` で PR を出したら In Review にし（チームに無ければ In Progress のまま、PR の url と「マージ待ち」をコメントする）、次の issue に進んでよい（片づけはマージの後の `/wrap-up`）。マージした、または統合しないと決めた後に Done（統合の判断と一緒に確認してよい）。手を止める理由があれば Blocked や Backlog に戻す
 - コメントは節目だけ: 要件・計画の合意、方針変更、詰まった点、途中で止めるとき（状態と次の手順。tinymemory は端末ごとなので、別の端末で続けるにはここが要る）、完了（統合の前に、作業ブランチの上で `/wrap-up`。コメントはコミットと、検証のコマンドと結果だけ。決定と参考は本文に書く。「Git」の節の方法で統合するより先。統合の後にもう一度 `/wrap-up` で片づける）
 - 子 issue は、セッションやブランチをまたぐ作業に分けるときだけ作る。1 つのブランチで終わる内訳は、本文のチェックリストに書く
 - 将来やる / 見送ったことも issue に残す（Backlog）
