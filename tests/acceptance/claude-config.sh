@@ -67,6 +67,8 @@ check "SubagentStart に agent-pane start" sh -c "printf '%s\n' \"\$1\" | grep -
 check "SubagentStop に agent-pane stop" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane stop'" _ "$(hk SubagentStop)"
 check "SessionStart（startup・resume・clear・fork）に handoff --session-start（compact は同じセッションなので含めない）" \
   sh -c "jq -r '.hooks.SessionStart[] | select(.matcher == \"startup|resume|clear|fork\") | .hooks[].command' '$S' | grep -qx '\$HOME/.local/bin/handoff --session-start'"
+check "SessionStart（startup・resume・clear・compact・fork）に claude-env（Bash ツールの PATH に mise の shims）" \
+  [ "$(jq -r '.hooks.SessionStart[] | select(.matcher == "startup|resume|clear|compact|fork") | .hooks[].command' "$S")" = '$HOME/.local/bin/claude-env' ]
 check "SessionStart（clear）に agent-pane cleanup" [ "$(jq -r '.hooks.SessionStart[] | select(.matcher == "clear") | .hooks[].command' "$S")" = '$HOME/.local/bin/agent-pane cleanup' ]
 check "SessionEnd に agent-pane cleanup" sh -c "printf '%s\n' \"\$1\" | grep -qx '\$HOME/.local/bin/agent-pane cleanup'" _ "$(hk SessionEnd)"
 

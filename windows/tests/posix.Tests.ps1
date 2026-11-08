@@ -1,5 +1,5 @@
 ﻿#Requires -Version 7.4
-# Git Bash で動くもの（Git Bash が無ければ飛ばす）: posix/hook env が CLAUDE_ENV_FILE に PATH の行を足す、jq の shim は CR を出さない（jq.exe が無ければ飛ばす）、
+# Git Bash で動くもの（Git Bash が無ければ飛ばす）: posix/hook env が CLAUDE_ENV_FILE に PATH の行（mise の shims も）を足す、jq の shim は CR を出さない（jq.exe が無ければ飛ばす）、
 # git/hooks-nosign/commit-msg はリンク経由の core.hooksPath で AI 由来の行を消す、posix/hook integrate-hook pre-edit は git の外の Windows のパスで 0、
 # 編集するファイルのリポジトリで判定する（jq.exe が要る）、posix/run・hook と env の行は /clear を Windows のパスに直させない、
 # posix/run と windows/bin/*.cmd・*.ps1 は終了コードを返し、*.ps1 は引数をそのまま渡す
@@ -66,17 +66,17 @@ Describe 'Git Bash で動くもの' -Skip:$NoBash {
   Context 'posix/hook env' {
     BeforeAll {
       $EnvFile = Join-Path $Tmp 'claude-env'
-      $EnvLines = ('export PATH="' + "$RootPosix/windows/posix/shims:$RootPosix/bin:" + '$PATH"') + "`n" +
+      $EnvLines = ('export PATH="' + "$RootPosix/windows/posix/shims:$RootPosix/bin:/c/lad/mise/shims:" + '$PATH"') + "`n" +
         'export MSYS2_ARG_CONV_EXCL="/clear${MSYS2_ARG_CONV_EXCL:+;$MSYS2_ARG_CONV_EXCL}"' + "`n"
     }
-    It 'CLAUDE_ENV_FILE に dotfiles の shims と bin を PATH の先頭に置く行と /clear の除外を足す（$ はそのまま、CR なし）' {
+    It 'CLAUDE_ENV_FILE に dotfiles の shims と bin と mise の shims を PATH の先頭に置く行と /clear の除外を足す（$ はそのまま、CR なし）' {
       [IO.File]::WriteAllText($EnvFile, "export FOO=1`n", $Utf8)
-      $r = Invoke-Proc $Bash @("$RootFwd/windows/posix/hook", 'env') -InputText '{"session_id":"x"}' -Environment @{ CLAUDE_ENV_FILE = $EnvFile } -WorkingDirectory $Tmp
+      $r = Invoke-Proc $Bash @("$RootFwd/windows/posix/hook", 'env') -InputText '{"session_id":"x"}' -Environment @{ CLAUDE_ENV_FILE = $EnvFile; LOCALAPPDATA = 'C:\lad' } -WorkingDirectory $Tmp
       $r.ExitCode | Should -Be 0 -Because $r.Err
       [IO.File]::ReadAllText($EnvFile, $Utf8) | Should -BeExactly "export FOO=1`n$EnvLines"
     }
     It '2 回目は同じ行を重ねない' {
-      $r = Invoke-Proc $Bash @("$RootFwd/windows/posix/hook", 'env') -InputText '{}' -Environment @{ CLAUDE_ENV_FILE = $EnvFile } -WorkingDirectory $Tmp
+      $r = Invoke-Proc $Bash @("$RootFwd/windows/posix/hook", 'env') -InputText '{}' -Environment @{ CLAUDE_ENV_FILE = $EnvFile; LOCALAPPDATA = 'C:\lad' } -WorkingDirectory $Tmp
       $r.ExitCode | Should -Be 0 -Because $r.Err
       [IO.File]::ReadAllText($EnvFile, $Utf8) | Should -BeExactly "export FOO=1`n$EnvLines"
     }
@@ -86,7 +86,7 @@ Describe 'Git Bash で動くもの' -Skip:$NoBash {
       $r.Out.Trim() | Should -BeExactly "'/clear' 'C:/x'"
     }
     It 'CLAUDE_ENV_FILE が無くても 0' {
-      $r = Invoke-Proc $Bash @("$RootFwd/windows/posix/hook", 'env') -InputText '{}' -Environment @{ CLAUDE_ENV_FILE = $null } -WorkingDirectory $Tmp
+      $r = Invoke-Proc $Bash @("$RootFwd/windows/posix/hook", 'env') -InputText '{}' -Environment @{ CLAUDE_ENV_FILE = $null; LOCALAPPDATA = 'C:\lad' } -WorkingDirectory $Tmp
       $r.ExitCode | Should -Be 0 -Because $r.Err
     }
   }

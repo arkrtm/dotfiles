@@ -52,5 +52,15 @@ act="$(r p "$P0" "$ZSH" -i -c 'print -r -- "$PATH"')"
 chk "対話の zsh から起動した非対話の zsh・bash -lc も、場所の版を使う（mise activate が置いた node より shims が先）" \
   test "$(r nv "$act" "$ZSH" -c 'node -v')/$(r nv "$act" bash -lc 'node -v')" = v22.99.0/v22.99.0
 
+# Claude Code の Bash ツール: コマンドごとに、起動したシェルから受け継いだ PATH（ここでは指定の無い場所の対話の zsh の PATH。node は LTS が先）を戻してから、
+# SessionStart のフックが書いた CLAUDE_ENV_FILE を読む
+EF="$T/claude-env"
+echo '{}' | env -i HOME="$H" PATH="$P0" CLAUDE_ENV_FILE="$EF" sh "$ROOT/bin/claude-env"
+echo '{}' | env -i HOME="$H" PATH="$P0" CLAUDE_ENV_FILE="$EF" sh "$ROOT/bin/claude-env"
+chk "claude-env は CLAUDE_ENV_FILE に shims の行を 1 回だけ書く（resume・clear で重ねない）" test "$(grep -c . "$EF" 2>/dev/null)" = 1
+chk "claude-env は CLAUDE_ENV_FILE が無くても 0" sh -c 'echo {} | env -i PATH=/usr/bin:/bin sh "$1"' sh "$ROOT/bin/claude-env"
+chk "Claude Code の Bash ツール: 受け継いだ PATH では LTS の node が先でも、claude-env の行を読めば .node-version の場所では v22.99.0" \
+  test "$(r nv "$P0" env SNAP="$act" EF="$EF" "$ZSH" -c 'export PATH="$SNAP"; . "$EF"; node -v')" = v22.99.0
+
 [ "$fail" = 0 ] && echo "acceptance node-version: ok"
 [ "$fail" = 0 ]

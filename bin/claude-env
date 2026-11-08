@@ -1,0 +1,8 @@
+#!/bin/sh
+# Claude Code の SessionStart のフック: Bash ツールが毎回の実行の前に読むファイル（CLAUDE_ENV_FILE）に、mise の shims を PATH の先頭に置く行を足す。
+# Bash ツールは Claude Code を起動したシェルの PATH（対話のシェルでは mise activate が起動した場所の node を先に置いている）を使い回し、
+# cd しても組み直さないので、shims に呼ばれた場所の版（.node-version・.nvmrc・mise.toml）を決めさせる。resume・clear・compact で同じ行を重ねない
+cat >/dev/null
+[ -n "${CLAUDE_ENV_FILE:-}" ] || exit 0
+line='export PATH="$HOME/.local/share/mise/shims:$PATH"'
+grep -qxF "$line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$line" >> "$CLAUDE_ENV_FILE"

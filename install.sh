@@ -55,6 +55,7 @@ bin/integrate            .local/bin/integrate
 bin/integrate-hook       .local/bin/integrate-hook
 bin/handoff              .local/bin/handoff
 bin/context-nudge        .local/bin/context-nudge
+bin/claude-env           .local/bin/claude-env
 bin/agent-pane           .local/bin/agent-pane
 bin/geoview              .local/bin/geoview
 ssh/config               .ssh/config

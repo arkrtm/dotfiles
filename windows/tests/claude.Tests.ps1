@@ -1,5 +1,5 @@
 ﻿#Requires -Version 7.4
-# windows/claude/settings.json が config/claude/settings.json から決めた所だけ違うこと（フックは agent-status を落として windows/posix/hook 経由にする）と、
+# windows/claude/settings.json が config/claude/settings.json から決めた所だけ違うこと（フックは agent-status と claude-env を落として windows/posix/hook 経由にする）と、
 # windows/claude/statusline.ps1 の出力（2 行、モデル・ブランチ・使用率・Codex のモデルと使用量）とコンテキストの使用率のキャッシュ
 
 BeforeAll {
@@ -73,11 +73,11 @@ Describe 'windows/claude/settings.json' {
       }
     }
   }
-  It 'フックは共通の設定から agent-status を落とし、$HOME/.local/bin/X を "$HOME/dotfiles/windows/posix/hook" X にし、SessionStart の先頭に hook env を足したもの（タイムアウトも同じ）' {
+  It 'フックは共通の設定から agent-status と claude-env（Windows は hook env が mise の shims も置く）を落とし、$HOME/.local/bin/X を "$HOME/dotfiles/windows/posix/hook" X にし、SessionStart の先頭に hook env を足したもの（タイムアウトも同じ）' {
     $exp = [ordered]@{}
     foreach ($ev in $Shared.hooks.PSObject.Properties) {
       $groups = @(foreach ($g in $ev.Value) {
-          $hs = @($g.hooks | Where-Object { $_.command -notmatch 'agent-status' } | ForEach-Object {
+          $hs = @($g.hooks | Where-Object { $_.command -notmatch 'agent-status|claude-env' } | ForEach-Object {
               $h = $_ | ConvertTo-Json -Depth 10 | ConvertFrom-Json
               $h.command = $h.command -replace '^\$HOME/\.local/bin/', '"$$HOME/dotfiles/windows/posix/hook" '
               $h

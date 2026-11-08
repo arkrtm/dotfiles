@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Claude Code のフック（Windows。Claude Code が Git Bash で動かす）: jq の shim と dotfiles の bin を PATH の先頭に置いて bin/ のフックを動かす
-#   usage: hook env                    SessionStart。Bash ツールの PATH に dotfiles の bin と jq の shim を足す（CLAUDE_ENV_FILE に書く）
+#   usage: hook env                    SessionStart。Bash ツールの PATH に dotfiles の bin と jq の shim と mise の shims を足す（CLAUDE_ENV_FILE に書く）
 #          hook integrate-hook <引数>  入力の cwd・file_path・notebook_path（Windows のパス）を POSIX のパスに直してから渡す
 #          hook <名前> <引数>          bin/<名前> をそのまま
 D="$(cd -P "$(dirname "$0")/../.." && pwd)" || exit 1
@@ -15,9 +15,12 @@ case "$name" in
   env)
     cat >/dev/null
     # $PATH はそのまま書く（Bash ツールが毎回の実行の前に読んで展開する）。/clear の除外も書く（Bash ツールから動かす handoff のため）。
-    # resume・clear・compact で同じ行を重ねない
+    # resume・clear・compact で同じ行を重ねない。
+    # mise の shims も置く（Claude Code は起動した pwsh の PATH を受け継ぎ、mise activate が起動した場所の node を先に置いているので）。
+    # dotfiles の shims より後ろ（mise の jq.exe より CR を消す jq の shim を先に）
     [ -n "${CLAUDE_ENV_FILE:-}" ] || exit 0
-    for line in "export PATH=\"$D/windows/posix/shims:$D/bin:\$PATH\"" "$conv"; do
+    m="$(cygpath -u "$LOCALAPPDATA")/mise/shims"
+    for line in "export PATH=\"$D/windows/posix/shims:$D/bin:$m:\$PATH\"" "$conv"; do
       grep -qxF "$line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$line" >> "$CLAUDE_ENV_FILE"
     done
     exit 0 ;;
