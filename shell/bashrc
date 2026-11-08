@@ -1,6 +1,6 @@
 # bash 用（zsh が入っていない linux のログインシェル向け）
 
-# 環境変数（PATH・FNM_DIR・EDITOR）は shell/zshenv と共通（POSIX sh で読める書き方にしてある）
+# 環境変数（PATH・EDITOR）は shell/zshenv と共通（POSIX sh で読める書き方にしてある）
 [ -f "$HOME/.zshenv" ] && . "$HOME/.zshenv"
 
 # 以降は対話シェルのみ
@@ -10,7 +10,6 @@ case $- in
 esac
 
 command -v mise >/dev/null 2>&1 && eval "$(mise activate bash)"
-command -v fnm >/dev/null 2>&1 && eval "$(fnm env --shell bash)" # fnm use を使えるようにする
 command -v starship >/dev/null 2>&1 && eval "$(starship init bash)"
 
 # 端末ごとの設定と秘密（リポジトリの外）

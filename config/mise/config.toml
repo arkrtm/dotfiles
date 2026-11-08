@@ -11,9 +11,10 @@ jq = "latest" # tests/acceptance と tests/static.sh が使う（Ubuntu / WSL �
 gitleaks = "latest" # bin/integrate の関門（秘密）が使う
 shellcheck = "0.11.0" # tests/static.sh が使う。版を固定する（新しい版で警告が増えると関門が急に落ちる。.github/workflows/check.yml の shellcheck-py と一緒に上げる）
 
-# 言語ツール（ランタイム自体の管理は uv / fnm に任せる）
+# 言語ツール（Python のランタイムは uv。Node は mise: プロジェクトの mise.toml・.node-version・.nvmrc の版、無ければ最新の LTS）
 uv = "latest"
-"aqua:Schniz/fnm" = "latest"
+node = "lts"
+"aqua:Schniz/fnm" = "latest" # windows/install.ps1 がまだ使う
 
 # AI エージェントの長期記憶（Claude Code / Codex 共通）
 # 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
@@ -39,3 +40,7 @@ version = "latest"
 [tools."github:sxyazi/yazi".platforms]
 linux-x64 = { asset_pattern = "yazi-x86_64-unknown-linux-musl.zip" }
 linux-arm64 = { asset_pattern = "yazi-aarch64-unknown-linux-musl.zip" }
+
+# .node-version・.nvmrc を読む（mise は既定で読まない）
+[settings]
+idiomatic_version_file_enable_tools = ["node"]

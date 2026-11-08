@@ -19,13 +19,8 @@ if [ -n "${WSL_DISTRO_NAME:-}" ]; then
   if [ -n "${__MISE_ORIG_PATH:-}" ]; then _wsl_trim "$__MISE_ORIG_PATH"; export __MISE_ORIG_PATH="$_wsl_r"; fi
   unset -f _wsl_trim; unset _wsl_r _wsl_rest _wsl_e
 fi
+# mise の shims: 非対話のシェル（スクリプト、エージェントのコマンド）でも、呼ばれた場所の設定（mise.toml、.node-version・.nvmrc）の版を使う
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
-# Node は fnm の既定版（install.sh が入れる）。非対話でも使えるよう PATH に直接置く（fnm env は対話シェルだけ）
-# Node は fnm に一本化するので mise の shims より前（非対話ではプロジェクトの mise.toml で固定した node より優先。
-# 対話 zsh では zshrc の mise activate と fnm env が PATH の先頭を置き直すので、mise で固定した node があればそちらが使われる）
-# FNM_DIR は install.sh と同じ値にする
-export FNM_DIR="$HOME/.local/share/fnm"
-export PATH="$FNM_DIR/aliases/default/bin:$PATH"
 # 入れ子のシェル（tmux → nvim → :terminal、スクリプトの中の bash -lc など）や mac のログイン（zprofile が前置をやり直す）で同じディレクトリが積まれないように、
 # 2 つ目からを落とす（zsh は typeset -U、bash は同じことを POSIX sh で）
 if [ -n "${ZSH_VERSION:-}" ]; then

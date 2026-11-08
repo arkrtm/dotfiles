@@ -143,24 +143,18 @@ if ! command -v zsh >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/zsh" ]; then
 fi
 
 # mise 本体（~/.local/bin/mise）
-# ここから先の mise・fnm・uv は、呼んだ場所の設定（mise.toml、.python-version など）に左右されないよう $HOME で実行する
+# ここから先の mise・uv は、呼んだ場所の設定（mise.toml、.python-version など）に左右されないよう $HOME で実行する
 cd "$HOME"
 MISE="$HOME/.local/bin/mise"
 if [ ! -x "$MISE" ]; then
   # インストーラは取得してから実行する（パイプだと curl の失敗を sh が空入力の成功で隠す。取得失敗は set -e で止める）。
   # 版を固定すると、インストーラは配布物をその release の SHASUMS256.txt で検証する（現行版は埋め込みの sha256）。インストーラ自体は mise.run の
   # その時点のものなので、信頼の根は TLS + mise.run + GitHub（zsh-bin と違い鎖の全体は固定していない。固定するなら raw の URL をコミットで指す）。
-  # 版は mise のリリースに合わせて上げる
+  # 版は mise のリリースに合わせて上げる（node の lts が指す版も mise の版で決まる）
   mise_install="$(curl -fsSL https://mise.run)"
-  MISE_VERSION=v2026.10.1 sh -c "$mise_install"
+  MISE_VERSION=v2026.11.3 sh -c "$mise_install"
 fi
 "$MISE" install --yes
-
-# Node は fnm で最新の LTS を入れて既定にする。再実行のたびに最新の LTS を入れて default を付け直すので追随する
-# ponytail: 古い版は残る（容量が気になったら fnm uninstall <版>）。FNM_DIR は shell/zshenv・bashrc と同じ場所
-export FNM_DIR="$HOME/.local/share/fnm"
-"$MISE" exec -- fnm install --lts
-"$MISE" exec -- fnm default lts-latest
 
 # zsh の補完を道具に書き出させる（git・tmux・jq は zsh に同梱の補完がある）。再実行で道具の版に追随する。足すときは zcomp を 1 行足す。
 # 一時ファイルに書いてから置き換え、道具が無い・失敗・出力が空なら前のファイルを残して warning を出す（続行）。stderr は捨てる（mise の更新の知らせなどを混ぜない）
