@@ -1,12 +1,12 @@
 # dotfiles
 
 mac / linux（Ubuntu・WSL）共通の開発環境。ネイティブの Windows は `windows/README.md` の手順で入れる。
-環境構築は **sudo 不要・ユーザー領域のみ**（`~/.local` 以下。システム全体には何も入れない）。Python は uv、Node は fnm で管理する（conda / conda-forge / pixi、システムや Homebrew の Python・Node は開発に使わない）。設定は `$HOME` へのシンボリックリンクなので、
+環境構築は **sudo 不要・ユーザー領域のみ**（`~/.local` 以下。システム全体には何も入れない）。Python は uv、Node は mise で管理する（版はプロジェクトの .node-version・.nvmrc・mise.toml、無ければ最新の LTS。conda / conda-forge / pixi、システムや Homebrew の Python・Node は開発に使わない）。設定は `$HOME` へのシンボリックリンクなので、
 **どの端末で編集してもこのリポジトリが変わる** → commit / push → 他端末で `git pull`（LINKS を変えたとき、または `ssh/` の設定を変えたときは `./install.sh` も。umask 002 の端末では pull で `ssh/` の設定が 664 になり、ssh が拒むため）。
 
 ## セットアップ
 
-前提: `git` `curl` があること（sudo は不要）。
+前提: `git` `curl` があること（sudo は不要）。Linux は `libatomic1` も要る（Node 26 以降。多くの端末には入っている。無ければ INSTALL.md の対象外の表）。
 
 ```sh
 git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
