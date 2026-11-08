@@ -96,7 +96,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 - `windows/gitbash-lib.ps1`・`windows/gitbash-lib.cmd`: Git for Windows の場所を探す（`Get-GitRoot`・`Get-GitBash`、cmd 版は `GITBASH` に入れる）。Git は Program Files とは限らない（ユーザー単位の `%LOCALAPPDATA%\Programs\Git` など）ので、PATH の `git.exe` の 1 つ上と 2 つ上（`cmd\git.exe`・`bin\git.exe`・`mingw64\bin\git.exe`・`ucrt64\bin\git.exe`）の `bin\bash.exe` を先に、無ければ Program Files・Program Files (x86)・`%LOCALAPPDATA%\Programs` の `Git` の順に探す。`windows/bin` のラッパーと install.ps1 が使う。見つからなければ「bash.exe が見つからない」で終了コード 1
 - `windows/install-lib.ps1`: install.ps1 とテストが dot-source する関数（リンク、ユーザー環境変数と Path、ssh の権限、改行の検査と書き直し、Codex の config.toml の生成、Windows Terminal の settings.json の更新）
 - `windows/.gitattributes`: `windows/` は LF で取り出す（Git Bash で動かすため）。`.cmd` だけ CRLF
-- `windows/powershell/profile.ps1`: pwsh のプロファイル（CurrentUserAllHosts。`shell/zshenv`・`zprofile`・`zshrc` の移植）。前半は毎回読む環境（EDITOR・VISUAL、PATH の先頭に `~/.local/bin`・mise の shims・あれば `~/.cargo/bin`。重複を畳む）でプロセスを起動しない。PSReadLine が無い（非対話）ならそこで終わる。後半は UTF-8、vi モード（モードでカーソルの形を変える）、履歴（50000 行、重複なし、空白で始まる行は残さない）、履歴からの候補、Tab で一覧、starship → mise activate → PSFzf（Ctrl+t・Ctrl+r・Alt+c）、`ll`・`la`・`lt`・`lg`・`lzd`・`cw`。`ls`・`cat` は置き換えない
+- `windows/powershell/profile.ps1`: pwsh のプロファイル（CurrentUserAllHosts。`shell/zshenv`・`zprofile`・`zshrc` の移植）。前半は毎回読む環境（EDITOR・VISUAL、PATH の先頭に `~/.local/bin`・mise の shims・あれば `~/.cargo/bin`。重複を畳む）でプロセスを起動しない。PSReadLine が無い（非対話）ならそこで終わる。後半は UTF-8、vi モード（モードでカーソルの形を変える）、履歴（50000 行、重複なし、空白で始まる行は残さない）、履歴からの候補、Tab で一覧、starship → mise activate（続けて、cd と prompt の hook を包んで PATH から mise の Node の install のディレクトリを外す）→ PSFzf（Ctrl+t・Ctrl+r・Alt+c）、`ll`・`la`・`lt`・`lg`・`lzd`・`cw`。`ls`・`cat` は置き換えない
 - `windows/claude/settings.json`: Claude Code の設定（`config/claude/settings.json` の Windows 版）。違いは、PowerShell ツール用の allow・deny（Bash の規則は PowerShell ツールに効かない）、`env` の `CLAUDE_CODE_USE_POWERSHELL_TOOL`（Git Bash の場所は書かない。Claude Code が PATH の git から見つける。Git が標準の場所に無く見つからないときは、ユーザー環境変数に `CLAUDE_CODE_GIT_BASH_PATH`（`bash.exe` のパス）を設定する）、`agent-status`・`claude-env` のフックが無い（`hook env` が mise の shims も置く）、bin のフックは `windows/posix/hook` 経由（ホームに空白があっても分かれないよう、`"$HOME/dotfiles/windows/posix/hook"` のように実行ファイルのパスを引用符で囲む。ステータスラインのパスも同じ）、SessionStart の先頭に `hook env`、ステータスラインは `statusline.ps1`、通知は端末のベル（`preferredNotifChannel`）。ほかは共通の設定と同じ
 - `windows/claude/statusline.ps1`: `config/claude/statusline.sh` の PowerShell 版（出力・アイコン・メーター・コンテキストのキャッシュ・Codex の上限・herdr の pane の名前は同じ。jq・awk を使わない）
 - `windows/claude/CLAUDE.md`: `config/agents/AGENTS.md` を読み込み、Windows の違いを足す（スクリーンショットは `~/Pictures/Screenshots`、dotfiles のコマンドは Bash ツールで）
@@ -159,6 +159,8 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 - Codex のサンドボックスは MSIX 版（Microsoft Store 版）の pwsh を動かせず、サンドボックスの中のコマンドは Windows PowerShell 5.1 になる（手順 2 は MSI 版を入れる）
 - nvim-treesitter は `cc` という名前の実行ファイルが PATH に無いと読み込まない。Windows には無い（Build Tools のコンパイラは `cl.exe`）ので使わない
 - `windows/bin/*.cmd` を cmd.exe から呼ぶと `"`・`^`・`&`・`|` を含む引数が壊れる（pwsh からは `.ps1` が選ばれるので壊れない）
+- Claude Code の PowerShell ツールはプロファイルを読まず、claude を起動した pwsh の PATH を受け継ぐ。mise activate は node などの install のディレクトリを shims より前に置くので、そのままだと node が起動した場所の版に固定される。プロファイルは cd と prompt のたびに PATH から mise の Node の install のディレクトリだけを外すので、node・npm・npx・corepack は PATH の shims が呼ばれた場所の版で動く（ほかの道具は install のディレクトリから直接起動するので、`mise.toml` が壊れた場所でも動く。`mise.toml` の `[env]` は mise activate が設定する）。Bash ツールは `hook env` が同じことをする。引き換えに、対話の pwsh とそこから起動したもので node・npm・npx・corepack だけが shims を通り、1 回あたり約 70 ms 遅くなる（この PC の計測）。呼ばれた場所の版（`.node-version` など）を使うため。`npm i -g` で入れた CLI は Node の install のディレクトリに入り PATH から外れるので、`mise reshim` で shims に入れる
+- 上の処理が外すのは `$env:LOCALAPPDATA\mise\installs\node\` の下だけ。`mise.toml` の `node = { path = '…' }` のように install の外を指す Node は外さないので、そこから起動した子（PowerShell ツールなど）は起動した場所の版のまま（この処理の前と同じ）。`mise exec` が受け継がせた install の Node は外れ、手で PATH に足した Node のディレクトリは残る
 
 ## 検査
 
@@ -172,6 +174,7 @@ Pester 5 が要る（無ければ `Install-PSResource Pester -Scope CurrentUser`
 - `policy.Tests.ps1`: リポジトリの禁止の文字列・ファイル名、既存の追跡しているファイルを変えていない
 - `install.Tests.ps1`: リンク・退避・2 回目は何もしない・worktree の拒否・band、install-lib.ps1 の関数（手順の失敗の一覧と終了コードを含む）、install.ps1 の手順の書き方（構文木）
 - `claude.Tests.ps1`: settings.json と共通の設定の違い、statusline.ps1 の出力とキャッシュ
+- `profile.Tests.ps1`: profile.ps1 が mise activate の後に包む cd・prompt の hook（偽の mise の hook が Node と ripgrep の install を PATH の先頭に置き、プロファイルの関数を読ませる）。mise の hook が先に走り、その後に Node の install だけが PATH から消え、ripgrep の install・shims・ほかの順と prompt の戻り値・`$?` が保たれる。mise があるときだけ、activate の後に呼ぶ（構文木）
 - `posix.Tests.ps1`: `hook env`、jq の shim、commit-msg、integrate-hook、`/clear`、`windows/bin` の shim
 - `gitbash.Tests.ps1`: gitbash-lib.ps1（偽の Git のルートを PATH に置いて、`git.exe` の 4 つの置き場所と標準の場所の順を確かめる）、`windows/bin` のラッパー（偽の `bash.exe` を PATH の `git.exe` の隣に置く。空白を含むパスの dotfiles と、Program Files の外の Git への junction）、settings.json のフックとステータスラインを HOME に空白を含めて `bash -c` で動かす
 - `herdr.Tests.ps1`: herdr の設定と共通のファイルの違い

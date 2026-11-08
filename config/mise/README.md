@@ -13,7 +13,7 @@
 
 ## Node
 
-- 版はプロジェクトの `mise.toml`・`.node-version`・`.nvmrc`（`[settings]` の `idiomatic_version_file_enable_tools`）、無ければ lock の node（lock を作り直したときの最新の LTS）。対話のシェルは mise activate、非対話のシェル（スクリプト、エージェントのコマンド）は PATH の shims が、呼ばれた場所で決める。Claude Code の Bash ツールは起動したシェルの PATH を使い回すので、SessionStart のフック（`bin/claude-env`、Windows は `windows/posix/hook env`）が shims を先頭に置く。入っていない版は最初の呼び出しで入る
+- 版はプロジェクトの `mise.toml`・`.node-version`・`.nvmrc`（`[settings]` の `idiomatic_version_file_enable_tools`）、無ければ lock の node（lock を作り直したときの最新の LTS）。対話のシェルは mise activate、非対話のシェル（スクリプト、エージェントのコマンド）は PATH の shims が、呼ばれた場所で決める。Claude Code の Bash ツールは起動したシェルの PATH を使い回すので、SessionStart のフック（`bin/claude-env`、Windows は `windows/posix/hook env`）が shims を先頭に置く。Windows の PowerShell ツールは、pwsh のプロファイルが cd と prompt のたびに PATH から Node の install のディレクトリを外すので、起動した pwsh の PATH を受け継いでも node・npm・npx・corepack は shims が呼ばれた場所の版で動く。入っていない版は最初の呼び出しで入る
 - `lts` が指す版は mise の版に書かれている。新しい LTS（毎年 10 月）や同じ LTS の中の更新は lock を作り直す（README。新しい LTS は先に mise を上げる）。古い版は `mise prune`
 - npm・npx・corepack は使っている node と同じ版で動く。corepack は Node 24 まで同梱（25 から無い）。pnpm・yarn は `corepack pnpm …`。`node.corepack`（corepack enable）は Windows で失敗して Node 24 以前が入らなくなるので使わない
 - `npm i -g` で入れた道具は、その版の Node に入る（版を変えると無い）。mac / linux は npm の後に mise が shims を作り直す。Windows は `mise reshim`

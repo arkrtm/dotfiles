@@ -55,7 +55,24 @@ function Invoke-Starship-PreCommand { [Console]::Write("`e[6 q") }
 # ===== ツール =====
 # 順序は zshrc と違う: mise activate は今の prompt 関数を包んで毎回 hook-env を走らせるので、starship（prompt を定義）を先に読む
 if (Get-Command starship -ErrorAction Ignore) { Invoke-Expression (& starship init powershell | Out-String) }
-if (Get-Command mise -ErrorAction Ignore) { mise activate pwsh | Out-String | Invoke-Expression }
+# mise activate は shims を PATH に残したまま、cd とプロンプトのたびに node などの install のディレクトリを shims より前に置く。Claude Code の PowerShell ツールは
+# プロファイルを読まず、claude を起動した pwsh の PATH を使い回すので、そのままだと node が起動した場所の版に固定される。mise の 2 つの hook（cd・prompt）を、
+# mise の処理の後で PATH から mise の Node の install のディレクトリだけを外す形で包み、node・npm・npx・corepack は PATH にある shims が呼ばれた場所の版で動かす
+# （ほかの道具は install のディレクトリから直接起動する。shims を全部先にすると、mise.toml が壊れた場所で rg などが shim を通って起動できない）
+function Global:Remove-DotfilesNodeInstall {
+  $node = "$env:LOCALAPPDATA\mise\installs\node\"
+  $parts = $env:PATH -split ';'
+  $kept = @($parts | Where-Object { -not $_.StartsWith($node, [StringComparison]::OrdinalIgnoreCase) })
+  if ($kept.Count -ne $parts.Count) { $env:PATH = $kept -join ';' }
+}
+function Enable-DotfilesNodeShims {
+  $ci = $ExecutionContext.SessionState.InvokeCommand
+  $ci.LocationChangedAction = [EventHandler[Management.Automation.LocationChangedEventArgs]][Delegate]::Combine($ci.LocationChangedAction, [EventHandler[Management.Automation.LocationChangedEventArgs]] { Remove-DotfilesNodeInstall })
+  $Global:DotfilesPrompt = $function:prompt
+  # 直前のコマンドの成否（$?）は mise の prompt が最初に読むので、先に呼ぶ
+  function Global:prompt { & $Global:DotfilesPrompt; Remove-DotfilesNodeInstall }
+}
+if (Get-Command mise -ErrorAction Ignore) { mise activate pwsh | Out-String | Invoke-Expression; Enable-DotfilesNodeShims }
 # fzf: Ctrl-R 履歴検索 / Ctrl-T ファイル / Alt-C ディレクトリ移動（fzf に PowerShell 用の組み込みはないので PSFzf。
 # -EditMode Vi の後に読むと vi の両モードに割り当てる）
 if ((Get-Command fzf -ErrorAction Ignore) -and (Get-Module -ListAvailable PSFzf)) {
