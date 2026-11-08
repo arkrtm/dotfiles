@@ -229,10 +229,12 @@ fi
 
 # 3. Linear の issue 番号（キー + 数字）を、ブランチ名・コミットメッセージ・各コミットの差分（文書も）に書いていない。
 # キーはこの端末の Linear のチーム（今は 1 つ。増えたら | で足す）。大文字小文字を問わない（Linear が出すブランチ名は小文字）。
-# 後のコミットで消しても履歴ごと push されるので、差分でなく各コミットを見る。漏れなので --human-approved でも通さない
+# 後のコミットで消しても履歴ごと push されるので、差分でなく各コミットを見る。merge コミットは自動の再マージとの差（--diff-merges=remerge）で見る
+# （git log -p は merge コミットの差分を出さないので、衝突の解決で入れた内容が抜ける）。漏れなので --human-approved でも通さない
 issue_keys='ARK'
 msgs="$(git log --format=%B "$from..$head")" || fail "コミットメッセージを読めない"
-patches="$(git log -p --format= --no-renames --no-color --no-ext-diff --text --no-textconv "$from..$head")" || fail "コミットの差分を取れない"
+patches="$(git log -p --format= --diff-merges=remerge --no-renames --no-color --no-ext-diff --text --no-textconv "$from..$head")" \
+  || fail "コミットの差分を取れない（merge コミットの差分を見る --diff-merges=remerge は git 2.36 から）"
 rc=0
 { printf 'ブランチ名\t%s\n' "$branch"; printf '%s\n' "$msgs" | sed "s/^/コミットメッセージ$tab/"; printf '%s\n' "$patches" | added; } \
   | found "(^|[^A-Za-z0-9_])($issue_keys)-[0-9]+" -i || rc=$?
@@ -243,12 +245,12 @@ case "$rc" in
 esac
 
 # 4. 秘密（gitleaks）: このブランチのコミットだけを見る（main に前からある秘密では止めない）。後のコミットで消しても履歴ごと push されるので止める。
-# --redact で秘密を見せない。--no-color は中の git log に渡す（色の設定があると 0 件の走査で通る）。行の例外指定（gitleaks:allow）は承認が無ければ効かせない（ファイルの形式も、後で消したかも問わない）。
+# merge コミットも再マージとの差（--diff-merges=remerge）で見る。--redact で秘密を見せない。--no-color は中の git log に渡す（色の設定があると 0 件の走査で通る）。行の例外指定（gitleaks:allow）は承認が無ければ効かせない（ファイルの形式も、後で消したかも問わない）。
 # gitleaks の設定の変更は弱める変更で、人の承認が要る
 command -v gitleaks >/dev/null 2>&1 || fail "gitleaks が無い（mise で入る: mise install）"
 allow=--ignore-gitleaks-allow
 [ -z "$approved" ] || allow=""
-if ! out="$(gitleaks git --no-banner --no-color --redact -v --log-level warn ${allow:+"$allow"} --log-opts="--no-color $from..$head" . 2>&1)"; then
+if ! out="$(gitleaks git --no-banner --no-color --redact -v --log-level warn ${allow:+"$allow"} --log-opts="--no-color --diff-merges=remerge $from..$head" . 2>&1)"; then
   printf '%s\n' "$out" | tail -n 40 >&2
   fail "gitleaks が秘密を見つけた（または失敗した）。含むコミットを作り直して秘密を消す"
 fi

@@ -3,7 +3,8 @@
 # 関門を 1 つでも満たさなければ統合しない（終了コード 1、notify のログに理由、bare の最上位のブランチは変わらない）こと、
 # 設定が無い・壊れている・remote が違えば統合しないこと、すべて満たせば kind=bare・github は base へ push、
 # kind=pr（偽の gh）はブランチを push して base に向けた PR を作るだけでマージしないこと、
-# gitleaks（偽で関門の配線を、本物で検出を見る。本物が無ければ省いた）が秘密を見つけたら統合しないこと
+# gitleaks（偽で関門の配線を、本物で検出を見る。本物が無ければ省いた）が秘密を見つけたら統合しないこと、
+# 取り込み（merge）の衝突の解決で入れた issue 番号・秘密でも統合しないこと
 #   sh tests/acceptance/integrate.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/integrate.sh  通った項目も
 set -u
@@ -110,6 +111,11 @@ accepted() {
     && ok "統合する: $name" || ng "統合する: $name（rc=$rc $(cat "$T/err")）"
 }
 
+# advance <ファイル> [行]: 別のクローンから <base> のファイルに行（既定 2）を足して push する（a は feature/x の a の 1 と衝突する）
+advance() { rm -rf "$T/o"; git clone -q "$BARE" "$T/o" 2>/dev/null && (cd "$T/o" && add "$1" "${2:-2}" && git push -q origin "HEAD:$B"); }
+# merged <行>: origin/<base> を取り込み、a の衝突を「1・2・<行>」で解決してコミットする（レビューはしない）
+merged() { git fetch -q; git merge -q --no-edit "origin/$B" >/dev/null 2>&1; printf '1\n2\n%s\n' "$1" > a; git add a; git commit -q --no-edit; }
+
 # ---- 今のコミットへの、origin/main との差分のレビューが PASS でなければ通さない
 setup "$T/r.git"
 early "レビューが無い"
@@ -185,6 +191,14 @@ setup "$T/r.git"; add notes.md "AR""K-12 TOKEN=$secret"; review PASS; early "秘
 setup "$T/r.git"; add notes.md 'SHA-256 と UTF-8 と ISO-8601、ARK-nn、MAR''K-1'; review PASS
 accepted "ふつうの語（SHA-256・UTF-8・ISO-8601・ARK-nn・語の一部）では止めない"
 
+# ---- 取り込み（merge）の衝突の解決で入れた内容も見る（自動の再マージとの差。--diff-merges=remerge）。取り込んだ main の内容では止めない
+setup "$T/r.git"; advance a; merged "AR""K-5"; review PASS; early "取り込みの衝突の解決に issue 番号"
+setup "$T/r.git"; advance m.txt "AR""K-8"; git fetch -q; git merge -q --no-edit origin/main; review PASS; accepted "取り込んだ main にある issue 番号では止めない（衝突の無い取り込み）"
+setup "$T/r.git"; review PASS; mkdir -p "$T/oldgit"
+printf '#!/bin/sh\ncase " $* " in *" --diff-merges=remerge "*) exit 129 ;; esac\nexec %s "$@"\n' "$(command -v git)" > "$T/oldgit/git"; chmod +x "$T/oldgit/git"
+PATH="$T/oldgit:$PATH" early "git が --diff-merges=remerge を知らない（2.36 より前）"
+grep -qF '2.36' "$T/err" && ok "古い git では理由（git 2.36 から）を出して止まる" || ng "古い git の理由: $(cat "$T/err")"
+
 # ---- 秘密（gitleaks）: このブランチのコミットだけを見る。足した秘密・後で消した秘密（履歴ごと push される）は止め、main に前からある秘密では止めない
 setup "$T/r.git"; review PASS
 nogl="$(printf '%s\n' "$PATH" | tr ':' '\n' | while IFS= read -r d; do [ -x "$d/gitleaks" ] || printf '%s:' "$d"; done)"
@@ -192,7 +206,7 @@ PATH="${nogl%:}" early "gitleaks が無い"
 grep -q gitleaks "$T/err" && ok "gitleaks が無ければ、それを理由に止まる" || ng "gitleaks が無いときの理由: $(cat "$T/err")"
 setup "$T/r.git"; review PASS; f0="$(git rev-parse origin/main)"; integrate >/dev/null 2>&1 # push で origin/main が動くので先に取る
 gl_args() { tail -n 1 "$T/gitleaks.log"; } # 最後の呼び出しの引数
-gl_args | grep -qF -- "--log-opts=--no-color $f0..$(git rev-parse HEAD)" && ok "gitleaks に色なしで origin/<base>..HEAD の範囲を渡す" || ng "gitleaks の引数: $(gl_args)"
+gl_args | grep -qF -- "--log-opts=--no-color --diff-merges=remerge $f0..$(git rev-parse HEAD)" && ok "gitleaks に色なし・merge は再マージとの差（--diff-merges=remerge）で origin/<base>..HEAD の範囲を渡す" || ng "gitleaks の引数: $(gl_args)"
 gl_args | grep -qF -- --ignore-gitleaks-allow && ok "承認が無ければ gitleaks の行の例外指定を効かせない（--ignore-gitleaks-allow）" || ng "gitleaks の引数: $(gl_args)"
 setup "$T/r.git"; review PASS; integrate --human-approved >/dev/null 2>&1
 ! gl_args | grep -qF -- --ignore-gitleaks-allow && ok "--human-approved なら gitleaks の行の例外指定を効かせる" || ng "gitleaks の引数: $(gl_args)"
@@ -210,6 +224,9 @@ if [ -n "$GL" ]; then
   PATH="$T/realgl:$PATH" accepted "--human-approved なら行の例外指定を認める" --human-approved
   setup "$T/r.git"; git checkout -q main; add old.txt "TOKEN=$secret"; git push -q origin HEAD:main; git checkout -q -B feature/x origin/main; add a 1; review PASS
   PATH="$T/realgl:$PATH" accepted "main に前からある秘密では止めない"
+  setup "$T/r.git"; advance a; merged "TOKEN=$secret"; review PASS; PATH="$T/realgl:$PATH" early "取り込みの衝突の解決に秘密"
+  setup "$T/r.git"; advance s.txt "TOKEN=$secret"; git fetch -q; git merge -q --no-edit origin/main; review PASS
+  PATH="$T/realgl:$PATH" accepted "取り込んだ main にある秘密では止めない（衝突の無い取り込み）"
 else
   skip "gitleaks が秘密を見つけたら統合しない（gitleaks が無い）"
 fi
