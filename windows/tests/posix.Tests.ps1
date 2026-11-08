@@ -236,7 +236,7 @@ Describe 'Git Bash で動くもの' -Skip:$NoBash {
       $r.ExitCode | Should -Be 2
       $r.Err | Should -Match 'usage: codex-review'
     }
-    It '<Name>.cmd には pwsh 用の <Name>.ps1 が並んでいる' -ForEach @(Get-ChildItem -LiteralPath (Join-Path ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'windows\bin') -Filter *.cmd | ForEach-Object { @{ Name = $_.BaseName } }) {
+    It 'posix/run を呼ぶ <Name>.cmd には pwsh 用の <Name>.ps1 が並んでいる（npm・npx・corepack の .cmd は shims の .exe を呼ぶだけで、pwsh では shims が先に見つかる）' -ForEach @(Get-ChildItem -LiteralPath (Join-Path ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'windows\bin') -Filter *.cmd | Where-Object { [IO.File]::ReadAllText($_.FullName).Contains('posix\run') } | ForEach-Object { @{ Name = $_.BaseName } }) {
       Test-Path -LiteralPath (Join-Path $Root "windows\bin\$Name.ps1") -PathType Leaf | Should -BeTrue
     }
     It 'codex-review.ps1 は引数なしで bin/codex-review の usage と終了コード 2 を返す' {
