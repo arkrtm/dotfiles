@@ -152,7 +152,8 @@ if [ "${1:-}" = --in-container ]; then
     { tail -20 /tmp/prep.log; echo "FAIL 古い mise と config.local.toml を用意できない"; exit 1; }
   su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1 || { tail -40 /tmp/install.log; echo "FAIL install.sh（古い mise・config.local.toml）が失敗した"; exit 1; }
   if grep -iE "warning|error" /tmp/install.log; then echo "FAIL install.sh（古い mise・config.local.toml）が warning / error を出した"; exit 1; fi
-  case "$(su - u -c 'cd && ~/.local/bin/mise current node' 2>/dev/null)" in 24.*) ;; *) echo "FAIL config.local.toml の node 24 が入っていない"; exit 1 ;; esac
+  # mise current は入っていない版も返すので、入った先の node を直接起動して版を見る
+  case "$(su - u -c 'cd && "$(~/.local/bin/mise where node)/bin/node" --version' 2>/dev/null)" in v24.*) ;; *) echo "FAIL config.local.toml の node 24 が入っていない"; exit 1 ;; esac
   rm -f /home/u/.config/mise/config.local.toml /home/u/.config/mise/mise.local.lock
   exec su - u -c "sh ~/dotfiles/tests/install-nosudo.sh --check"
 fi
