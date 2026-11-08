@@ -257,6 +257,46 @@ Describe 'Invoke-Step・Add-StepFailure・Complete-Install' {
   }
 }
 
+Describe 'mise の手順（偽の mise）' {
+  BeforeAll {
+    . (Join-Path $Root 'windows\install-lib.ps1')
+    # リンクを置くので TestDrive は使わず、自分で作って自分で消す
+    $MTmp = Join-Path ([IO.Path]::GetTempPath()) ('dotfiles-mise-test-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path $MTmp
+    # 引数と作業場所を隣の log.txt に記録し、--version には指定の版を返す偽の mise（.ps1）。ほかの引数は指定の終了コードで終わる
+    function New-FakeMise([string]$Version, [int]$Exit) {
+      $d = Join-Path $MTmp ([guid]::NewGuid().ToString('N'))
+      $null = New-Item -ItemType Directory -Path $d
+      $body = @'
+Add-Content -LiteralPath (Join-Path $PSScriptRoot 'log.txt') -Value "$($PWD.ProviderPath)|$($args -join ' ')"
+if ($args[0] -eq '--version') { '@VERSION@ windows-x64 (2026-11-06)'; exit 0 }
+exit @EXIT@
+'@
+      [IO.File]::WriteAllText((Join-Path $d 'mise.ps1'), $body.Replace('@VERSION@', $Version).Replace('@EXIT@', "$Exit"))
+      Join-Path $d 'mise.ps1'
+    }
+    function Get-MiseLog([string]$Mise) { @(Get-Content -LiteralPath (Join-Path (Split-Path $Mise) 'log.txt')) }
+  }
+  AfterAll { Remove-TreeSafe $MTmp }
+  BeforeEach {
+    $log = [Collections.Generic.List[object]]::new()
+    $hd = Join-Path $MTmp ('home-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path (Join-Path $hd '.config\mise') -Force
+  }
+  It 'Install-MiseTools はホームで mise install --yes を実行する' {
+    $m = New-FakeMise '2026.11.3' 0
+    Install-MiseTools -Mise $m -HomeDir $hd
+    Get-MiseLog $m | Should -Be @("$hd|install --yes")
+  }
+  It 'mise install が失敗したら、手順の失敗として理由つきで記録する' {
+    $m = New-FakeMise '2026.11.3' 1
+    Invoke-Step $log 'mise install' { Install-MiseTools -Mise $m -HomeDir $hd } 6>$null
+    $log.Count | Should -Be 1
+    $log[0].Name | Should -BeExactly 'mise install'
+    $log[0].Reason | Should -BeLike 'mise install が失敗した*'
+  }
+}
+
 Describe 'install.ps1 の手順の書き方（構文木）' {
   BeforeAll {
     $Ast = [Management.Automation.Language.Parser]::ParseFile($Install, [ref]$null, [ref]$null)
@@ -274,6 +314,11 @@ Describe 'install.ps1 の手順の書き方（構文木）' {
     $step = @($Steps | Where-Object { $_.CommandElements[2].Extent.Text -eq "'$name'" })
     $step.Count | Should -Be 1
     @($step[0].CommandElements[3].FindAll({ param($n) $n -is [Management.Automation.Language.ReturnStatementAst] }, $true)) | Should -BeNullOrEmpty
+  }
+  It '手順 mise install は Install-MiseTools を呼ぶ（中身は上の偽の mise の検査）' {
+    $step = @($Steps | Where-Object { $_.CommandElements[2].Extent.Text -eq "'mise install'" })
+    $step.Count | Should -Be 1
+    @($step[0].CommandElements[3].FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Install-MiseTools' }, $true)).Count | Should -Be 1
   }
   It '最後は Complete-Install の終了コードで終わる' {
     $Ast.EndBlock.Statements[-1].Extent.Text | Should -BeExactly 'exit (Complete-Install $StepLog)'

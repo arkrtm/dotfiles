@@ -177,6 +177,16 @@ function Complete-Install {
   [int]0
 }
 
+# mise の道具を入れる。ホームで実行し、呼んだ場所の設定（mise.toml など）に左右されないようにする
+function Install-MiseTools {
+  param([Parameter(Mandatory)][string]$Mise, [Parameter(Mandatory)][string]$HomeDir)
+  Push-Location $HomeDir
+  try {
+    & $Mise install --yes
+    if ($LASTEXITCODE) { throw 'mise install が失敗した（Windows 版の無い道具は MISE_DISABLE_TOOLS に足す）' }
+  } finally { Pop-Location }
+}
+
 # CRLF で取り出された追跡ファイル（取り出し直せば LF になるもの: index は LF、作業ツリーは CRLF）。
 # 属性で CRLF を求めるもの（windows/.gitattributes の *.cmd text eol=crlf）は CRLF が正しいので除く
 function Get-CrlfCheckout {

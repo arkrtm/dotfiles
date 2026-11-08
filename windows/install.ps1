@@ -174,13 +174,7 @@ if (Test-Path -LiteralPath $mise) {
     $tok = gh auth token 2>$null
     if (-not $LASTEXITCODE -and $tok) { $env:GITHUB_TOKEN = "$tok".Trim() }
   }
-  Invoke-Step $StepLog 'mise install' {
-    Push-Location $H
-    try {
-      & $mise install --yes
-      if ($LASTEXITCODE) { throw "mise install が失敗した（Windows 版の無い道具は MISE_DISABLE_TOOLS に足す）" }
-    } finally { Pop-Location }
-  }
+  Invoke-Step $StepLog 'mise install' { Install-MiseTools -Mise $mise -HomeDir $H }
 }
 
 # 6. Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）
