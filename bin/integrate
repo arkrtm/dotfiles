@@ -2,7 +2,7 @@
 # 関門をすべて満たしたときだけ統合する。1 つでも欠けたら統合せず、notify で知らせて止まる（終了コード 1）
 #   usage: integrate [--human-approved] | integrate setup [--force] [--kind K] [--base B] [--test CMD] | integrate setup --show
 #   --human-approved  テストや検査を弱める変更（無効にする記述・テストの削除・gitleaks の設定）を、人が確認したうえで通す（issue 番号と秘密は通さない。人用。Claude には settings.json で禁止）
-# 関門（安い順。テストは最後）: setup の設定がある・最上位のブランチ（base）の上でない・未コミットの変更が無い・origin/<base> を含む（rebase か、kind=pr で PR を出した後は merge で取り込む）・
+# 関門（安い順。テストは最後）: setup の設定がある・最上位のブランチ（base）の上でない・未コミットの変更が無い・kind=pr で PR のブランチ（origin/<ブランチ>）があれば含む（チームが進めたら merge で取り込む）・origin/<base> を含む（rebase か、kind=pr で PR を出した後は merge で取り込む）・
 #       今のコミットの origin/<base> との差分への codex-review branch の結果が VERDICT: PASS・テストや検査を弱めていない・Linear の issue 番号を書いていない・gitleaks が秘密を見つけない・設定の test が通る
 # 統合: kind=bare・github は base へ push（早送りだけ）。kind=pr はブランチを push して base に向けた PR を作るだけ（マージはチーム）。push は早送りだけ（強制 push はしない。PR を出した後に rebase したブランチは止まる）
 # push するのは検査とレビューをしたコミット（途中で HEAD が変わったら止める）
@@ -188,6 +188,11 @@ branch="$(git branch --show-current)"
 clean || fail "コミットしていない変更がある"
 head="$(git rev-parse HEAD)"
 git fetch -q origin || fail "origin から fetch できない"
+# kind=pr でチームが PR のブランチを進めた（Update branch・直接のコミット）なら push は早送りでなくなるので、テストより先に止めて取り込みを案内する。
+# base の関門より先に見る（Update branch なら、PR のブランチの取り込みで base も含む）
+if [ "$conf_kind" = pr ] && pr_tip="$(git rev-parse -q --verify "refs/remotes/origin/$branch^{commit}")"; then
+  git merge-base --is-ancestor "$pr_tip" "$head" || fail "PR のブランチ（origin/$branch）が進んでいる（Update branch・直接のコミット）。git merge origin/$branch で取り込み、レビューからやり直す"
+fi
 from="$(git rev-parse -q --verify "origin/$base^{commit}")" || fail "origin/$base が無い"
 # PR を出した後のブランチは rebase すると push が早送りでなくなり、強制 push はしないので、kind=pr では取り込み（merge）を案内する
 how="rebase して"; [ "$conf_kind" != pr ] || how="PR を出した後なら git merge origin/$base で取り込み（出す前なら rebase して）、"

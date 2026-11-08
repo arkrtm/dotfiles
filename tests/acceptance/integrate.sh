@@ -5,7 +5,7 @@
 # kind=pr（偽の gh）はブランチを push して base に向けた PR を作るだけでマージしないこと、
 # gitleaks（偽で関門の配線を、本物で検出を見る。本物が無ければ省いた）が秘密を見つけたら統合しないこと、
 # 取り込み（merge）の衝突の解決で入れた issue 番号・秘密でも統合しないこと、
-# kind=pr で PR を出した後に base が進んだら取り込み（git merge）を案内し、取り込んでレビューし直せば PR を作り直さずに push すること、rebase したブランチは強制 push しないこと
+# kind=pr で PR を出した後に base が進んだら取り込み（git merge）を案内し、取り込んでレビューし直せば PR を作り直さずに push すること、rebase したブランチは強制 push しないこと、チームが PR のブランチを進めたら（Update branch・直接のコミット）テストより先に止めて git merge origin/<ブランチ> を案内すること（kind=pr だけ）
 #   sh tests/acceptance/integrate.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/integrate.sh  通った項目も
 set -u
@@ -112,8 +112,8 @@ accepted() {
     && ok "統合する: $name" || ng "統合する: $name（rc=$rc $(cat "$T/err")）"
 }
 
-# advance <ファイル> [行]: 別のクローンから <base> のファイルに行（既定 2）を足して push する（a は feature/x の a の 1 と衝突する）
-advance() { rm -rf "$T/o"; git clone -q "$BARE" "$T/o" 2>/dev/null && (cd "$T/o" && add "$1" "${2:-2}" && git push -q origin "HEAD:$B"); }
+# advance <ファイル> [行] [ブランチ]: 別のクローンから bare の <ブランチ>（既定 <base>）のファイルに行（既定 2）を足して push する（a は feature/x の a の 1 と衝突する）
+advance() { rm -rf "$T/o"; git clone -q -b "${3:-$B}" "$BARE" "$T/o" 2>/dev/null && (cd "$T/o" && add "$1" "${2:-2}" && git push -q origin "HEAD:${3:-$B}"); }
 # merged <行>: origin/<base> を取り込み、a の衝突を「1・2・<行>」で解決してコミットする（レビューはしない）
 merged() { git fetch -q; git merge -q --no-edit "origin/$B" >/dev/null 2>&1; printf '1\n2\n%s\n' "$1" > a; git add a; git commit -q --no-edit; }
 
@@ -336,6 +336,21 @@ advance a; merged c; codex-review branch >/dev/null 2>&1; pushed "衝突を解�
 setup "$T/github.com/o/r.git"; review PASS; integrate >/dev/null 2>&1; f0="$(git -C "$BARE" rev-parse feature/x)"
 advance b; git fetch -q; git rebase -q origin/main; review PASS; refused "kind=pr: PR を出した後に rebase した"
 [ "$(git -C "$BARE" rev-parse feature/x)" = "$f0" ] && ok "kind=pr: rebase したブランチを強制 push しない" || ng "kind=pr: rebase したブランチで feature/x が変わった"
+# ---- kind=pr で PR を出した後にチームが PR のブランチを進めたら（直接のコミット・Update branch）、テストより先に止めて
+#      git merge origin/feature/x を案内する（レビューが PASS でも）。取り込んでレビューし直せば、PR を作り直さずに push する
+setup "$T/github.com/o/r.git"; review PASS; integrate >/dev/null 2>&1; add a 2
+advance b 1 feature/x; f0="$(git -C "$BARE" rev-parse feature/x)"; review PASS; early "kind=pr: PR のブランチにチームがコミットした"
+grep -qF 'git merge origin/feature/x' "$T/err" && [ "$(git -C "$BARE" rev-parse feature/x)" = "$f0" ] \
+  && ok "kind=pr: PR のブランチが進んだら git merge origin/feature/x を案内し、feature/x を変えない" || ng "kind=pr: PR のブランチが進んだとき: $(cat "$T/err")"
+git merge -q --no-edit origin/feature/x; codex-review branch >/dev/null 2>&1; pushed "PR のブランチを取り込んでレビューし直せば push し、PR は作り直さない"
+# Update branch（PR のブランチへの main の取り込み）: main と PR のブランチの両方が進む。PR のブランチの取り込みを先に案内し、それで main も含む
+setup "$T/github.com/o/r.git"; review PASS; integrate >/dev/null 2>&1; add a 2
+advance b; (cd "$T/o" && git checkout -q feature/x && git merge -q --no-edit "$B" && git push -q origin HEAD:feature/x); review PASS
+early "kind=pr: PR のブランチを Update branch で進めた"
+grep -qF 'git merge origin/feature/x' "$T/err" && ok "kind=pr: main と PR のブランチが両方進んだら、PR のブランチの取り込みを案内する" || ng "kind=pr: Update branch のとき: $(cat "$T/err")"
+git merge -q --no-edit origin/feature/x; codex-review branch >/dev/null 2>&1; pushed "Update branch を取り込めば main も含み、push する"
+# PR のブランチの関門は kind=pr だけ: kind=bare は origin/feature/x が HEAD の祖先でなくても main へ push する
+setup "$T/r.git"; git push -q origin HEAD:feature/x; advance b 1 feature/x; review PASS; accepted "kind=bare: origin/feature/x が進んでいても main へ push する"
 # ポート付きの ssh の URL（ssh://git@ssh.github.com:443/o/r.git の形）でも、PR の対象は o/r
 setup "$T/ssh.github.com:443/o/r.git"; review PASS; integrate >/dev/null 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && grep -q -- '^pr create --repo github.com/o/r ' "$T/gh.log" && ok "GitHub: ポート付きの URL でも PR の対象は o/r" || ng "GitHub: ポート付きの URL: rc=$rc $(cat "$T/err") $(cat "$T/gh.log" 2>/dev/null)"
