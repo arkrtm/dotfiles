@@ -56,7 +56,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
    ```
    - 全部成功すると最後に `done.` を出して終了コード 0。失敗した手順があっても残りは続け、最後に失敗した手順の名前と理由の一覧を出して終了コード 1 で終わる（`done.` は出さない）。理由を直して、もう一度実行する:
      - `Windows Terminal`（PowerShell 7 のプロファイルが無い・settings.json が無い）: 人が Windows Terminal を開き直して（初めてなら一度起動して）から再実行
-     - `mise install`（GitHub の API の 403）: 手順 7 の後に再実行。gh は mise install が入れるので、`gh --version` が動かなければ、先に人が `winget install -e --id GitHub.cli --source winget` で単独で入れる（理由: UAC の承認。規約への同意を聞かれたら人が同意する）。`fnm`・`nvim`・`geoview` は mise install の失敗に続いて失敗する
+     - `mise install`（GitHub の API の 403）: 手順 7 の後に再実行。gh は mise install が入れるので、`gh --version` が動かなければ、先に人が `winget install -e --id GitHub.cli --source winget` で単独で入れる（理由: UAC の承認。規約への同意を聞かれたら人が同意する）。`nvim`・`geoview` は mise install の失敗に続いて失敗する
      - `git の改行`: `~/dotfiles` の作業ツリーの変更を片づけてから再実行
    - 確かめる: `$LASTEXITCODE` が `0`
 7. GitHub のログイン — 人がやる（理由: ログイン）。新しいターミナルで `gh auth login`
@@ -95,7 +95,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 - `windows/gitbash-lib.ps1`・`windows/gitbash-lib.cmd`: Git for Windows の場所を探す（`Get-GitRoot`・`Get-GitBash`、cmd 版は `GITBASH` に入れる）。Git は Program Files とは限らない（ユーザー単位の `%LOCALAPPDATA%\Programs\Git` など）ので、PATH の `git.exe` の 1 つ上と 2 つ上（`cmd\git.exe`・`bin\git.exe`・`mingw64\bin\git.exe`・`ucrt64\bin\git.exe`）の `bin\bash.exe` を先に、無ければ Program Files・Program Files (x86)・`%LOCALAPPDATA%\Programs` の `Git` の順に探す。`windows/bin` のラッパーと install.ps1 が使う。見つからなければ「bash.exe が見つからない」で終了コード 1
 - `windows/install-lib.ps1`: install.ps1 とテストが dot-source する関数（リンク、ユーザー環境変数と Path、ssh の権限、改行の検査と書き直し、Codex の config.toml の生成、Windows Terminal の settings.json の更新）
 - `windows/.gitattributes`: `windows/` は LF で取り出す（Git Bash で動かすため）。`.cmd` だけ CRLF
-- `windows/powershell/profile.ps1`: pwsh のプロファイル（CurrentUserAllHosts。`shell/zshenv`・`zprofile`・`zshrc` の移植）。前半は毎回読む環境（EDITOR・VISUAL・FNM_DIR、PATH の先頭に fnm の既定・`~/.local/bin`・mise の shims・あれば `~/.cargo/bin`。重複を畳む）でプロセスを起動しない。PSReadLine が無い（非対話）ならそこで終わる。後半は UTF-8、vi モード（モードでカーソルの形を変える）、履歴（50000 行、重複なし、空白で始まる行は残さない）、履歴からの候補、Tab で一覧、starship → fnm → mise activate → PSFzf（Ctrl+t・Ctrl+r・Alt+c）、`ll`・`la`・`lt`・`lg`・`lzd`・`cw`。`ls`・`cat` は置き換えない
+- `windows/powershell/profile.ps1`: pwsh のプロファイル（CurrentUserAllHosts。`shell/zshenv`・`zprofile`・`zshrc` の移植）。前半は毎回読む環境（EDITOR・VISUAL、PATH の先頭に `~/.local/bin`・mise の shims・あれば `~/.cargo/bin`。重複を畳む）でプロセスを起動しない。PSReadLine が無い（非対話）ならそこで終わる。後半は UTF-8、vi モード（モードでカーソルの形を変える）、履歴（50000 行、重複なし、空白で始まる行は残さない）、履歴からの候補、Tab で一覧、starship → mise activate → PSFzf（Ctrl+t・Ctrl+r・Alt+c）、`ll`・`la`・`lt`・`lg`・`lzd`・`cw`。`ls`・`cat` は置き換えない
 - `windows/claude/settings.json`: Claude Code の設定（`config/claude/settings.json` の Windows 版）。違いは、PowerShell ツール用の allow・deny（Bash の規則は PowerShell ツールに効かない）、`env` の `CLAUDE_CODE_USE_POWERSHELL_TOOL`（Git Bash の場所は書かない。Claude Code が PATH の git から見つける。Git が標準の場所に無く見つからないときは、ユーザー環境変数に `CLAUDE_CODE_GIT_BASH_PATH`（`bash.exe` のパス）を設定する）、`agent-status`・`claude-env` のフックが無い（`hook env` が mise の shims も置く）、bin のフックは `windows/posix/hook` 経由（ホームに空白があっても分かれないよう、`"$HOME/dotfiles/windows/posix/hook"` のように実行ファイルのパスを引用符で囲む。ステータスラインのパスも同じ）、SessionStart の先頭に `hook env`、ステータスラインは `statusline.ps1`、通知は端末のベル（`preferredNotifChannel`）。ほかは共通の設定と同じ
 - `windows/claude/statusline.ps1`: `config/claude/statusline.sh` の PowerShell 版（出力・アイコン・メーター・コンテキストのキャッシュ・Codex の上限・herdr の pane の名前は同じ。jq・awk を使わない）
 - `windows/claude/CLAUDE.md`: `config/agents/AGENTS.md` を読み込み、Windows の違いを足す（スクリーンショットは `~/Pictures/Screenshots`、dotfiles のコマンドは Bash ツールで）
@@ -127,7 +127,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 
 リンクしないもの:
 
-- `config/codex/config.toml.tmpl`: `~/.codex/config.toml` を生成する（下の「install.ps1 がやること」の 10）
+- `config/codex/config.toml.tmpl`: `~/.codex/config.toml` を生成する（下の「install.ps1 がやること」の 9）
 - `bin/` のコマンドとフック: `windows/posix/run`・`hook` が Git Bash で動かす
 - `config/git/hooks-nosign/commit-msg`: `windows/git/hooks-nosign/commit-msg` が呼ぶ
 - `bin/geoview`: `windows/geoview` の `geoview.exe` が動かす
@@ -140,15 +140,14 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 4. git: このクローンの `core.autocrlf=input`。CRLF で取り出された LF のファイル（`.cmd` は除く）があり、作業ツリーに変更が無ければ LF で取り出し直す
 5. `~/.gitconfig` が無ければ空で作る（`git config --global` の書き込み先。中身は消さない）
 6. ssh: `ssh/config` に自分・SYSTEM・Administrators 以外が書き込めれば icacls で絞る。`ssh -G` を確かめる
-7. ユーザー環境変数（HKCU\Environment）: `EDITOR`・`VISUAL`=nvim、`FNM_DIR`、`MISE_DISABLE_TOOLS`、`YAZI_FILE_ONE`（Git の `usr\bin\file.exe`。Git の場所は gitbash-lib で探す）。Path の先頭に fnm の既定・`~/.local/bin`・mise の shims・`windows/bin`（`%USERPROFILE%`・`%LOCALAPPDATA%` のままの REG_EXPAND_SZ）。`HOME`・`XDG_CONFIG_HOME` は入れない
-8. mise（`~/.local/bin/mise.exe`、install.sh と同じ版）と `mise install`（ホームで。`gh auth token` をこのプロセスだけの `GITHUB_TOKEN` にする）
-9. fnm で最新の LTS の Node を入れて既定にする
-10. Codex: テンプレートから `~/.codex/config.toml` を作る（`@HOME@` は `/` 区切りのホーム。既存の設定のうち、テンプレートにあるキーはテンプレートの値にし、ほかのトップレベルのキーと表（Codex デスクトップが書く `notify`・`[desktop]`・プラグインなど）は値ごと引き継ぐ。キーと表の名前は引用符やドットの前後の空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。値の外のコメントと空行は引き継がない。違うときだけ退避して書く）。codex が無ければ公式のインストーラーで入れ、ユーザーの Path を手順 7 の形に戻す。ponytail の marketplace と plugin を入れる。tinymemory があれば `tinymemory init codex`
-11. Neovim のプラグインを `lazy-lock.json` に揃える（`Lazy! restore`。mise の nvim が無ければ失敗）
-12. PSFzf（PSGallery）
-13. geoview（`uv tool install`。uv が無ければ失敗）
-14. Windows Terminal の settings.json: profiles.defaults に配色・Hack Nerd Font Mono 12・余白・履歴 50000、PowerShell 7 のプロファイルを既定にする（変わるときだけ退避して書く。ほかのキーとプロファイルはそのまま）。settings.json が無い、または PowerShell 7 のプロファイルが無ければ失敗（ほかは書く。Windows Terminal を開き直してから再実行）
-15. 全部成功なら `done.` と README の残りの手順の案内を出して終了コード 0
+7. ユーザー環境変数（HKCU\Environment）: `EDITOR`・`VISUAL`=nvim、`MISE_DISABLE_TOOLS`、`YAZI_FILE_ONE`（Git の `usr\bin\file.exe`。Git の場所は gitbash-lib で探す）。Path の先頭に `~/.local/bin`・mise の shims・`windows/bin`（`%USERPROFILE%`・`%LOCALAPPDATA%` のままの REG_EXPAND_SZ）。`HOME`・`XDG_CONFIG_HOME` は入れない
+8. mise（`~/.local/bin/mise.exe`、install.sh と同じ版）と `mise install`（Node の最新の LTS を含む。ホームで。`gh auth token` をこのプロセスだけの `GITHUB_TOKEN` にする）
+9. Codex: テンプレートから `~/.codex/config.toml` を作る（`@HOME@` は `/` 区切りのホーム。既存の設定のうち、テンプレートにあるキーはテンプレートの値にし、ほかのトップレベルのキーと表（Codex デスクトップが書く `notify`・`[desktop]`・プラグインなど）は値ごと引き継ぐ。キーと表の名前は引用符やドットの前後の空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。値の外のコメントと空行は引き継がない。違うときだけ退避して書く）。codex が無ければ公式のインストーラーで入れ、ユーザーの Path を手順 7 の形に戻す。ponytail の marketplace と plugin を入れる。tinymemory があれば `tinymemory init codex`
+10. Neovim のプラグインを `lazy-lock.json` に揃える（`Lazy! restore`。mise の nvim が無ければ失敗）
+11. PSFzf（PSGallery）
+12. geoview（`uv tool install`。uv が無ければ失敗）
+13. Windows Terminal の settings.json: profiles.defaults に配色・Hack Nerd Font Mono 12・余白・履歴 50000、PowerShell 7 のプロファイルを既定にする（変わるときだけ退避して書く。ほかのキーとプロファイルはそのまま）。settings.json が無い、または PowerShell 7 のプロファイルが無ければ失敗（ほかは書く。Windows Terminal を開き直してから再実行）
+14. 全部成功なら `done.` と README の残りの手順の案内を出して終了コード 0
 
 ## 制限
 
@@ -175,3 +174,18 @@ Pester 5 が要る（無ければ `Install-PSResource Pester -Scope CurrentUser`
 - `posix.Tests.ps1`: `hook env`、jq の shim、commit-msg、integrate-hook、`/clear`、`windows/bin` の shim
 - `gitbash.Tests.ps1`: gitbash-lib.ps1（偽の Git のルートを PATH に置いて、`git.exe` の 4 つの置き場所と標準の場所の順を確かめる）、`windows/bin` のラッパー（偽の `bash.exe` を PATH の `git.exe` の隣に置く。空白を含むパスの dotfiles と、Program Files の外の Git への junction）、settings.json のフックとステータスラインを HOME に空白を含めて `bash -c` で動かす
 - `herdr.Tests.ps1`: herdr の設定と共通のファイルの違い
+
+## fnm から移る（前に入れた PC で一度）
+
+Node は mise に移した（mac / linux と同じ。決め方は `config/mise/README.md`）。前に install.ps1 を実行した PC で:
+
+```powershell
+mise self-update                                    # node の lts が今の LTS を指す版にする
+pwsh -File $HOME\dotfiles\windows\install.ps1       # mise install が Node を入れる
+[Environment]::SetEnvironmentVariable('FNM_DIR', $null, 'User')
+mise uninstall --all aqua:Schniz/fnm
+Remove-Item -Recurse -Force $HOME\.local\share\fnm
+```
+
+- ユーザーの Path に残る fnm の項目は mise の shims より後ろになるので害は無い（消すならシステムの環境変数の画面で）。ターミナルと Claude Code は開き直す
+- fnm の Node に `npm i -g` で入れたものは入れ直す。Windows では mise が shims を作り直さないので、入れた後に `mise reshim`

@@ -14,7 +14,7 @@ try { [Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 # mise 本体の版（install.sh の MISE_VERSION と一緒に上げる）
-$MiseVersion = 'v2026.10.1'
+$MiseVersion = 'v2026.11.3'
 # Windows で mise に入れない道具: tmux は Windows 版が無い
 $MiseDisable = 'aqua:tmux/tmux-builds'
 
@@ -142,11 +142,10 @@ Invoke-Step $StepLog 'ssh' {
 
 # 4. ユーザー環境変数（HKCU\Environment）。HOME と XDG_CONFIG_HOME は入れない（Windows の道具が既定の場所を外れるため）
 # ユーザーの Path の先頭に置くもの（この順）
-$UserPathDirs = @('%USERPROFILE%\.local\share\fnm\aliases\default', '%USERPROFILE%\.local\bin', '%LOCALAPPDATA%\mise\shims', (ConvertTo-EnvRelativePath (Join-Path $DOTFILES 'windows\bin')))
+$UserPathDirs = @('%USERPROFILE%\.local\bin', '%LOCALAPPDATA%\mise\shims', (ConvertTo-EnvRelativePath (Join-Path $DOTFILES 'windows\bin')))
 Invoke-Step $StepLog 'ユーザー環境変数' {
   $null = Set-UserEnv EDITOR nvim
   $null = Set-UserEnv VISUAL nvim
-  $null = Set-UserEnv FNM_DIR '%USERPROFILE%\.local\share\fnm'
   $null = Set-UserEnv MISE_DISABLE_TOOLS $MiseDisable
   # yazi のファイル種別の判定に Git の file.exe を使う（Git の場所は git.exe から探す。Program Files とは限らない）
   $gitRoot = Get-GitRoot
@@ -155,10 +154,10 @@ Invoke-Step $StepLog 'ユーザー環境変数' {
   $null = Add-UserPath @UserPathDirs
 }
 
-# ここから先の mise・fnm・uv は、呼んだ場所の設定（mise.toml、.python-version など）に左右されないようホームで実行する
+# ここから先の mise・uv は、呼んだ場所の設定（mise.toml、.python-version など）に左右されないようホームで実行する
 $mise = Join-Path $H '.local\bin\mise.exe'
 
-# 5. mise 本体（~/.local/bin/mise.exe）と道具。インストーラは版を固定すると配布物をその release の SHASUMS256.txt で検証する
+# 5. mise 本体（~/.local/bin/mise.exe）と道具（Node の最新の LTS を含む）。インストーラは版を固定すると配布物をその release の SHASUMS256.txt で検証する
 Invoke-Step $StepLog 'mise' {
   if (-not (Test-Path -LiteralPath $mise)) {
     $s = Get-RemoteScript 'https://mise.run/powershell'
@@ -182,20 +181,9 @@ if (Test-Path -LiteralPath $mise) {
       if ($LASTEXITCODE) { throw "mise install が失敗した（Windows 版の無い道具は MISE_DISABLE_TOOLS に足す）" }
     } finally { Pop-Location }
   }
-
-  # 6. Node は fnm で最新の LTS を入れて既定にする（再実行のたびに最新の LTS に追随する）
-  Invoke-Step $StepLog 'fnm' {
-    Push-Location $H
-    try {
-      & $mise exec -- fnm install --lts
-      if ($LASTEXITCODE) { throw 'fnm install --lts が失敗した' }
-      & $mise exec -- fnm default lts-latest
-      if ($LASTEXITCODE) { throw 'fnm default が失敗した' }
-    } finally { Pop-Location }
-  }
 }
 
-# 7. Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）
+# 6. Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）
 Invoke-Step $StepLog 'Codex の設定' {
   $null = New-CodexConfig -Template (Join-Path $DOTFILES 'config\codex\config.toml.tmpl') -ConfigPath (Join-Path $H '.codex\config.toml') -HomeDir $H
 }
@@ -232,7 +220,7 @@ Invoke-Step $StepLog 'Codex' {
   }
 }
 
-# 8. Neovim プラグインを lazy-lock.json の版に揃える（mise exec で tree-sitter も PATH に載せる）
+# 7. Neovim プラグインを lazy-lock.json の版に揃える（mise exec で tree-sitter も PATH に載せる）
 Invoke-Step $StepLog 'nvim' {
   if (-not (Test-Path -LiteralPath $mise)) { throw 'mise が無い（mise の手順を直して再実行する）' }
   & $mise which nvim *> $null
@@ -241,14 +229,14 @@ Invoke-Step $StepLog 'nvim' {
   if ($LASTEXITCODE) { throw 'プラグインの restore に失敗した' }
 }
 
-# 9. PSFzf（fzf の Ctrl+t・Ctrl+r・Alt+c を PSReadLine に付ける）
+# 8. PSFzf（fzf の Ctrl+t・Ctrl+r・Alt+c を PSReadLine に付ける）
 Invoke-Step $StepLog 'PSFzf' {
   if (Get-Module -ListAvailable PSFzf) { return }
   try { Install-PSResource -Name PSFzf -Scope CurrentUser -TrustRepository -ErrorAction Stop }
   catch { Install-Module PSFzf -Scope CurrentUser -Force -ErrorAction Stop }
 }
 
-# 10. geoview（bin/geoview を Windows で動かす uv の tool。~/.local/bin/geoview.exe）
+# 9. geoview（bin/geoview を Windows で動かす uv の tool。~/.local/bin/geoview.exe）
 Invoke-Step $StepLog 'geoview' {
   if (-not (Test-Command uv)) { throw 'uv が無い（mise install を直して再実行する）' }
   Push-Location $H
@@ -258,7 +246,7 @@ Invoke-Step $StepLog 'geoview' {
   } finally { Pop-Location }
 }
 
-# 11. Windows Terminal: 配色・フォント・余白・履歴を profiles.defaults に、既定のプロファイルを PowerShell 7 にする
+# 10. Windows Terminal: 配色・フォント・余白・履歴を profiles.defaults に、既定のプロファイルを PowerShell 7 にする
 Invoke-Step $StepLog 'Windows Terminal' {
   $wt = Join-Path $LocalAppData 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
   if (-not (Test-Path -LiteralPath $wt)) { throw "settings.json が無い（Windows Terminal を一度起動してから再実行する）: $wt" }

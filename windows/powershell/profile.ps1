@@ -1,15 +1,13 @@
 ﻿#Requires -Version 7.4
 # pwsh のプロファイル（CurrentUserAllHosts。install.ps1 が Documents\PowerShell\profile.ps1 へリンク）。
 # shell/zshenv + zprofile + zshrc の移植。前半は非対話（pwsh -Command / -File）でも毎回読まれるので、プロセスを起動しない。
-# 永続する値（EDITOR、FNM_DIR、ユーザー PATH）は install.ps1 が HKCU\Environment にも書く。ここは今のセッション用
+# 永続する値（EDITOR、ユーザー PATH）は install.ps1 が HKCU\Environment にも書く。ここは今のセッション用
 
 # ===== 環境（zshenv + zprofile）=====
 $env:EDITOR = 'nvim'
 $env:VISUAL = 'nvim'
-# install.ps1 と同じ値。Windows の fnm は aliases\default 直下に node.exe を置く（bin はない）
-$env:FNM_DIR = "$HOME\.local\share\fnm"
 # Windows は Machine PATH が User PATH より前に来るので、ユーザー領域をここで先頭に戻す（zprofile と同じ順）
-$dotfilesPathPre = @("$env:FNM_DIR\aliases\default", "$HOME\.local\bin", "$env:LOCALAPPDATA\mise\shims")
+$dotfilesPathPre = @("$HOME\.local\bin", "$env:LOCALAPPDATA\mise\shims")
 if (Test-Path -LiteralPath "$HOME\.cargo\bin") { $dotfilesPathPre += "$HOME\.cargo\bin" }
 # 入れ子の pwsh で同じディレクトリが積まれないように畳む（typeset -U path 相当。Windows の PATH は大文字小文字を区別しない）
 $env:PATH = (($dotfilesPathPre + ($env:PATH -split ';')) | Where-Object { $_ } | Select-Object -Unique -CaseInsensitive) -join ';'
@@ -57,7 +55,6 @@ function Invoke-Starship-PreCommand { [Console]::Write("`e[6 q") }
 # ===== ツール =====
 # 順序は zshrc と違う: mise activate は今の prompt 関数を包んで毎回 hook-env を走らせるので、starship（prompt を定義）を先に読む
 if (Get-Command starship -ErrorAction Ignore) { Invoke-Expression (& starship init powershell | Out-String) }
-if (Get-Command fnm -ErrorAction Ignore) { fnm env --shell powershell | Out-String | Invoke-Expression } # fnm use を使えるようにする
 if (Get-Command mise -ErrorAction Ignore) { mise activate pwsh | Out-String | Invoke-Expression }
 # fzf: Ctrl-R 履歴検索 / Ctrl-T ファイル / Alt-C ディレクトリ移動（fzf に PowerShell 用の組み込みはないので PSFzf。
 # -EditMode Vi の後に読むと vi の両モードに割り当てる）

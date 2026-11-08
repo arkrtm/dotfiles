@@ -14,7 +14,6 @@ shellcheck = "0.11.0" # tests/static.sh が使う。版を固定する（新し�
 # 言語ツール（Python のランタイムは uv。Node は mise: プロジェクトの mise.toml・.node-version・.nvmrc の版、無ければ最新の LTS）
 uv = "latest"
 node = "lts"
-"aqua:Schniz/fnm" = "latest" # windows/install.ps1 がまだ使う
 
 # AI エージェントの長期記憶（Claude Code / Codex 共通）
 # 自作ツールなので明示バージョン（mise は公開 24h 未満のリリースを "latest" で選ばないため）
