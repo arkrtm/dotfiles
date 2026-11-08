@@ -22,7 +22,7 @@
 |---|---|---|
 | `bare` | サーバーの bare に同じサーバーのクローンから push（一人の開発） | base（例 develop）へ直接 push |
 | `github` | 自分の GitHub（一人の開発） | base（main）へ直接 push |
-| `pr` | 書き込み権限のあるチームの GitHub | ブランチを push して base に向けた PR を作るまで（マージはチーム） |
+| `pr` | 書き込み権限のあるチームの GitHub | ブランチを push して base に向けた PR を作るまで（マージはチーム）。push は早送りだけなので、PR を出した後に base が進んだら `git merge origin/<base>` で取り込む（merge コミットの衝突の解決も issue 番号・gitleaks の関門で見る） |
 
 - `integrate setup --kind <kind> --base <branch> --test '<command>'` で書く。引数が足りなければ、端末では推測を既定値に 1 項目ずつ尋ね、端末でなければ推測（kind: GitHub でなければ bare、持ち主が `gh` のログインなら github、ほかは pr。base: リモートの HEAD。test: `scripts/check`・`pyproject.toml`・`package.json`・`Cargo.toml`・`go.mod` から）を出して終了コード 2
 - `integrate setup --show` で今の設定を出す。既にある設定は上書きしない（終了コード 1）。上書きは `integrate setup --force …` を人が端末で実行する。端末の確かめと settings.json の deny は抑止で（`--human-approved` と同じ水準）、同じユーザーで動くエージェントが擬似端末（`script`）や設定のファイルの rm で越えることまでは防げない
