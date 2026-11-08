@@ -1,5 +1,5 @@
 #!/bin/sh
-# mise.lock の受け入れ検査: lock のプラットフォームがちょうど 4 つで、どの項目にも url と checksum がある。
+# mise.lock の受け入れ検査: lock のプラットフォームがちょうど 4 つで、どの項目にも url と checksum がある。mise 本体の版は install.sh と install.ps1 で同じ。
 # mise がある端末は、各プラットフォームで lock だけから入れられるか（ネットワーク無しの mise install --locked --dry-run）も見る。CI（mise 無し）は省く。
 #   sh tests/acceptance/mise-lock.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/mise-lock.sh  通った項目も
@@ -23,6 +23,10 @@ bad="$(awk '
   h != "" && /^checksum = "[a-z0-9]+:[0-9a-f]+"$/ { c = 1 }
   END { flush() }' "$K" 2>&1)"
 chk "lock のどの項目にも url と checksum がある${bad:+（無い: $bad）}" test -z "$bad"
+# mise 本体の版（古い mise は lock を読めないので、install が入っている mise をこの版にする）
+va="$(sed -n 's/^MISE_VERSION=\(v[0-9.]*\)$/\1/p' "$ROOT/install.sh")"
+vb="$(sed -n "s/^\\\$MiseVersion = '\(v[0-9.]*\)'\$/\1/p" "$ROOT/windows/install.ps1")"
+chk "mise の版は install.sh の MISE_VERSION と windows/install.ps1 の \$MiseVersion で同じ（${va:-なし}・${vb:-なし}）" test -n "$va" -a "$va" = "$vb"
 
 MISE="$(command -v mise || true)" # env -i の前に決める
 if [ -z "$MISE" ]; then

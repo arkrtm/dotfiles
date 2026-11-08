@@ -1,6 +1,6 @@
 #!/bin/sh
 # Node の版の受け入れ検査: プロジェクトが .node-version・.nvmrc・mise.toml で決めた版を、非対話の zsh・bash -lc・対話の zsh が使い、
-# 指定の無い場所は mise の lts。npm・npx・corepack も同じ版の node で動く。
+# 指定の無い場所は lock の node（install.sh と同じく lock を写す）。npm・npx・corepack も同じ版の node で動く。
 # 一時 HOME に shell/ と config/mise/config.toml をリンクし、本物の mise と、版を出すだけの偽の node（ネットワークを使わない）で確かめる。
 # mise か zsh が無い端末（CI）では省く。本物の Node は tests/install-nosudo.sh が確かめる
 #   sh tests/acceptance/node-version.sh      失敗した項目と要約だけ
@@ -22,16 +22,17 @@ T="$(trap '' HUP INT TERM; mktemp -d)"
 H="$T/h"; mkdir -p "$H/.config/mise" "$H/.local/bin" "$H/p" "$H/nv" "$H/nr" "$H/mt" "$H/miss"
 for f in zshenv zprofile zshrc bashrc bash_profile; do ln -s "$ROOT/shell/$f" "$H/.$f"; done
 ln -s "$ROOT/config/mise/config.toml" "$H/.config/mise/config.toml"
+cp "$ROOT/config/mise/mise.lock" "$H/.config/mise/mise.lock" # install.sh と同じく写す（mise はグローバルの lock に書き足すので、リンクだとリポジトリが変わる）
 ln -s "$MISE" "$H/.local/bin/mise"
 echo 22 > "$H/nv/.node-version"; echo v22 > "$H/nr/.nvmrc"; printf '[tools]\nnode = "20"\n' > "$H/mt/mise.toml"; echo 18 > "$H/miss/.node-version"
 # r <ディレクトリ> <PATH> <コマンド…>: 一時 HOME のそのディレクトリで、空の環境から動かす。標準出力だけを返す（mise の警告は標準エラー）。
 # MISE_OFFLINE: ほかの道具の版を探しにネットワークへ行かない
 r() { r_d="$1"; r_p="$2"; shift 2; (cd "$H/$r_d" && env -i HOME="$H" PATH="$r_p" TERM=dumb MISE_OFFLINE=1 "$@" 2>/dev/null </dev/null); }
 P0=/usr/bin:/bin
-L="$(r p "$P0" "$MISE" alias get node lts)"
-[ -n "$L" ] || ng "mise が node の lts の版を答えない"
+L="$(sed -n '/^\[\[tools\.node\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' "$ROOT/config/mise/mise.lock")"
+[ -n "$L" ] || ng "lock に node の版が無い"
 # 偽の node は版を出すだけ。npm・npx・corepack は PATH の node の版を出す（本物も #!/usr/bin/env node で PATH の node を使う）
-for v in 22.99.0 20.99.0 "$L.99.0"; do
+for v in 22.99.0 20.99.0 "$L"; do
   b="$H/.local/share/mise/installs/node/$v/bin"; mkdir -p "$b"
   printf '#!/bin/sh\necho v%s\n' "$v" > "$b/node"
   for t in npm npx corepack; do printf '#!/bin/sh\nexec node -v\n' > "$b/$t"; done
@@ -39,7 +40,7 @@ for v in 22.99.0 20.99.0 "$L.99.0"; do
 done
 r p "$P0" "$MISE" reshim >/dev/null
 
-for c in nv:v22.99.0 nr:v22.99.0 mt:v20.99.0 "p:v$L.99.0"; do
+for c in nv:v22.99.0 nr:v22.99.0 mt:v20.99.0 "p:v$L"; do
   d="${c%%:*}"; want="${c#*:}"
   chk "$d: 非対話の zsh（zsh -c）の node は $want" test "$(r "$d" "$P0" "$ZSH" -c 'node -v')" = "$want"
   chk "$d: bash -lc の node は $want" test "$(r "$d" "$P0" bash -lc 'node -v')" = "$want"

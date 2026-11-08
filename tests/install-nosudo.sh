@@ -3,6 +3,7 @@
 # debian:12（sudo も python3 も zsh も tmux も node も無い）に git と curl と libatomic1（Node 26 以降の公式の配布物が要る。README の前提）だけ入れ、一般ユーザーで実行する。
 # 作業ツリー（未コミットの変更を含む）を標準入力でコンテナに送る。この端末の docker で実行する（DOCKER で docker のコマンドを替えられる）:
 #   sh tests/install-nosudo.sh
+# lock の版が入ること、lock の checksum を書き換えると止まること、古い mise と config.local.toml の端末でも通ることも確かめる。
 # ネットワークからツールを取得するので数分かかる。
 set -eu
 
@@ -32,20 +33,30 @@ if [ "${1:-}" = --check ]; then
   under_home "$t" && zq 'tmux -L t new-session -d "sleep 5" && tmux -L t source-file "$HOME/.config/tmux/tmux.conf" && tmux -L t kill-server' &&
     ok "tmux がユーザー領域に入り、セッションを作れ、tmux.conf が読める（$t）" || ng "tmux がユーザー領域に無いか、動かないか、tmux.conf にエラーがある（${t:-なし}）"
 
+  # mise と lock: mise は install.sh の MISE_VERSION の版。~/.config/mise/mise.lock はリポジトリの lock の写し（リンクでない）。lock の全項目の版が入っている
+  K="$HOME/dotfiles/config/mise/mise.lock"; ML="$HOME/.config/mise/mise.lock"
+  mv="$(sed -n 's/^MISE_VERSION=v\([0-9.]*\)$/\1/p' "$HOME/dotfiles/install.sh")"
+  v="$(clean "$HOME/.local/bin/mise" --version 2>/dev/null | cut -d ' ' -f 1)"
+  [ -n "$mv" ] && [ "$v" = "$mv" ] && ok "mise は install.sh の MISE_VERSION（$mv。古い mise からの install の後も）" || ng "mise の版: ${v:-なし}（MISE_VERSION: ${mv:-読めない}）"
+  [ -f "$ML" ] && [ ! -L "$ML" ] && cmp -s "$K" "$ML" && ok "ホームの mise.lock はリポジトリの lock の写し（リンクでない）" || ng "ホームの mise.lock がリポジトリの lock の写しでない"
+  all="$(awk '/^\[\[tools\./ { n = $0; sub(/^\[\[tools\./, "", n); sub(/\]\]$/, "", n); gsub(/"/, "", n) } /^version = / { v = $3; gsub(/"/, "", v); print n "@" v }' "$K" | sort -u)"
+  c=0; n=0
+  for t in $all; do c=$((c + 1)); if (cd && clean "$HOME/.local/bin/mise" where "$t") >/dev/null 2>&1; then n=$((n + 1)); else ng "lock の $t が入っていない"; fi; done
+  [ "$c" -gt 10 ] && [ "$n" = "$c" ] && ok "lock の全項目（$c 個）の版が入っている" || ng "lock の版が入っているのは $c 個中 $n 個"
+
   # Node（mise）。nodev: 版だけを出して 0 で終わったときだけ版を返す（エラーの文・起動ファイルの出力が混ざれば失敗。libatomic が無いときの node のエラーも）
   nodev() { _v="$("$@" 2>&1)" || return 1; case "$_v" in '' | *[!v0-9.]*) return 1 ;; v[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$_v" ;; *) return 1 ;; esac; }
   nodev sh -c 'echo v22.1.0' >/dev/null && ! nodev sh -c 'echo "node: error while loading shared libraries: libatomic.so.1"; exit 127' >/dev/null &&
     ! nodev sh -c 'echo libatomic >&2; echo v22.1.0' >/dev/null && ok "node の検査は版だけを出して 0 で終わったときだけ通す" || ng "node の検査そのもの"
-  # 最新の LTS は nodejs.org の一覧（新しい順）の最初の LTS。mise の lts は mise の版に書かれているので、ずれたら install.sh の MISE_VERSION を上げる
-  idx="$(curl -fsSL https://nodejs.org/dist/index.json || true)"
-  lts="$(printf '%s\n' "$idx" | sed -n '/"lts":"/{s/^{"version":"v\([0-9]*\)\..*/\1/p;q;}')"
-  [ -n "$lts" ] || ng "最新の LTS を nodejs.org の一覧から読めない"
+  # 指定の無い場所の node は lock の版と完全に同じ（最新の LTS とは比べない。追随は更新の手順で行う）
+  ln="$(sed -n '/^\[\[tools\.node\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' "$K")"
+  [ -n "$ln" ] || ng "lock に node の版が無い"
   n="$(zq 'command -v node' || true)"
   [ "$n" = "$HOME/.local/share/mise/shims/node" ] && ok "非対話 zsh の node は mise の shim" || ng "非対話 zsh の node が mise の shim でない（${n:-なし}）"
-  v="$(nodev zq 'node --version')" && [ "${v%%.*}" = "v$lts" ] && ok "非対話 zsh の node が動き、指定の無い場所では最新の LTS（$v）" ||
-    ng "非対話 zsh の node: $(zq 'node --version')（最新の LTS は v$lts）"
+  v="$(nodev zq 'node --version')" && [ "$v" = "v$ln" ] && ok "非対話 zsh の node が動き、指定の無い場所では lock の版（$v）" ||
+    ng "非対話 zsh の node: $(zq 'node --version')（lock は v$ln）"
   # ssh 経由のコマンドなど、非対話のログイン bash（bash_profile → bashrc）
-  v="$(nodev clean env NO_ZSH=1 bash -lc 'node --version')" && [ "${v%%.*}" = "v$lts" ] && ok "bash -lc の node も動き、最新の LTS（$v）" ||
+  v="$(nodev clean env NO_ZSH=1 bash -lc 'node --version')" && [ "$v" = "v$ln" ] && ok "bash -lc の node も動き、lock の版（$v）" ||
     ng "bash -lc の node: $(clean env NO_ZSH=1 bash -lc 'node --version' 2>&1)"
   # .node-version・.nvmrc の版（先に入れておく。入っていなければ shim が最初の呼び出しで入れ、その出力が混ざる）
   zq 'mise install --yes node@22' >/dev/null || ng "node@22 を入れられない"
@@ -55,6 +66,11 @@ if [ "${1:-}" = --check ]; then
   v="$(cd "$HOME/nv" && nodev clean env NO_ZSH=1 bash -lc 'node --version')" && [ "${v%%.*}" = v22 ] && ok ".node-version の場所の bash -lc は v22" || ng ".node-version の場所の bash -lc"
   m="$(cd "$HOME/nv" && zq 'npm version --json' || true)"
   case "$m" in *'"node": "22.'*) ok "npm も .node-version の版の node で動く" ;; *) ng "npm の node: $m" ;; esac
+  # .node-version の版を shim が自動で入れると、mise はグローバルの lock（写し）に書き足す。リポジトリの lock は変わらない（/src はコンテナに送った作業ツリー）
+  mkdir -p "$HOME/n20"; echo 20 > "$HOME/n20/.node-version"
+  (cd "$HOME/n20" && zq 'node --version') >/dev/null
+  ! cmp -s "$K" "$ML" && cmp -s "$K" /src/config/mise/mise.lock && ok "Node を自動で入れて mise が書き足すのは写しの lock で、リポジトリの lock は変わらない" ||
+    ng "Node の自動の導入の後の lock（写しが変わらない、またはリポジトリの lock が変わった）"
 
   u="$(zq 'command -v uv' || true)"
   [ "$u" = "$HOME/.local/share/mise/shims/uv" ] && ok "日常の uv は mise の shim（プロジェクトの版の固定に従う）" || ng "日常の uv が mise の shim でない（${u:-なし}）"
@@ -121,6 +137,23 @@ if [ "${1:-}" = --in-container ]; then
   grep -qF 'mcp_servers.linear' /tmp/install.log && ! grep -qx 'done.' /tmp/install.log && cmp -s "$C" /tmp/bad.toml && [ "$(ls "$C".bak.* | wc -l)" = "$nb" ] \
     || { tail -40 /tmp/install.log; echo "FAIL command 方式の linear で、理由を出して止まり config.toml を変えず退避しないこと"; exit 1; }
   cp -p /tmp/keep.toml "$C"
+  # lock の checksum を書き換えると、install.sh は理由を出して止まり、その道具を入れない（jq の linux の 2 つの checksum を 0 にする）。確かめた後は戻す
+  K=/home/u/dotfiles/config/mise/mise.lock
+  cp -p "$K" /tmp/keep.lock
+  sed -i '/^\[tools\.jq\."platforms\.linux-/,/^$/s/^checksum = "sha256:[0-9a-f]*"$/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' "$K"
+  su - u -c 'cd && ~/.local/bin/mise uninstall --all jq' >/dev/null 2>&1
+  if su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1; then tail -40 /tmp/install.log; echo "FAIL checksum を書き換えた lock で install.sh が止まらなかった"; exit 1; fi
+  { ! cmp -s "$K" /tmp/keep.lock && grep -q 'Checksum mismatch' /tmp/install.log && ! su - u -c 'cd && ~/.local/bin/mise where jq' >/dev/null 2>&1; } ||
+    { tail -40 /tmp/install.log; echo "FAIL checksum が合わないとき、理由（Checksum mismatch）を出して止まり jq を入れないこと"; exit 1; }
+  cp -p /tmp/keep.lock "$K"
+  # 古い mise（今の lock の形式を読めない 2026.10.1）で、config.local.toml で Node を 24 にし README のとおり mise lock --global --local した端末でも、
+  # install.sh は mise を MISE_VERSION の版にして lock の版を入れる（jq も戻る）。確かめた後は config.local.toml と mise.local.lock を消す（--check は lock の版を見る）
+  su - u -c 'printf "[tools]\nnode = \"24\"\n" > ~/.config/mise/config.local.toml && cd && ~/.local/bin/mise lock --global --local && ~/.local/bin/mise self-update --yes --no-plugins 2026.10.1' >/tmp/prep.log 2>&1 ||
+    { tail -20 /tmp/prep.log; echo "FAIL 古い mise と config.local.toml を用意できない"; exit 1; }
+  su - u -c "sh ~/dotfiles/install.sh" >/tmp/install.log 2>&1 || { tail -40 /tmp/install.log; echo "FAIL install.sh（古い mise・config.local.toml）が失敗した"; exit 1; }
+  if grep -iE "warning|error" /tmp/install.log; then echo "FAIL install.sh（古い mise・config.local.toml）が warning / error を出した"; exit 1; fi
+  case "$(su - u -c 'cd && ~/.local/bin/mise current node' 2>/dev/null)" in 24.*) ;; *) echo "FAIL config.local.toml の node 24 が入っていない"; exit 1 ;; esac
+  rm -f /home/u/.config/mise/config.local.toml /home/u/.config/mise/mise.local.lock
   exec su - u -c "sh ~/dotfiles/tests/install-nosudo.sh --check"
 fi
 

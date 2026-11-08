@@ -147,15 +147,24 @@ fi
 # ここから先の mise・uv は、呼んだ場所の設定（mise.toml、.python-version など）に左右されないよう $HOME で実行する
 cd "$HOME"
 MISE="$HOME/.local/bin/mise"
+# 版の上げ方は README の「版の固定と更新」。windows/install.ps1 の $MiseVersion と同じ
+MISE_VERSION=v2026.11.3
 if [ ! -x "$MISE" ]; then
   # インストーラは取得してから実行する（パイプだと curl の失敗を sh が空入力の成功で隠す。取得失敗は set -e で止める）。
   # 版を固定すると、インストーラは配布物をその release の SHASUMS256.txt で検証する（現行版は埋め込みの sha256）。インストーラ自体は mise.run の
   # その時点のものなので、信頼の根は TLS + mise.run + GitHub（zsh-bin と違い鎖の全体は固定していない。固定するなら raw の URL をコミットで指す）。
-  # 版は mise のリリースに合わせて上げる（node の lts が指す版も mise の版で決まる）
   mise_install="$(curl -fsSL https://mise.run)"
-  MISE_VERSION=v2026.11.3 sh -c "$mise_install"
+  MISE_VERSION="$MISE_VERSION" sh -c "$mise_install"
+elif [ "$("$MISE" --version 2>/dev/null | cut -d ' ' -f 1)" != "${MISE_VERSION#v}" ]; then
+  # 入っている mise をこの版にする（古い mise は lock を読めない。self-update は配布物の署名を確かめる）
+  "$MISE" self-update --yes --no-plugins "${MISE_VERSION#v}"
 fi
-"$MISE" install --yes
+# lock はリンクせず写す（mise は .node-version などの版を入れるたびにグローバルの lock に書き足すので、リンクだとリポジトリが変わる）。
+# rm は前にリンクがあっても、先を書き換えないため
+rm -f "$HOME/.config/mise/mise.lock"
+cp "$DOTFILES/config/mise/mise.lock" "$HOME/.config/mise/mise.lock"
+# lock の版だけを入れる（lock に無い道具・checksum の合わない配布物は入れず止まる）
+"$MISE" install --yes --locked
 
 # zsh の補完を道具に書き出させる（git・tmux・jq は zsh に同梱の補完がある）。再実行で道具の版に追随する。足すときは zcomp を 1 行足す。
 # 一時ファイルに書いてから置き換え、道具が無い・失敗・出力が空なら前のファイルを残して warning を出す（続行）。stderr は捨てる（mise の更新の知らせなどを混ぜない）
