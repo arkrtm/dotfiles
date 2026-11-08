@@ -42,9 +42,15 @@ command -v starship >/dev/null && eval "$(starship init zsh)"
 command -v fzf >/dev/null && source <(fzf --zsh)
 
 # ls / cat 自体は置き換えない（Claude Code 等が実行するコマンドの挙動を変えないため）
-alias ll='eza -l --git --icons'
-alias la='eza -la --git --icons'
-alias lt='eza --tree --level=2 --icons'
+# eza の無い端末（Homebrew の無い mac。eza は mac では mise.lock の対象外で Brewfile）では ll・la は ls
+if command -v eza >/dev/null; then
+  alias ll='eza -l --git --icons'
+  alias la='eza -la --git --icons'
+  alias lt='eza --tree --level=2 --icons'
+else
+  alias ll='ls -lh'
+  alias la='ls -lAh'
+fi
 alias lg='lazygit'
 alias lzd='lazydocker'
 # 並列作業: git worktree を作ってその中で Claude Code を起動（cw <名前>）

@@ -1,6 +1,6 @@
 #!/bin/sh
 # シェルの起動ファイルの受け入れ検査。端末ごとの上書き（リポジトリの外）: ~/.zshenv.local は全ての zsh と bash、~/.zshrc.local は対話の zsh、~/.bashrc.local は対話の bash が読み、
-# 無くてもエラーを出さない。入れ子の zsh・bash で PATH が変わらない。zsh の補完は、install.sh が作る置き場（umask 002 でも compinit が拒まない）と、システムの vendor-completions を読む
+# 無くてもエラーを出さない。入れ子の zsh・bash で PATH が変わらない。eza が無い端末では ll・la は ls。zsh の補完は、install.sh が作る置き場（umask 002 でも compinit が拒まない）と、システムの vendor-completions を読む
 #   sh tests/acceptance/shell.sh      失敗した項目と要約だけ
 #   V=1 sh tests/acceptance/shell.sh  通った項目も
 set -u
@@ -94,6 +94,28 @@ if [ -n "$ZSH" ]; then
   else skip "zsh 自身の関数の場所が危ないとき（関数の場所が分かれている。CI の実行環境で確かめる）"
   fi
 else skip "zsh の補完の検査（zsh が無い）"
+fi
+
+# ll・la・lt: eza があれば eza、無ければ ll・la は ls（lt は無い）。偽の eza は ~/.local/bin に置くので、今の $H とは別の一時 HOME で見る
+if [ -n "$ZSH" ]; then
+  A="$T/a"; mkdir -p "$A/.local/bin"
+  for f in zshenv zprofile zshrc bashrc bash_profile; do ln -s "$ROOT/shell/$f" "$A/.$f"; done
+  : > "$A/probe"; : > "$A/.hidden"
+  zi_a() { (cd "$A" && env -i HOME="$A" PATH=/usr/bin:/bin "$ZSH" -i -c "$1" 2>&1 </dev/null); }
+  if [ -z "$(zi_a 'command -v eza')" ]; then
+    case "$(zi_a 'll probe')" in
+      -*" probe") ok "ll は eza が無ければ ls -lh" ;;
+      *) ng "ll は eza が無ければ ls -lh: $(zi_a 'll probe')" ;;
+    esac
+    case "$(zi_a 'la')" in
+      *.hidden*) ok "la は eza が無ければ隠しファイルも出す ls" ;;
+      *) ng "la は eza が無ければ隠しファイルも出す ls: $(zi_a 'la')" ;;
+    esac
+  else skip "eza が無いときの ll・la（システムに eza がある）"
+  fi
+  printf '#!/bin/sh\necho "eza $*"\n' > "$A/.local/bin/eza"; chmod +x "$A/.local/bin/eza"
+  same "eza があれば ll・la・lt は eza" "$(zi_a 'll probe; la; lt')" "$(printf '%s\n' 'eza -l --git --icons probe' 'eza -la --git --icons' 'eza --tree --level=2 --icons')"
+else skip "ll・la・lt の検査（zsh が無い）"
 fi
 
 # 入れ子: そのシェルの PATH と、その中で同じシェルを起こしたときの PATH が同じ（tmux → nvim → :terminal、スクリプトの中の bash -lc など）
