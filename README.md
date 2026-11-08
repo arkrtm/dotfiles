@@ -38,6 +38,7 @@ git clone https://github.com/arkrtm/dotfiles.git ~/dotfiles
 - `config/claude/README.md` — Claude Code の設定と手順（新しい端末の plugin の入れ方）
 - `config/codex/README.md` — Codex の設定と手順、`codex-review`
 - `config/agents/README.md` — 全プロジェクト共通の指示と skill
+- `config/agents/WORKFLOW.md` — 開発ワークフロー（Linear の issue から統合の後の片づけまでのフェーズ、人がすること、モデル）
 - `config/git/README.md` — git の設定と業務サーバー
 - `config/herdr/README.md` — 常時起動サーバー（herdr と Claude Code）
 - `config/wezterm/README.md`・`config/mise/README.md` — WezTerm（Windows）、mise の注意
