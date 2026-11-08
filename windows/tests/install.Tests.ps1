@@ -1,7 +1,7 @@
 ﻿#Requires -Version 7.4
 # windows/install.ps1 を一時ホームに -LinksOnly で実行する（本物のホーム・レジストリには触らない）: リンク表のどの行もリポジトリのファイルへのシンボリックリンクになる、
 # 前からあるものは *.bak.（14 桁の時刻） に退避する、2 回目は何も出さない、worktree からは DOTFILES_ALLOW_WORKTREE なしでは拒む、ponytail の band を書く。
-# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig（テンプレートに無い設定の引き継ぎ・キーの正規化と重複の検査を含む）・Get-CrlfCheckout・Repair-LfCheckout・Update-TerminalSettings を一時ファイルで、
+# リンクを置けないときは失敗を一覧にして終了コード 1 にする。install-lib.ps1 の Invoke-Step・Add-StepFailure・Complete-Install・New-CodexConfig（テンプレートに無い設定の引き継ぎ・キーの正規化と重複の検査を含む）・Get-CrlfCheckout・Repair-LfCheckout・Update-TerminalSettings を一時ファイルで、Install-MiseTools・Sync-MiseVersion を偽の mise で、
 # Add-UserPath をレジストリの代わりのもので確かめる。install.ps1 の手順の書き方は構文木で見る
 
 BeforeDiscovery {
@@ -282,18 +282,54 @@ exit @EXIT@
     $log = [Collections.Generic.List[object]]::new()
     $hd = Join-Path $MTmp ('home-' + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path (Join-Path $hd '.config\mise') -Force
+    $dot = Join-Path $MTmp ('dot-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path (Join-Path $dot 'config\mise') -Force
+    [IO.File]::WriteAllText((Join-Path $dot 'config\mise\mise.lock'), 'lock-a')
+    $dest = Join-Path $hd '.config\mise\mise.lock'
   }
-  It 'Install-MiseTools はホームで mise install --yes を実行する' {
+  It 'Install-MiseTools はホームで mise install --yes --locked を実行する' {
     $m = New-FakeMise '2026.11.3' 0
-    Install-MiseTools -Mise $m -HomeDir $hd
-    Get-MiseLog $m | Should -Be @("$hd|install --yes")
+    Install-MiseTools -Mise $m -Dotfiles $dot -HomeDir $hd
+    Get-MiseLog $m | Should -Be @("$hd|install --yes --locked")
   }
   It 'mise install が失敗したら、手順の失敗として理由つきで記録する' {
     $m = New-FakeMise '2026.11.3' 1
-    Invoke-Step $log 'mise install' { Install-MiseTools -Mise $m -HomeDir $hd } 6>$null
+    Invoke-Step $log 'mise install' { Install-MiseTools -Mise $m -Dotfiles $dot -HomeDir $hd } 6>$null
     $log.Count | Should -Be 1
     $log[0].Name | Should -BeExactly 'mise install'
-    $log[0].Reason | Should -BeLike 'mise install が失敗した*'
+    $log[0].Reason | Should -BeLike 'mise install が失敗した（lock に無い*'
+  }
+  It 'lock を写す（中身が同じで、リンクでない）' {
+    Install-MiseTools -Mise (New-FakeMise '2026.11.3' 0) -Dotfiles $dot -HomeDir $hd
+    [IO.File]::ReadAllBytes($dest) | Should -Be ([IO.File]::ReadAllBytes((Join-Path $dot 'config\mise\mise.lock')))
+    (Get-PathEntry $dest).Target | Should -BeNullOrEmpty
+  }
+  It '前に lock へのリンクがあっても、リンクの先を書き換えずに写しに置き換える' {
+    $other = Join-Path $MTmp ('other-' + [guid]::NewGuid().ToString('N') + '.lock')
+    [IO.File]::WriteAllText($other, 'other')
+    $null = [IO.File]::CreateSymbolicLink($dest, $other)
+    Install-MiseTools -Mise (New-FakeMise '2026.11.3' 0) -Dotfiles $dot -HomeDir $hd
+    [IO.File]::ReadAllText($other) | Should -BeExactly 'other'
+    (Get-PathEntry $dest).Target | Should -BeNullOrEmpty
+    [IO.File]::ReadAllText($dest) | Should -BeExactly 'lock-a'
+  }
+  It 'Sync-MiseVersion は版が同じなら self-update を呼ばない' {
+    $m = New-FakeMise '2026.11.3' 0
+    Sync-MiseVersion -Mise $m -Version 'v2026.11.3'
+    $l = @(Get-MiseLog $m)
+    $l.Count | Should -Be 1
+    $l[0] | Should -BeLike '*|--version'
+  }
+  It 'Sync-MiseVersion は版が違えば self-update --yes --no-plugins と固定の版を呼ぶ' {
+    $m = New-FakeMise '2026.10.1' 0
+    Sync-MiseVersion -Mise $m -Version 'v2026.11.3'
+    @(Get-MiseLog $m)[1] | Should -BeLike '*|self-update --yes --no-plugins 2026.11.3'
+  }
+  It 'self-update が失敗したら、手順 mise の失敗として記録する' {
+    $m = New-FakeMise '2026.10.1' 1
+    Invoke-Step $log 'mise' { Sync-MiseVersion -Mise $m -Version 'v2026.11.3' } 6>$null
+    $log.Count | Should -Be 1
+    $log[0].Reason | Should -BeExactly 'mise を v2026.11.3 にできなかった'
   }
 }
 
@@ -319,6 +355,11 @@ Describe 'install.ps1 の手順の書き方（構文木）' {
     $step = @($Steps | Where-Object { $_.CommandElements[2].Extent.Text -eq "'mise install'" })
     $step.Count | Should -Be 1
     @($step[0].CommandElements[3].FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Install-MiseTools' }, $true)).Count | Should -Be 1
+  }
+  It '手順 mise は Sync-MiseVersion を呼ぶ' {
+    $step = @($Steps | Where-Object { $_.CommandElements[2].Extent.Text -eq "'mise'" })
+    $step.Count | Should -Be 1
+    @($step[0].CommandElements[3].FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Sync-MiseVersion' }, $true)).Count | Should -Be 1
   }
   It '最後は Complete-Install の終了コードで終わる' {
     $Ast.EndBlock.Statements[-1].Extent.Text | Should -BeExactly 'exit (Complete-Install $StepLog)'

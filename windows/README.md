@@ -57,6 +57,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
    - 全部成功すると最後に `done.` を出して終了コード 0。失敗した手順があっても残りは続け、最後に失敗した手順の名前と理由の一覧を出して終了コード 1 で終わる（`done.` は出さない）。理由を直して、もう一度実行する:
      - `Windows Terminal`（PowerShell 7 のプロファイルが無い・settings.json が無い）: 人が Windows Terminal を開き直して（初めてなら一度起動して）から再実行
      - `mise install`（GitHub の API の 403）: 手順 7 の後に再実行。gh は mise install が入れるので、`gh --version` が動かなければ、先に人が `winget install -e --id GitHub.cli --source winget` で単独で入れる（理由: UAC の承認。規約への同意を聞かれたら人が同意する）。`nvim`・`geoview` は mise install の失敗に続いて失敗する
+     - `mise install`（lock に無い道具・checksum が違う配布物）: lock を作り直す（ルートの README の「版の固定と更新」）
      - `git の改行`: `~/dotfiles` の作業ツリーの変更を片づけてから再実行
    - 確かめる: `$LASTEXITCODE` が `0`
 7. GitHub のログイン — 人がやる（理由: ログイン）。新しいターミナルで `gh auth login`
@@ -140,8 +141,8 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 4. git: このクローンの `core.autocrlf=input`。CRLF で取り出された LF のファイル（`.cmd` は除く）があり、作業ツリーに変更が無ければ LF で取り出し直す
 5. `~/.gitconfig` が無ければ空で作る（`git config --global` の書き込み先。中身は消さない）
 6. ssh: `ssh/config` に自分・SYSTEM・Administrators 以外が書き込めれば icacls で絞る。`ssh -G` を確かめる
-7. ユーザー環境変数（HKCU\Environment）: `EDITOR`・`VISUAL`=nvim、`MISE_DISABLE_TOOLS`、`YAZI_FILE_ONE`（Git の `usr\bin\file.exe`。Git の場所は gitbash-lib で探す）。Path の先頭に `~/.local/bin`・mise の shims・`windows/bin`（`%USERPROFILE%`・`%LOCALAPPDATA%` のままの REG_EXPAND_SZ）。`HOME`・`XDG_CONFIG_HOME` は入れない
-8. mise（`~/.local/bin/mise.exe`、install.sh と同じ版）と `mise install`（Node の最新の LTS を含む。ホームで。`gh auth token` をこのプロセスだけの `GITHUB_TOKEN` にする）
+7. ユーザー環境変数（HKCU\Environment）: `EDITOR`・`VISUAL`=nvim、`YAZI_FILE_ONE`（Git の `usr\bin\file.exe`。Git の場所は gitbash-lib で探す）。Path の先頭に `~/.local/bin`・mise の shims・`windows/bin`（`%USERPROFILE%`・`%LOCALAPPDATA%` のままの REG_EXPAND_SZ）。`HOME`・`XDG_CONFIG_HOME` は入れない
+8. mise（`~/.local/bin/mise.exe`、install.sh と同じ版。違う版が入っていれば `mise self-update` でその版にする）と、`config/mise/mise.lock` を `~/.config/mise/mise.lock` に写して `mise install --locked`（lock の版だけを入れ、配布物を lock の checksum で確かめる。Node の LTS を含む。ホームで。`gh auth token` をこのプロセスだけの `GITHUB_TOKEN` にする）
 9. Codex: テンプレートから `~/.codex/config.toml` を作る（`@HOME@` は `/` 区切りのホーム。既存の設定のうち、テンプレートにあるキーはテンプレートの値にし、ほかのトップレベルのキーと表（Codex デスクトップが書く `notify`・`[desktop]`・プラグインなど）は値ごと引き継ぐ。キーと表の名前は引用符やドットの前後の空白を除いて比べ、それでも同じキーが 2 回になるなら書かずに失敗する。値の外のコメントと空行は引き継がない。違うときだけ退避して書く）。codex が無ければ公式のインストーラーで入れ、ユーザーの Path を手順 7 の形に戻す。ponytail の marketplace と plugin を入れる。tinymemory があれば `tinymemory init codex`
 10. Neovim のプラグインを `lazy-lock.json` に揃える（`Lazy! restore`。mise の nvim が無ければ失敗）
 11. PSFzf（PSGallery）
@@ -154,7 +155,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 - tmux は無い（Windows 版が無い）。herdr を使う。`agent-status`（tmux の状態表示）は tmux だけなので使わない
 - Windows Terminal は OSC 777 のデスクトップ通知を出さない。Claude Code の通知は端末のベル
 - herdr の中の yazi は画像を表示しない（kitty の画像を切っている）
-- `MISE_DISABLE_TOOLS` は `install.ps1` の `$MiseDisable`（tmux）。Windows 版の無い道具で `mise install` が失敗したらここに足す
+- Windows で入れない道具は `config/mise/config.toml` の `os` で決める（tmux）。前の install.ps1 が入れたユーザー環境変数 `MISE_DISABLE_TOOLS` は要らない（残っても害は無い。消すなら `[Environment]::SetEnvironmentVariable('MISE_DISABLE_TOOLS', $null, 'User')`）
 - Codex のサンドボックスは MSIX 版（Microsoft Store 版）の pwsh を動かせず、サンドボックスの中のコマンドは Windows PowerShell 5.1 になる（手順 2 は MSI 版を入れる）
 - nvim-treesitter は `cc` という名前の実行ファイルが PATH に無いと読み込まない。Windows には無い（Build Tools のコンパイラは `cl.exe`）ので使わない
 - `windows/bin/*.cmd` を cmd.exe から呼ぶと `"`・`^`・`&`・`|` を含む引数が壊れる（pwsh からは `.ps1` が選ばれるので壊れない）
@@ -180,7 +181,6 @@ Pester 5 が要る（無ければ `Install-PSResource Pester -Scope CurrentUser`
 Node は mise に移した（mac / linux と同じ。決め方は `config/mise/README.md`）。前に install.ps1 を実行した PC で:
 
 ```powershell
-mise self-update                                    # node の lts が今の LTS を指す版にする
 pwsh -File $HOME\dotfiles\windows\install.ps1       # mise install が Node を入れる
 [Environment]::SetEnvironmentVariable('FNM_DIR', $null, 'User')
 mise uninstall --all aqua:Schniz/fnm

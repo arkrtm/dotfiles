@@ -177,14 +177,28 @@ function Complete-Install {
   [int]0
 }
 
-# mise の道具を入れる。ホームで実行し、呼んだ場所の設定（mise.toml など）に左右されないようにする
+# lock の版だけを mise で入れる（lock に無い道具・checksum の合わない配布物は入れず throw する）。
+# lock はリンクせず写す: mise は .node-version などの版を入れるたびにグローバルの lock に書き足すので、リンクだとリポジトリが変わる。
+# [IO.File]::Delete は前にあるリンクだけを消し、リンクの先は書き換えない。ホームで実行し、呼んだ場所の設定（mise.toml など）に左右されないようにする
 function Install-MiseTools {
-  param([Parameter(Mandatory)][string]$Mise, [Parameter(Mandatory)][string]$HomeDir)
+  param([Parameter(Mandatory)][string]$Mise, [Parameter(Mandatory)][string]$Dotfiles, [Parameter(Mandatory)][string]$HomeDir)
+  $dest = Join-Path $HomeDir '.config\mise\mise.lock'
+  [IO.File]::Delete($dest)
+  [IO.File]::Copy((Join-Path $Dotfiles 'config\mise\mise.lock'), $dest)
   Push-Location $HomeDir
   try {
-    & $Mise install --yes
-    if ($LASTEXITCODE) { throw 'mise install が失敗した（Windows 版の無い道具は MISE_DISABLE_TOOLS に足す）' }
+    & $Mise install --yes --locked
+    if ($LASTEXITCODE) { throw 'mise install が失敗した（lock に無い道具・checksum の合わない配布物がある。README の「版の固定と更新」で lock を作り直す）' }
   } finally { Pop-Location }
+}
+
+# 入っている mise を固定の版にする（古い mise は lock を読めない。self-update は配布物の署名を確かめる）。上げも下げもする
+function Sync-MiseVersion {
+  param([Parameter(Mandatory)][string]$Mise, [Parameter(Mandatory)][string]$Version)
+  $want = $Version.TrimStart('v')
+  if ("$(& $Mise --version 2>$null)".Split(' ')[0] -eq $want) { return }
+  & $Mise self-update --yes --no-plugins $want
+  if ($LASTEXITCODE) { throw "mise を $Version にできなかった" }
 }
 
 # CRLF で取り出された追跡ファイル（取り出し直せば LF になるもの: index は LF、作業ツリーは CRLF）。

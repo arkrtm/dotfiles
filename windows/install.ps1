@@ -13,10 +13,8 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch { }
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
-# mise 本体の版（install.sh の MISE_VERSION と一緒に上げる）
+# mise 本体の版。install.sh の MISE_VERSION と同じ（上げ方は README の「版の固定と更新」）
 $MiseVersion = 'v2026.11.3'
-# Windows で mise に入れない道具: tmux は Windows 版が無い
-$MiseDisable = 'aqua:tmux/tmux-builds'
 
 $DOTFILES = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 . (Join-Path $PSScriptRoot 'install-lib.ps1')
@@ -146,7 +144,6 @@ $UserPathDirs = @('%USERPROFILE%\.local\bin', '%LOCALAPPDATA%\mise\shims', (Conv
 Invoke-Step $StepLog 'ユーザー環境変数' {
   $null = Set-UserEnv EDITOR nvim
   $null = Set-UserEnv VISUAL nvim
-  $null = Set-UserEnv MISE_DISABLE_TOOLS $MiseDisable
   # yazi のファイル種別の判定に Git の file.exe を使う（Git の場所は git.exe から探す。Program Files とは限らない）
   $gitRoot = Get-GitRoot
   $file = if ($gitRoot) { Join-Path $gitRoot 'usr\bin\file.exe' }
@@ -157,7 +154,8 @@ Invoke-Step $StepLog 'ユーザー環境変数' {
 # ここから先の mise・uv は、呼んだ場所の設定（mise.toml、.python-version など）に左右されないようホームで実行する
 $mise = Join-Path $H '.local\bin\mise.exe'
 
-# 5. mise 本体（~/.local/bin/mise.exe）と道具（Node の最新の LTS を含む）。インストーラは版を固定すると配布物をその release の SHASUMS256.txt で検証する
+# 5. mise 本体（~/.local/bin/mise.exe。固定の版）と、config/mise/mise.lock の版の道具（Node の LTS を含む。Windows に無い道具は config.toml の os で除く）。
+#    インストーラは版を固定すると配布物をその release の SHASUMS256.txt で検証する
 Invoke-Step $StepLog 'mise' {
   if (-not (Test-Path -LiteralPath $mise)) {
     $s = Get-RemoteScript 'https://mise.run/powershell'
@@ -166,6 +164,8 @@ Invoke-Step $StepLog 'mise' {
     $env:MISE_INSTALL_MODIFY_PATH = '0'
     try { & ([scriptblock]::Create($s)) } finally { Remove-Item env:MISE_VERSION, env:MISE_INSTALL_MODIFY_PATH -ErrorAction SilentlyContinue }
     if (-not (Test-Path -LiteralPath $mise)) { throw "$mise が入らなかった" }
+  } else {
+    Sync-MiseVersion -Mise $mise -Version $MiseVersion
   }
 }
 if (Test-Path -LiteralPath $mise) {
@@ -174,7 +174,7 @@ if (Test-Path -LiteralPath $mise) {
     $tok = gh auth token 2>$null
     if (-not $LASTEXITCODE -and $tok) { $env:GITHUB_TOKEN = "$tok".Trim() }
   }
-  Invoke-Step $StepLog 'mise install' { Install-MiseTools -Mise $mise -HomeDir $H }
+  Invoke-Step $StepLog 'mise install' { Install-MiseTools -Mise $mise -Dotfiles $DOTFILES -HomeDir $H }
 }
 
 # 6. Codex: config.toml はリンクせずテンプレートから生成する（writable_roots にホームの絶対パスが要るため）
